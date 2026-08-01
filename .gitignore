@@ -8,4 +8,5 @@ dist/
 .chrome-*/
 .review-*.png
 .tmp-*/
+.wrangler/
 *.tsbuildinfo
