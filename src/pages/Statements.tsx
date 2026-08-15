@@ -1,97 +1,165 @@
 import { useMemo, useState } from 'react'
-import { Check, CheckCircle2, ChevronRight, Clock3, Eye, FileCheck2, FileText, Mail, Paperclip, Search, Send, WalletCards } from 'lucide-react'
-import { money, statements as initialStatements } from '../data/mock'
-import type { Statement } from '../types'
-import { Badge, Button, Modal, PageHeader, StatCard, Toast } from '../components/ui'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ArrowDownCircle, ArrowUpCircle, ChevronRight, Landmark, Plus, Search, Trash2, WalletCards } from 'lucide-react'
+import { api, queryKeys } from '../api/services'
+import { apiErrorMessage } from '../api/client'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
+import { formatDate, money, toDateTimeInput } from '../lib/format'
+import type { Statement, StatementPayload } from '../types'
+import { Badge, Button, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
-const flow = [
-  { label: 'OS finalizadas', detail: '31 de julho', icon: CheckCircle2, tone: 'green' },
-  { label: 'NF emitida', detail: 'Anexo automático', icon: FileCheck2, tone: 'blue' },
-  { label: 'Boleto registrado', detail: 'Vencimento 10 ou 20', icon: WalletCards, tone: 'purple' },
-  { label: 'Extrato enviado', detail: 'PDF por e-mail', icon: Send, tone: 'orange' },
-]
+type FlowFilter = 'Todos' | 'Créditos' | 'Débitos'
+
+function statementPayload(statement: Statement): StatementPayload {
+  const { id: _id, code: _code, amount: _amount, status: _status, ...persisted } = statement
+  return {
+    ...persisted,
+    clientName: statement.clientName || '',
+    dsmovim: statement.clientName || '',
+    sentAt: statement.sentAt || new Date().toISOString(),
+    dtinici: statement.sentAt || new Date().toISOString(),
+  }
+}
 
 export function Statements() {
-  const [statements, setStatements] = useState(initialStatements)
-  const [query, setQuery] = useState('')
-  const [tab, setTab] = useState<'Pendentes' | 'Enviados' | 'Todos'>('Pendentes')
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
-  const [preview, setPreview] = useState<Statement | null>(null)
-  const [sendModal, setSendModal] = useState(false)
+  const queryClient = useQueryClient()
+  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState<FlowFilter>('Todos')
+  const [modalOpen, setModalOpen] = useState(false)
+  const [selected, setSelected] = useState<Statement | null>(null)
   const [toast, setToast] = useState('')
+  const [formError, setFormError] = useState('')
+  const debouncedSearch = useDebouncedValue(search)
 
-  const filtered = useMemo(() => statements.filter((statement) => {
-    const matchesTab = tab === 'Todos' || (tab === 'Enviados' ? statement.status === 'Enviado' : statement.status !== 'Enviado')
-    return matchesTab && [statement.client, statement.email, statement.id].some((value) => value.toLowerCase().includes(query.toLowerCase()))
-  }), [query, statements, tab])
+  const statementsQuery = useQuery({ queryKey: [...queryKeys.statements, debouncedSearch], queryFn: () => api.statements.list({ query: debouncedSearch || undefined }) })
 
-  const sendable = statements.filter((statement) => selectedIds.includes(statement.id) && statement.status === 'Pronto')
+  const saveMutation = useMutation({
+    mutationFn: ({ id, payload }: { id?: number; payload: StatementPayload }) => id ? api.statements.update(id, payload) : api.statements.create(payload),
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.statements })
+      setModalOpen(false)
+      setSelected(null)
+      showToast(variables.id ? 'Movimento atualizado.' : 'Movimento cadastrado no extrato.')
+    },
+    onError: (error) => setFormError(apiErrorMessage(error)),
+  })
 
-  const send = () => {
-    const count = sendable.length
-    setStatements((items) => items.map((statement) => sendable.some((selected) => selected.id === statement.id) ? { ...statement, status: 'Enviado', sentAt: '01/08/2026 · agora' } : statement))
-    setSelectedIds([])
-    setSendModal(false)
-    setToast(`${count} ${count === 1 ? 'extrato enviado' : 'extratos enviados'} por e-mail.`)
-    setTimeout(() => setToast(''), 3500)
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.statements.remove(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.statements })
+      setModalOpen(false)
+      showToast('Movimento removido.')
+    },
+    onError: (error) => setFormError(apiErrorMessage(error)),
+  })
+
+  const statements = statementsQuery.data?.content ?? []
+  const filtered = useMemo(() => statements.filter((statement) => filter === 'Todos' || (filter === 'Créditos' ? statement.amount >= 0 : statement.amount < 0)), [filter, statements])
+  const credits = statements.reduce((sum, statement) => sum + Number(statement.qtcredi ?? 0), 0)
+  const debits = statements.reduce((sum, statement) => sum + Number(statement.qtdebit ?? 0), 0)
+  const balance = statements.reduce((sum, statement) => sum + Number(statement.amount ?? 0), 0)
+
+  function showToast(message: string) {
+    setToast(message)
+    window.setTimeout(() => setToast(''), 3200)
+  }
+
+  function openNew() {
+    setSelected(null)
+    setFormError('')
+    setModalOpen(true)
+  }
+
+  function openEdit(statement: Statement) {
+    setSelected(statement)
+    setFormError('')
+    setModalOpen(true)
+  }
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setFormError('')
+    const data = new FormData(event.currentTarget)
+    const description = String(data.get('description')).trim()
+    const sentAt = String(data.get('date'))
+    const payload: StatementPayload = {
+      ...(selected ? statementPayload(selected) : {} as StatementPayload),
+      clientName: description,
+      dsmovim: description,
+      sentAt,
+      dtinici: sentAt,
+      vlinici: Number(data.get('initialBalance') || 0),
+      qtcredi: Number(data.get('credits') || 0),
+      qtdebit: Number(data.get('debits') || 0),
+      qtbolet: Number(data.get('slips') || 0),
+      qtdepos: Number(data.get('deposits') || 0),
+      qttrans: Number(data.get('transfers') || 0),
+      qtresga: Number(data.get('withdrawals') || 0),
+      qtoutro: Number(data.get('others') || 0),
+      qtchequ: Number(data.get('checks') || 0),
+      nrbanco: String(data.get('bank')).trim(),
+      nragenc: String(data.get('agency')).trim(),
+      nrconta: String(data.get('account')).trim(),
+    }
+    saveMutation.mutate({ id: selected?.id, payload })
   }
 
   return (
     <>
-      <PageHeader
-        eyebrow="Fechamento mensal"
-        title="Extratos dos clientes"
-        subtitle="Serviços, horas, nota fiscal e boleto reunidos em um único envio."
-        actions={<Button icon={<Send size={18} />} disabled={!sendable.length} onClick={() => setSendModal(true)}>Enviar selecionados {sendable.length ? `(${sendable.length})` : ''}</Button>}
-      />
-
-      <section className="statement-flow">
-        {flow.map(({ label, detail, icon: Icon, tone }, index) => <div className={`statement-flow__step statement-flow__step--${tone}`} key={label}><span><Icon size={20} /></span><div><strong>{label}</strong><small>{detail}</small></div>{index < flow.length - 1 && <ChevronRight size={17} />}</div>)}
-      </section>
-
+      <PageHeader eyebrow="Financeiro" title="Extratos e movimentos" subtitle="Movimentações financeiras conforme o modelo Statement da API." actions={<Button icon={<Plus size={18} />} onClick={openNew}>Novo movimento</Button>} />
       <section className="stats-grid stats-grid--four statement-stats">
-        <StatCard label="Extratos gerados" value="42" helper="Competência jul/2026" icon={<FileText />} tone="blue" />
-        <StatCard label="Prontos para envio" value="2" helper="NF e boleto conferidos" icon={<Mail />} tone="green" />
-        <StatCard label="Em revisão" value="1" helper="Documento pendente" icon={<Clock3 />} tone="orange" />
-        <StatCard label="Valor do lote" value={money(11150)} helper="4 clientes no fechamento" icon={<WalletCards />} tone="purple" />
+        <StatCard label="Movimentos" value={String(statementsQuery.data?.total ?? 0)} helper="Registros encontrados" icon={<WalletCards />} tone="blue" />
+        <StatCard label="Créditos" value={money(credits)} helper="Total no retorno atual" icon={<ArrowUpCircle />} tone="green" />
+        <StatCard label="Débitos" value={money(debits)} helper="Total no retorno atual" icon={<ArrowDownCircle />} tone="orange" />
+        <StatCard label="Saldo movimentado" value={money(balance)} helper="Créditos menos débitos" icon={<Landmark />} tone="purple" />
       </section>
 
       <section className="panel data-panel">
-        <div className="data-toolbar">
-          <div className="segmented-control">{(['Pendentes', 'Enviados', 'Todos'] as const).map((item) => <button key={item} className={tab === item ? 'active' : ''} onClick={() => { setTab(item); setSelectedIds([]) }}>{item}</button>)}</div>
-          <div className="search-box search-box--push"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar cliente ou e-mail..." /></div>
-          <Button variant="secondary">Julho / 2026</Button>
-        </div>
+        <div className="data-toolbar"><div className="segmented-control">{(['Todos', 'Créditos', 'Débitos'] as const).map((item) => <button key={item} className={filter === item ? 'active' : ''} onClick={() => setFilter(item)}>{item}</button>)}</div><div className="search-box search-box--push"><Search size={18} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar descrição ou código..." /></div></div>
 
-        {selectedIds.length > 0 && <div className="selection-bar"><span><Check size={16} />{selectedIds.length} {selectedIds.length === 1 ? 'extrato selecionado' : 'extratos selecionados'}</span><button onClick={() => setSelectedIds([])}>Limpar seleção</button></div>}
-
-        <div className="statement-list">
-          <div className="statement-list__head"><span /><span>Cliente e destino</span><span>Atendimentos</span><span>Documentos</span><span>Valor total</span><span>Situação</span><span /></div>
-          {filtered.map((statement) => (
-            <article key={statement.id} className={selectedIds.includes(statement.id) ? 'selected' : ''}>
-              <span className="statement-check"><input type="checkbox" disabled={statement.status !== 'Pronto'} checked={selectedIds.includes(statement.id)} onChange={() => setSelectedIds((ids) => ids.includes(statement.id) ? ids.filter((id) => id !== statement.id) : [...ids, statement.id])} /></span>
-              <div className="statement-client"><strong>{statement.client}</strong><small><Mail size={13} />{statement.email}</small></div>
-              <div className="statement-service"><strong>{statement.osCount} OS</strong><small>{statement.hours} utilizadas</small></div>
-              <div className="document-badges"><Badge tone={statement.invoice === 'Pendente' ? 'orange' : 'blue'}>NF {statement.invoice}</Badge><Badge tone={statement.slip === 'Pendente' ? 'orange' : 'purple'}>Boleto {statement.slip}</Badge></div>
-              <strong className="statement-value">{money(statement.amount)}</strong>
-              <div><Badge tone={statement.status === 'Pronto' ? 'green' : statement.status === 'Revisar' ? 'orange' : 'blue'}>{statement.status}</Badge>{statement.sentAt && <small className="table-secondary">{statement.sentAt}</small>}</div>
-              <button className="row-action" onClick={() => setPreview(statement)} aria-label={`Visualizar extrato de ${statement.client}`}><Eye size={18} /></button>
-            </article>
-          ))}
-        </div>
-        <footer className="table-footer"><span><strong>{filtered.length}</strong> clientes no fechamento</span><span>Última atualização: hoje, 13:42</span></footer>
+        {statementsQuery.isLoading ? <LoadingState label="Carregando extratos..." /> : statementsQuery.isError ? <ErrorState message={apiErrorMessage(statementsQuery.error)} onRetry={() => statementsQuery.refetch()} /> : filtered.length === 0 ? <EmptyState title="Nenhum movimento encontrado" description="Altere os filtros ou registre um movimento." /> : (
+          <div className="table-wrap"><table className="data-table statement-table"><thead><tr><th>Código / Descrição</th><th>Data</th><th>Banco</th><th>Agência / Conta</th><th>Créditos</th><th>Débitos</th><th>Saldo</th><th /></tr></thead><tbody>{filtered.map((statement) => (
+            <tr key={statement.id} onClick={() => openEdit(statement)}>
+              <td><strong>EXT-{statement.id}</strong><small className="table-secondary">{statement.clientName || 'Sem descrição'}</small></td>
+              <td>{formatDate(statement.sentAt, true)}</td>
+              <td>{statement.nrbanco || 'Não informado'}</td>
+              <td>{[statement.nragenc, statement.nrconta].filter(Boolean).join(' / ') || 'Não informado'}</td>
+              <td><strong className="positive-value">{money(statement.qtcredi)}</strong></td>
+              <td><strong className="negative-value">{money(statement.qtdebit)}</strong></td>
+              <td><Badge tone={statement.amount >= 0 ? 'green' : 'red'}>{money(statement.amount)}</Badge></td>
+              <td><button className="row-action"><ChevronRight size={18} /></button></td>
+            </tr>
+          ))}</tbody></table></div>
+        )}
+        <footer className="table-footer"><span><strong>{filtered.length}</strong> de {statementsQuery.data?.total ?? 0} movimentos</span><span>Saldo calculado pela API</span></footer>
       </section>
 
-      <Modal open={!!preview} onClose={() => setPreview(null)} title="Prévia do extrato" description={preview ? `${preview.client} · Julho de 2026` : ''} size="large">
-        {preview && <div className="modal__body statement-preview"><div className="preview-document"><header><div className="preview-logo">GB</div><div><strong>Gente Boa Manutenção e Serviços</strong><small>Extrato mensal de atendimentos</small></div><span>Jul/2026</span></header><section><div><span>Cliente</span><strong>{preview.client}</strong></div><div><span>Período</span><strong>01/07 a 31/07/2026</strong></div><div><span>Horas utilizadas</span><strong>{preview.hours}</strong></div></section><table><thead><tr><th>Serviço</th><th>Data</th><th>Técnico</th><th>Tempo</th></tr></thead><tbody><tr><td>Manutenção elétrica</td><td>08/07</td><td>Edmilson</td><td>2h10</td></tr><tr><td>Visita técnica preventiva</td><td>15/07</td><td>Miguel</td><td>1h35</td></tr><tr><td>Serviços e atendimentos adicionais</td><td>Julho</td><td>Equipe Gente Boa</td><td>{preview.hours}</td></tr></tbody></table><footer><span>Valor total do período</span><strong>{money(preview.amount)}</strong></footer></div><aside><h3>Documentos do envio</h3><span><FileCheck2 size={18} /><div><strong>Nota fiscal</strong><small>{preview.invoice}</small></div></span><span><WalletCards size={18} /><div><strong>Boleto bancário</strong><small>{preview.slip}</small></div></span><span><Paperclip size={18} /><div><strong>Extrato detalhado</strong><small>PDF · 186 KB</small></div></span><div className="preview-recipient"><small>Destinatário</small><strong>{preview.email}</strong></div></aside></div>}
-        <footer className="modal__footer"><Button variant="secondary" onClick={() => setPreview(null)}>Fechar prévia</Button>{preview?.status === 'Pronto' && <Button icon={<Send size={17} />} onClick={() => { if (preview) setSelectedIds([preview.id]); setPreview(null); setSendModal(true) }}>Enviar este extrato</Button>}</footer>
+      <Modal open={modalOpen} onClose={() => !saveMutation.isPending && setModalOpen(false)} title={selected ? `Editar EXT-${selected.id}` : 'Novo movimento'} description="Campos financeiros do modelo Statement." size="large">
+        <ModalForm onSubmit={submit} onCancel={() => setModalOpen(false)} submitting={saveMutation.isPending} submitLabel={saveMutation.isPending ? 'Salvando...' : selected ? 'Salvar alterações' : 'Registrar movimento'}>
+          <FormError message={formError} />
+          <div className="form-grid form-grid--two">
+            <FormField label="Descrição / cliente"><input name="description" maxLength={100} required defaultValue={selected?.clientName ?? ''} /></FormField>
+            <FormField label="Data e hora"><input name="date" type="datetime-local" required defaultValue={toDateTimeInput(selected?.sentAt)} /></FormField>
+            <FormField label="Banco"><input name="bank" maxLength={50} defaultValue={selected?.nrbanco ?? ''} /></FormField>
+            <FormField label="Agência"><input name="agency" maxLength={50} defaultValue={selected?.nragenc ?? ''} /></FormField>
+            <FormField label="Conta"><input name="account" maxLength={50} defaultValue={selected?.nrconta ?? ''} /></FormField>
+            <FormField label="Saldo inicial"><input name="initialBalance" type="number" step="0.01" defaultValue={selected?.vlinici ?? 0} /></FormField>
+          </div>
+          <div className="form-section-title"><span>2</span><div><strong>Movimentação</strong><small>Totais por meio de pagamento</small></div></div>
+          <div className="form-grid form-grid--four">
+            <FormField label="Créditos"><input name="credits" type="number" min="0" step="0.01" defaultValue={selected?.qtcredi ?? 0} /></FormField>
+            <FormField label="Débitos"><input name="debits" type="number" min="0" step="0.01" defaultValue={selected?.qtdebit ?? 0} /></FormField>
+            <FormField label="Boletos"><input name="slips" type="number" min="0" step="0.01" defaultValue={selected?.qtbolet ?? 0} /></FormField>
+            <FormField label="Depósitos"><input name="deposits" type="number" min="0" step="0.01" defaultValue={selected?.qtdepos ?? 0} /></FormField>
+            <FormField label="Transferências"><input name="transfers" type="number" min="0" step="0.01" defaultValue={selected?.qttrans ?? 0} /></FormField>
+            <FormField label="Resgates"><input name="withdrawals" type="number" min="0" step="0.01" defaultValue={selected?.qtresga ?? 0} /></FormField>
+            <FormField label="Cheques"><input name="checks" type="number" min="0" step="0.01" defaultValue={selected?.qtchequ ?? 0} /></FormField>
+            <FormField label="Outros"><input name="others" type="number" min="0" step="0.01" defaultValue={selected?.qtoutro ?? 0} /></FormField>
+          </div>
+          {selected && <div className="destructive-row"><span><strong>Excluir movimento</strong><small>Remove definitivamente o registro da API.</small></span><Button type="button" variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending} onClick={() => window.confirm(`Excluir EXT-${selected.id}?`) && deleteMutation.mutate(selected.id)}>Excluir</Button></div>}
+        </ModalForm>
       </Modal>
-
-      <Modal open={sendModal} onClose={() => setSendModal(false)} title="Confirmar envio dos extratos" description="Cada cliente receberá o extrato, a nota fiscal e o boleto disponíveis.">
-        <div className="modal__body send-summary"><span className="send-summary__icon"><Mail size={25} /></span><div><strong>{sendable.length} {sendable.length === 1 ? 'destinatário confirmado' : 'destinatários confirmados'}</strong><small>Os documentos serão anexados automaticamente.</small></div><ul>{sendable.map((statement) => <li key={statement.id}><span><strong>{statement.client}</strong><small>{statement.email}</small></span><Badge tone="green">Pronto</Badge></li>)}</ul><p>Este protótipo simula o envio. Na versão produtiva, a ação usará o serviço de e-mail selecionado.</p></div>
-        <footer className="modal__footer"><Button variant="secondary" onClick={() => setSendModal(false)}>Voltar</Button><Button icon={<Send size={17} />} onClick={send}>Confirmar e enviar</Button></footer>
-      </Modal>
-
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
     </>
   )

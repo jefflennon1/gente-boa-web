@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, FormEvent, ReactNode } from 'react'
-import { CheckCircle2, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, LoaderCircle, RefreshCw, X } from 'lucide-react'
 
 export function PageHeader({ eyebrow, title, subtitle, actions }: { eyebrow?: string; title: string; subtitle: string; actions?: ReactNode }) {
   return (
@@ -68,13 +68,13 @@ export function FormField({ label, children, hint }: { label: string; children: 
   )
 }
 
-export function ModalForm({ children, onSubmit, onCancel, submitLabel = 'Salvar' }: { children: ReactNode; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void; submitLabel?: string }) {
+export function ModalForm({ children, onSubmit, onCancel, submitLabel = 'Salvar', submitting = false }: { children: ReactNode; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void; submitLabel?: string; submitting?: boolean }) {
   return (
     <form onSubmit={onSubmit}>
       <div className="modal__body">{children}</div>
       <footer className="modal__footer">
-        <Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button>
-        <Button type="submit">{submitLabel}</Button>
+        <Button type="button" variant="secondary" onClick={onCancel} disabled={submitting}>Cancelar</Button>
+        <Button type="submit" disabled={submitting}>{submitLabel}</Button>
       </footer>
     </form>
   )
@@ -98,4 +98,16 @@ export function EmptyState({ title, description }: { title: string; description:
       <span>{description}</span>
     </div>
   )
+}
+
+export function LoadingState({ label = 'Carregando dados...' }: { label?: string }) {
+  return <div className="api-state"><LoaderCircle className="api-state__spinner" size={24} /><strong>{label}</strong></div>
+}
+
+export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  return <div className="api-state api-state--error"><AlertTriangle size={24} /><div><strong>Não foi possível carregar</strong><span>{message}</span></div>{onRetry && <Button variant="secondary" icon={<RefreshCw size={16} />} onClick={onRetry}>Tentar novamente</Button>}</div>
+}
+
+export function FormError({ message }: { message?: string }) {
+  return message ? <div className="form-error" role="alert"><AlertTriangle size={16} /><span>{message}</span></div> : null
 }

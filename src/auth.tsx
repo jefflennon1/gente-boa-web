@@ -1,42 +1,59 @@
-import { createContext, type ReactNode, useContext, useMemo, useState } from 'react'
-import { areCredentialsValid } from './auth-credentials'
-
-const SESSION_KEY = 'gente-boa-auth-session'
-const PERSISTENT_KEY = 'gente-boa-auth-persistent'
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { api } from './api/services'
+import { AUTH_EXPIRED_EVENT } from './api/client'
+import { clearStoredToken, getStoredToken, storeToken } from './api/storage'
+import { queryClient } from './query-client'
+import type { AppUser } from './types'
 
 interface AuthContextValue {
   isAuthenticated: boolean
-  login: (username: string, password: string, remember: boolean) => boolean
+  initializing: boolean
+  user: AppUser | null
+  login: (login: string, password: string, remember: boolean) => Promise<void>
   logout: () => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [isAuthenticated, setAuthenticated] = useState(() =>
-    sessionStorage.getItem(SESSION_KEY) === 'authenticated' ||
-    localStorage.getItem(PERSISTENT_KEY) === 'authenticated',
-  )
+  const [user, setUser] = useState<AppUser | null>(null)
+  const [initializing, setInitializing] = useState(() => Boolean(getStoredToken()))
+
+  const logout = useCallback(() => {
+    clearStoredToken()
+    setUser(null)
+    queryClient.clear()
+  }, [])
+
+  useEffect(() => {
+    const token = getStoredToken()
+    if (!token) return
+
+    let active = true
+    api.auth.me()
+      .then((currentUser) => active && setUser(currentUser))
+      .catch(() => active && logout())
+      .finally(() => active && setInitializing(false))
+    return () => { active = false }
+  }, [logout])
+
+  useEffect(() => {
+    window.addEventListener(AUTH_EXPIRED_EVENT, logout)
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, logout)
+  }, [logout])
 
   const value = useMemo<AuthContextValue>(() => ({
-    isAuthenticated,
-    login: (username, password, remember) => {
-      const credentialsMatch = areCredentialsValid(username, password)
-      if (!credentialsMatch) return false
-
-      sessionStorage.removeItem(SESSION_KEY)
-      localStorage.removeItem(PERSISTENT_KEY)
-      if (remember) localStorage.setItem(PERSISTENT_KEY, 'authenticated')
-      else sessionStorage.setItem(SESSION_KEY, 'authenticated')
-      setAuthenticated(true)
-      return true
+    isAuthenticated: Boolean(user),
+    initializing,
+    user,
+    login: async (login, password, remember) => {
+      const response = await api.auth.login(login.trim(), password)
+      storeToken(response.accessToken, remember)
+      setUser(response.user)
+      setInitializing(false)
     },
-    logout: () => {
-      sessionStorage.removeItem(SESSION_KEY)
-      localStorage.removeItem(PERSISTENT_KEY)
-      setAuthenticated(false)
-    },
-  }), [isAuthenticated])
+    logout,
+  }), [initializing, logout, user])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

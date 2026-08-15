@@ -16,15 +16,17 @@ const pages = {
 
 export default function App() {
   const { pathname, navigate } = useRouter()
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, initializing, user } = useAuth()
   const Page = pages[pathname as keyof typeof pages]
 
   useEffect(() => {
     if (!isAuthenticated && pathname !== '/login') navigate('/login', { replace: true })
     else if (isAuthenticated && pathname === '/login') navigate('/', { replace: true })
+    else if (isAuthenticated && pathname === '/usuarios' && user?.role !== 'ADMINISTRADOR') navigate('/', { replace: true })
     else if (isAuthenticated && !Page) navigate('/', { replace: true })
-  }, [Page, isAuthenticated, navigate, pathname])
+  }, [Page, isAuthenticated, navigate, pathname, user?.role])
 
+  if (initializing) return <div className="page-loader page-loader--screen"><span /><strong>Validando sessão...</strong></div>
   if (!isAuthenticated) return <Login />
 
   return (

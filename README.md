@@ -1,75 +1,61 @@
-# Gente Boa Gestão — protótipo ERP
+# Gente Boa Web
 
-Protótipo front-end de um ERP web para a Gente Boa Manutenção e Serviços. A interface foi construída a partir do POP do sistema atual, do comparativo visual fornecido e da identidade institucional da empresa.
-
-## O que está implementado
-
-- Dashboard operacional e financeira com indicadores, agenda e fechamento mensal.
-- Clientes com busca, filtros, cadastro, edição, contrato, horas e painel de detalhes.
-- Ordens de serviço com cadastro, edição, visão Kanban/lista e avanço entre etapas.
-- Notas fiscais com revisão, seleção e emissão simulada em lote.
-- Extratos com documentos consolidados, prévia e envio simulado por e-mail.
-- Relatórios operacionais, comerciais e financeiros com filtros e prévia de exportação.
-- Usuários, perfis de acesso e permissões por módulo.
-- Login demonstrativo com proteção das páginas e opção de manter a sessão.
-- Layout responsivo para desktop, tablet e celular.
-
-Todas as ações são demonstrativas e usam dados locais em memória. Integrações reais com prefeitura/provedor fiscal, banco, e-mail e backend ainda não fazem parte deste front-end.
-
-### Acesso ao protótipo
-
-- Usuário: `naty`
-- Senha: `naty12345`
-
-As credenciais são verificadas somente no navegador e não representam uma autenticação segura para produção.
-
-## Publicação do protótipo
-
-O projeto está preparado para publicação gratuita por upload direto no Cloudflare Pages. Consulte [DEPLOY-CLOUDFLARE.md](./DEPLOY-CLOUDFLARE.md) para o passo a passo.
+Frontend do ERP Gente Boa, construído com React, TypeScript e Vite e integrado à API REST em Java/Spring Boot.
 
 ## Tecnologias
 
-- React 19
-- TypeScript 7
-- Vite 8
-- Recharts
-- Lucide React
-- CSS responsivo com design tokens próprios
-- Roteamento local leve, sem dependência externa
+- React 19 + TypeScript
+- Vite
+- Axios para o cliente HTTP
+- TanStack Query para cache, estados assíncronos e invalidação após CRUD
+- Recharts e Lucide React
+- Cloudflare Workers para hospedagem do frontend
 
-## Rodando localmente
+## Executar localmente
 
-```bash
-npm install
-npm run dev
+1. Inicie o backend `gente-boa-api` na porta `8080`.
+2. Copie `.env.example` para `.env.local` se precisar alterar a URL.
+3. Instale e execute o frontend:
+
+```powershell
+npm.cmd install
+npm.cmd run dev
 ```
 
-Abra o endereço exibido pelo Vite. Para gerar a versão de produção:
+Por padrão, o frontend usa `http://localhost:8080/api`.
 
-```bash
-npm run build
-npm run preview
-```
+## Autenticação
 
-## Estrutura principal
+O login chama `POST /api/auth/login` e armazena o JWT em `sessionStorage` ou `localStorage`, conforme a opção “Manter conectado”. Ao restaurar a sessão, o frontend valida o token em `GET /api/auth/me`.
+
+O corpo enviado para autenticação segue o contrato `{ "login": "usuario", "password": "senha" }`. Use o nome de usuário configurado para a conta no backend.
+
+## Endpoints utilizados
+
+- `/api/auth/login` e `/api/auth/me`
+- `/api/clients`
+- `/api/service-orders`
+- `/api/invoices`
+- `/api/statements`
+- `/api/users` — exclusivo para administradores
+
+As listagens atuais aceitam no máximo 100 itens por chamada. Dashboard e relatórios consolidam os dados retornados por essas listagens; quando o volume crescer, o backend deverá oferecer endpoints agregados ou paginação completa para os indicadores.
+
+Os campos transientes e limitações de persistência encontrados durante a integração estão detalhados em [`BACKEND-INTEGRATION-NOTES.md`](./BACKEND-INTEGRATION-NOTES.md).
+
+## Configuração em produção
+
+Defina `VITE_API_URL` no ambiente de build da Cloudflare com a URL HTTPS pública do backend, por exemplo:
 
 ```text
-src/
-  components/    layout e componentes reutilizáveis
-  data/          dados demonstrativos centralizados
-  pages/         módulos do ERP
-  App.tsx        carregamento e rotas da aplicação
-  router.tsx     navegação client-side
-  styles.css     sistema visual e responsividade
-  types.ts       contratos TypeScript do domínio
+VITE_API_URL=https://api.seudominio.com/api
 ```
 
-## Próximas decisões de produto
+O backend precisa liberar no CORS o domínio do frontend publicado. Atualmente o `SecurityConfig` permite apenas `http://localhost:5173` e `http://127.0.0.1:5173`, portanto uma implantação web não conseguirá chamar a API até essa origem ser adicionada.
 
-Antes do desenvolvimento do backend, é recomendável validar com a cliente:
+## Validação
 
-1. Regras de reajuste anual e renovação dos contratos.
-2. Campos fiscais obrigatórios e exceções de retenção de ISS.
-3. Fluxo de baixa de contas, boletos e conciliação do caixa diário.
-4. Perfis de acesso realmente necessários para cada pessoa.
-5. Provedores de nota fiscal, cobrança bancária e envio de e-mail.
+```powershell
+npm.cmd run typecheck
+npm.cmd run build
+```

@@ -1,113 +1,92 @@
-import { useState } from 'react'
+import { useMemo } from 'react'
+import { useQueries } from '@tanstack/react-query'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowRight, CalendarDays, Check, CircleDollarSign, ClipboardCheck, Clock3, FileCheck2, Plus, ReceiptText, TrendingUp, TriangleAlert, UsersRound, Wrench } from 'lucide-react'
-import { cashFlow, money, serviceOrders } from '../data/mock'
-import { Badge, Button, PageHeader, StatCard, Toast } from '../components/ui'
+import { ArrowRight, CircleDollarSign, ClipboardCheck, FileCheck2, Plus, ReceiptText, TrendingUp, UsersRound } from 'lucide-react'
+import { api, queryKeys } from '../api/services'
+import { apiErrorMessage } from '../api/client'
+import { useAuth } from '../auth'
+import { Badge, Button, ErrorState, LoadingState, PageHeader, StatCard } from '../components/ui'
+import { enumLabel, formatDate, money } from '../lib/format'
 import { useRouter } from '../router'
+import type { Invoice, ServiceOrder } from '../types'
 
-const activity = serviceOrders.slice(0, 4)
+function buildCashFlow(invoices: Invoice[]) {
+  const formatter = new Intl.DateTimeFormat('pt-BR', { month: 'short' })
+  const current = new Date()
+  const months = Array.from({ length: 6 }, (_, index) => {
+    const date = new Date(current.getFullYear(), current.getMonth() - (5 - index), 1)
+    return { key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`, month: formatter.format(date).replace('.', ''), received: 0, pending: 0 }
+  })
+  for (const invoice of invoices) {
+    const date = invoice.issuedAt || invoice.dtemiss
+    const key = date?.slice(0, 7)
+    const bucket = months.find((month) => month.key === key)
+    if (!bucket) continue
+    const target = invoice.status === 'EMITIDA' ? 'received' : 'pending'
+    bucket[target] += Number(invoice.amount ?? 0) / 1000
+  }
+  return months
+}
 
 export function Dashboard() {
   const { navigate } = useRouter()
-  const [toast, setToast] = useState('')
+  const { user } = useAuth()
+  const [clientsQuery, ordersQuery, invoicesQuery, statementsQuery] = useQueries({ queries: [
+    { queryKey: queryKeys.clients, queryFn: () => api.clients.list() },
+    { queryKey: queryKeys.serviceOrders, queryFn: () => api.serviceOrders.list() },
+    { queryKey: queryKeys.invoices, queryFn: () => api.invoices.list() },
+    { queryKey: queryKeys.statements, queryFn: () => api.statements.list() },
+  ] })
+
+  const clients = clientsQuery.data?.content ?? []
+  const orders = ordersQuery.data?.content ?? []
+  const invoices = invoicesQuery.data?.content ?? []
+  const statements = statementsQuery.data?.content ?? []
+  const today = new Date().toISOString().slice(0, 10)
+  const currentMonth = today.slice(0, 7)
+  const revenue = invoices.filter((invoice) => invoice.status === 'EMITIDA' && (invoice.issuedAt || invoice.dtemiss)?.startsWith(currentMonth)).reduce((sum, invoice) => sum + Number(invoice.amount ?? 0), 0)
+  const receivable = invoices.filter((invoice) => !['EMITIDA', 'CANCELADA'].includes(invoice.status)).reduce((sum, invoice) => sum + Number(invoice.amount ?? 0), 0)
+  const todayOrders = orders.filter((order) => order.scheduledDate === today)
+  const readyInvoices = invoices.filter((invoice) => invoice.status === 'PRONTA')
+  const cashFlow = useMemo(() => buildCashFlow(invoices), [invoices])
+  const activity = useMemo(() => [...orders].filter((order) => !['FINALIZADA', 'CANCELADA'].includes(order.status)).sort((a, b) => `${a.scheduledDate || ''}${a.scheduledTime || ''}`.localeCompare(`${b.scheduledDate || ''}${b.scheduledTime || ''}`)).slice(0, 4), [orders])
+  const isLoading = clientsQuery.isLoading || ordersQuery.isLoading || invoicesQuery.isLoading || statementsQuery.isLoading
+  const failedQuery = [clientsQuery, ordersQuery, invoicesQuery, statementsQuery].find((query) => query.isError)
+
+  if (isLoading) return <LoadingState label="Montando visão geral..." />
+  if (failedQuery) return <ErrorState message={apiErrorMessage(failedQuery.error)} onRetry={() => { clientsQuery.refetch(); ordersQuery.refetch(); invoicesQuery.refetch(); statementsQuery.refetch() }} />
 
   return (
     <>
-      <PageHeader
-        eyebrow="Painel de controle"
-        title="Bom dia, Nathália!"
-        subtitle="Aqui está o resumo da operação de hoje, 1 de agosto."
-        actions={<Button icon={<Plus size={18} />} onClick={() => navigate('/ordens-de-servico')}>Nova ordem de serviço</Button>}
-      />
+      <PageHeader eyebrow="Painel de controle" title={`Olá, ${user?.name?.split(' ')[0] || 'equipe'}!`} subtitle={`Resumo da operação em ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'long' }).format(new Date())}.`} actions={<Button icon={<Plus size={18} />} onClick={() => navigate('/ordens-de-servico')}>Nova ordem de serviço</Button>} />
 
       <section className="stats-grid stats-grid--four">
-        <StatCard label="Receita do mês" value={money(84620)} helper="↑ 12,8% em relação a junho" icon={<TrendingUp />} tone="green" />
-        <StatCard label="Contas a receber" value={money(21480)} helper="14 títulos em aberto" icon={<CircleDollarSign />} tone="blue" />
-        <StatCard label="Ordens hoje" value="12" helper="4 em atendimento agora" icon={<ClipboardCheck />} tone="orange" />
-        <StatCard label="Inadimplência" value="3,2%" helper="↓ 0,6% desde junho" icon={<TriangleAlert />} tone="gold" />
+        <StatCard label="Receita emitida no mês" value={money(revenue)} helper={`${invoices.filter((invoice) => invoice.status === 'EMITIDA').length} notas emitidas no retorno`} icon={<TrendingUp />} tone="green" />
+        <StatCard label="A faturar" value={money(receivable)} helper={`${readyInvoices.length} notas prontas`} icon={<CircleDollarSign />} tone="blue" />
+        <StatCard label="Ordens hoje" value={String(todayOrders.length)} helper={`${todayOrders.filter((order) => order.status === 'EM_ATENDIMENTO').length} em atendimento`} icon={<ClipboardCheck />} tone="orange" />
+        <StatCard label="Clientes ativos" value={String(clients.filter((client) => client.status === 'ATIVO').length)} helper={`${clientsQuery.data?.total ?? 0} clientes cadastrados`} icon={<UsersRound />} tone="purple" />
       </section>
 
-      <button className="attention-banner" onClick={() => navigate('/notas-fiscais')}>
-        <span className="attention-banner__icon"><FileCheck2 size={21} /></span>
-        <span><strong>3 cobranças estão prontas para emissão</strong><small>Notas fiscais, boletos e extratos já conferidos pelo sistema.</small></span>
-        <b>Revisar fechamento <ArrowRight size={17} /></b>
-      </button>
+      {readyInvoices.length > 0 && <button className="attention-banner" onClick={() => navigate('/notas-fiscais')}><span className="attention-banner__icon"><FileCheck2 size={21} /></span><span><strong>{readyInvoices.length} {readyInvoices.length === 1 ? 'nota está pronta' : 'notas estão prontas'} para emissão</strong><small>Revise os dados fiscais antes de concluir.</small></span><b>Revisar faturamento <ArrowRight size={17} /></b></button>}
 
       <section className="dashboard-grid">
         <article className="panel chart-panel">
-          <div className="panel__header">
-            <div><span className="eyebrow">Últimos 6 meses</span><h2>Fluxo financeiro</h2></div>
-            <div className="chart-legend"><span><i className="legend-dot legend-dot--blue" />Recebido</span><span><i className="legend-dot legend-dot--orange" />A receber</span></div>
-          </div>
-          <div className="chart-wrap">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={cashFlow} margin={{ top: 8, right: 0, left: -16, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="received" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#33399a" stopOpacity={0.28} /><stop offset="100%" stopColor="#33399a" stopOpacity={0.02} /></linearGradient>
-                  <linearGradient id="pending" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f48120" stopOpacity={0.2} /><stop offset="100%" stopColor="#f48120" stopOpacity={0.01} /></linearGradient>
-                </defs>
-                <CartesianGrid vertical={false} stroke="#e8e9f1" strokeDasharray="3 5" />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#7a7e98', fontSize: 12 }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#9a9db0', fontSize: 11 }} tickFormatter={(value) => `${value}k`} />
-                <Tooltip formatter={(value) => [`R$ ${value} mil`, '']} contentStyle={{ borderRadius: 12, border: '1px solid #e1e2eb', boxShadow: '0 10px 28px rgba(25,27,61,.12)' }} />
-                <Area type="monotone" dataKey="received" stroke="#33399a" strokeWidth={3} fill="url(#received)" isAnimationActive={false} />
-                <Area type="monotone" dataKey="pending" stroke="#f48120" strokeWidth={2} fill="url(#pending)" isAnimationActive={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="chart-summary">
-            <span>Recebido em julho<strong>{money(84620)}</strong></span>
-            <span>Em aberto<strong>{money(21480)}</strong></span>
-            <span>Resultado projetado<strong>{money(106100)}</strong></span>
-          </div>
+          <div className="panel__header"><div><span className="eyebrow">Últimos 6 meses</span><h2>Fluxo de notas fiscais</h2></div><div className="chart-legend"><span><i className="legend-dot legend-dot--blue" />Emitido</span><span><i className="legend-dot legend-dot--orange" />Pendente</span></div></div>
+          <div className="chart-wrap"><ResponsiveContainer width="100%" height="100%"><AreaChart data={cashFlow} margin={{ top: 8, right: 0, left: -16, bottom: 0 }}><defs><linearGradient id="received" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#33399a" stopOpacity={0.28} /><stop offset="100%" stopColor="#33399a" stopOpacity={0.02} /></linearGradient><linearGradient id="pending" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f48120" stopOpacity={0.2} /><stop offset="100%" stopColor="#f48120" stopOpacity={0.01} /></linearGradient></defs><CartesianGrid vertical={false} stroke="#e8e9f1" strokeDasharray="3 5" /><XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#7a7e98', fontSize: 12 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#9a9db0', fontSize: 11 }} tickFormatter={(value) => `${value}k`} /><Tooltip formatter={(value) => [money(Number(value) * 1000), '']} contentStyle={{ borderRadius: 12, border: '1px solid #e1e2eb', boxShadow: '0 10px 28px rgba(25,27,61,.12)' }} /><Area type="monotone" dataKey="received" stroke="#33399a" strokeWidth={3} fill="url(#received)" isAnimationActive={false} /><Area type="monotone" dataKey="pending" stroke="#f48120" strokeWidth={2} fill="url(#pending)" isAnimationActive={false} /></AreaChart></ResponsiveContainer></div>
+          <div className="chart-summary"><span>Emitido no mês<strong>{money(revenue)}</strong></span><span>A faturar<strong>{money(receivable)}</strong></span><span>Movimentação líquida<strong>{money(statements.reduce((sum, statement) => sum + Number(statement.amount ?? 0), 0))}</strong></span></div>
         </article>
 
         <article className="panel schedule-panel">
-          <div className="panel__header">
-            <div><span className="eyebrow">Agenda operacional</span><h2>Próximos atendimentos</h2></div>
-            <button className="panel-link" onClick={() => navigate('/ordens-de-servico')}>Ver agenda <ArrowRight size={15} /></button>
-          </div>
-          <div className="schedule-list">
-            {activity.map((item, index) => (
-              <button key={item.id} className="schedule-row" onClick={() => navigate('/ordens-de-servico')}>
-                <span className={`schedule-time ${index === 0 ? 'schedule-time--urgent' : ''}`}>{item.time}</span>
-                <span className="schedule-main"><strong>{item.client}</strong><small>{item.service}</small></span>
-                <span className="schedule-tech">{item.technician}</span>
-              </button>
-            ))}
-          </div>
-          <div className="schedule-footer"><Clock3 size={16} /><span>Próxima janela livre: <strong>16:30</strong></span></div>
+          <div className="panel__header"><div><span className="eyebrow">Agenda operacional</span><h2>Próximos atendimentos</h2></div><button className="panel-link" onClick={() => navigate('/ordens-de-servico')}>Ver agenda <ArrowRight size={15} /></button></div>
+          <div className="schedule-list">{activity.length ? activity.map((item: ServiceOrder) => <button key={item.id} className="schedule-row" onClick={() => navigate('/ordens-de-servico')}><span className={`schedule-time ${item.priority === 'URGENTE' ? 'schedule-time--urgent' : ''}`}>{item.scheduledTime?.slice(0, 5) || '—'}</span><span className="schedule-main"><strong>{item.clientName || item.client?.name || `Cliente #${item.idclien}`}</strong><small>{item.description || `Serviço ${item.service || ''}`}</small></span><span className="schedule-tech">{enumLabel(item.status)}</span></button>) : <div className="kanban-empty">Nenhum atendimento pendente.</div>}</div>
+          <div className="schedule-footer"><ClipboardCheck size={16} /><span><strong>{ordersQuery.data?.total ?? 0}</strong> ordens cadastradas na API</span></div>
         </article>
       </section>
 
       <section className="dashboard-grid dashboard-grid--bottom">
-        <article className="panel quick-panel">
-          <div className="panel__header"><div><span className="eyebrow">Acesso rápido</span><h2>Rotinas frequentes</h2></div></div>
-          <div className="quick-actions">
-            <button onClick={() => navigate('/clientes')}><span className="quick-icon quick-icon--blue"><UsersRound /></span><span><strong>Novo cliente</strong><small>Cadastro e contrato</small></span><ArrowRight /></button>
-            <button onClick={() => navigate('/notas-fiscais')}><span className="quick-icon quick-icon--orange"><ReceiptText /></span><span><strong>Emitir notas</strong><small>3 prontas para lote</small></span><ArrowRight /></button>
-            <button onClick={() => navigate('/extratos')}><span className="quick-icon quick-icon--green"><FileCheck2 /></span><span><strong>Enviar extratos</strong><small>2 aguardando envio</small></span><ArrowRight /></button>
-          </div>
-        </article>
-
-        <article className="panel closing-panel">
-          <div className="closing-panel__top">
-            <span className="eyebrow">Fechamento mensal</span>
-            <Badge tone="green">78% concluído</Badge>
-          </div>
-          <h2>Julho está quase fechado</h2>
-          <p>Faltam apenas as revisões fiscais para concluir o ciclo.</p>
-          <div className="progress"><span style={{ width: '78%' }} /></div>
-          <div className="closing-steps">
-            <span><Check size={15} /> OS conferidas</span>
-            <span><Check size={15} /> Boletos gerados</span>
-            <span className="closing-steps__pending"><CalendarDays size={15} /> 3 notas para revisar</span>
-          </div>
-          <Button variant="secondary" onClick={() => { setToast('Resumo do fechamento atualizado.'); setTimeout(() => setToast(''), 3000) }}>Ver detalhes do fechamento</Button>
-        </article>
+        <article className="panel quick-panel"><div className="panel__header"><div><span className="eyebrow">Acesso rápido</span><h2>Rotinas frequentes</h2></div></div><div className="quick-actions"><button onClick={() => navigate('/clientes')}><span className="quick-icon quick-icon--blue"><UsersRound /></span><span><strong>Novo cliente</strong><small>Cadastro completo</small></span><ArrowRight /></button><button onClick={() => navigate('/notas-fiscais')}><span className="quick-icon quick-icon--orange"><ReceiptText /></span><span><strong>Notas fiscais</strong><small>{readyInvoices.length} prontas</small></span><ArrowRight /></button><button onClick={() => navigate('/extratos')}><span className="quick-icon quick-icon--green"><FileCheck2 /></span><span><strong>Extratos</strong><small>{statementsQuery.data?.total ?? 0} movimentos</small></span><ArrowRight /></button></div></article>
+        <article className="panel closing-panel"><div className="closing-panel__top"><span className="eyebrow">Situação operacional</span><Badge tone="green">API sincronizada</Badge></div><h2>Dados consolidados</h2><p>Os indicadores desta tela são calculados sobre os registros retornados pelos endpoints atuais.</p><div className="detail-metrics"><span><small>Clientes</small><strong>{clientsQuery.data?.total ?? 0}</strong></span><span><small>Ordens</small><strong>{ordersQuery.data?.total ?? 0}</strong></span><span><small>Notas</small><strong>{invoicesQuery.data?.total ?? 0}</strong></span><span><small>Movimentos</small><strong>{statementsQuery.data?.total ?? 0}</strong></span></div><Button variant="secondary" onClick={() => { clientsQuery.refetch(); ordersQuery.refetch(); invoicesQuery.refetch(); statementsQuery.refetch() }}>Atualizar indicadores</Button></article>
       </section>
-
-      {toast && <Toast message={toast} onClose={() => setToast('')} />}
     </>
   )
 }
