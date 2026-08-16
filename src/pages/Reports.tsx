@@ -12,7 +12,7 @@ type ReportRow = { code: string; description: string; date: string; status: stri
 
 const reports: { key: ReportKey; title: string; detail: string; icon: typeof ClipboardList }[] = [
   { key: 'service-orders', title: 'Ordens de serviço', detail: 'Cliente, agenda, status, categoria e valor cobrado', icon: ClipboardList },
-  { key: 'clients', title: 'Clientes e contratos', detail: 'Documento, localização, situação e mensalidade', icon: UsersRound },
+  { key: 'clients', title: 'Clientes e contratos', detail: 'Documento, situação, quantidade de OS e valor acumulado', icon: UsersRound },
   { key: 'invoices', title: 'Notas fiscais', detail: 'Competência, emissão, situação e valor total', icon: ReceiptText },
   { key: 'statements', title: 'Movimentos de extrato', detail: 'Conta, data, créditos, débitos e saldo', icon: CircleDollarSign },
 ]
@@ -38,7 +38,7 @@ export function Reports() {
 
   const reportRows = useMemo<ReportRow[]>(() => {
     let rows: ReportRow[] = []
-    if (selected === 'clients') rows = (clientsQuery.data?.content ?? []).map((client) => ({ code: `CLI-${client.id}`, description: `${client.name || 'Sem nome'} · ${client.document || 'Sem documento'}`, date: client.lastServiceAt?.slice(0, 10) || '', status: enumLabel(client.status), value: Number(client.monthly ?? 0) }))
+    if (selected === 'clients') rows = (clientsQuery.data?.content ?? []).map((client) => ({ code: `CLI-${client.id}`, description: `${client.name || 'Sem nome'} · ${client.serviceOrderCount} OS`, date: '', status: enumLabel(client.status), value: Number(client.totalValue ?? 0) }))
     if (selected === 'service-orders') rows = (ordersQuery.data?.content ?? []).map((order) => ({ code: `OS-${order.id}`, description: `${order.clientName || order.client?.name || `Cliente #${order.idclien}`} · ${enumLabel(order.category)}`, date: order.scheduledDate || '', status: enumLabel(order.status), value: Number(order.vlcobra ?? 0) }))
     if (selected === 'invoices') rows = (invoicesQuery.data?.content ?? []).map((invoice) => ({ code: invoice.number || `NF-${invoice.id}`, description: `${invoice.clientName || 'Sem cliente'} · ${invoice.competence || 'Sem competência'}`, date: invoice.issuedAt || '', status: enumLabel(invoice.status), value: Number(invoice.amount ?? 0) }))
     if (selected === 'statements') rows = (statementsQuery.data?.content ?? []).map((statement) => ({ code: `EXT-${statement.id}`, description: `${statement.clientName || 'Sem descrição'} · ${statement.nrbanco || 'Banco não informado'}`, date: statement.sentAt?.slice(0, 10) || '', status: statement.amount >= 0 ? 'Crédito' : 'Débito', value: Number(statement.amount ?? 0) }))

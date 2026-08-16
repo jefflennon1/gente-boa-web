@@ -2,31 +2,35 @@ import { createContext, type AnchorHTMLAttributes, type ReactNode, useCallback, 
 
 interface RouterContextValue {
   pathname: string
+  search: string
   navigate: (to: string, options?: { replace?: boolean }) => void
 }
 
 const RouterContext = createContext<RouterContextValue | null>(null)
 
-const currentPath = () => window.location.pathname.replace(/\/$/, '') || '/'
+const normalizePathname = (pathname: string) => pathname.replace(/\/$/, '') || '/'
+const currentLocation = () => ({ pathname: normalizePathname(window.location.pathname), search: window.location.search })
 
 export function RouterProvider({ children }: { children: ReactNode }) {
-  const [pathname, setPathname] = useState(currentPath)
+  const [location, setLocation] = useState(currentLocation)
 
   useEffect(() => {
-    const onPopState = () => setPathname(currentPath())
+    const onPopState = () => setLocation(currentLocation())
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
   const navigate = useCallback((to: string, options?: { replace?: boolean }) => {
-    const normalized = to.replace(/\/$/, '') || '/'
-    if (normalized === currentPath()) return
-    window.history[options?.replace ? 'replaceState' : 'pushState']({}, '', normalized)
-    setPathname(normalized)
+    const target = new URL(to, window.location.origin)
+    const next = { pathname: normalizePathname(target.pathname), search: target.search }
+    const current = currentLocation()
+    if (next.pathname === current.pathname && next.search === current.search && target.hash === window.location.hash) return
+    window.history[options?.replace ? 'replaceState' : 'pushState']({}, '', `${next.pathname}${next.search}${target.hash}`)
+    setLocation(next)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [])
 
-  const value = useMemo(() => ({ pathname, navigate }), [navigate, pathname])
+  const value = useMemo(() => ({ pathname: location.pathname, search: location.search, navigate }), [location, navigate])
   return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>
 }
 

@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, ChevronDown, ClipboardList, FileBarChart, FileText, LayoutDashboard, LogOut, Menu, ReceiptText, Search, Settings, UsersRound, X } from 'lucide-react'
+import { Bell, ChevronDown, ClipboardList, FileBarChart, FileSignature, FileText, LayoutDashboard, LogOut, Menu, ReceiptText, Search, Settings, UsersRound, X } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { useAuth } from '../auth'
 import { enumLabel, initials } from '../lib/format'
@@ -9,6 +9,7 @@ import { NavLink, useRouter } from '../router'
 const nav = [
   { to: '/', label: 'Visão geral', icon: LayoutDashboard, end: true },
   { to: '/clientes', label: 'Clientes', icon: UsersRound },
+  { to: '/contratos', label: 'Contratos', icon: FileSignature },
   { to: '/ordens-de-servico', label: 'Ordens de serviço', icon: ClipboardList },
   { to: '/notas-fiscais', label: 'Notas fiscais', icon: ReceiptText },
   { to: '/extratos', label: 'Extratos', icon: FileText },
@@ -16,7 +17,7 @@ const nav = [
 ]
 
 const routeNames: Record<string, string> = {
-  '/': 'Visão geral', '/clientes': 'Clientes', '/ordens-de-servico': 'Ordens de serviço', '/notas-fiscais': 'Notas fiscais', '/extratos': 'Extratos', '/relatorios': 'Relatórios', '/usuarios': 'Usuários',
+  '/': 'Visão geral', '/clientes': 'Clientes', '/contratos': 'Contratos', '/ordens-de-servico': 'Ordens de serviço', '/notas-fiscais': 'Notas fiscais', '/extratos': 'Extratos', '/relatorios': 'Relatórios', '/usuarios': 'Usuários',
 }
 
 export function AppLayout({ children }: { children: ReactNode }) {
@@ -46,7 +47,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
     event.preventDefault()
     const value = search.trim().toLowerCase()
     if (!value) return
-    if (value.includes('cliente')) navigate('/clientes')
+    if (value.includes('contrato')) navigate('/contratos')
+    else if (value.includes('cliente')) navigate('/clientes')
     else if (value.includes('nota') || value.includes('nf')) navigate('/notas-fiscais')
     else if (value.includes('extrato')) navigate('/extratos')
     else if (value.includes('relat')) navigate('/relatorios')
@@ -64,16 +66,16 @@ export function AppLayout({ children }: { children: ReactNode }) {
           const badge = to === '/ordens-de-servico' ? urgentOrders.length : to === '/notas-fiscais' ? pendingInvoices.length : 0
           return <NavLink key={to} to={to} end={end} className={({ isActive }) => isActive ? 'nav-link nav-link--active' : 'nav-link'}><Icon size={19} /><span>{label}</span>{badge > 0 && <small>{badge}</small>}</NavLink>
         })}</nav>
-        <div className="sidebar__bottom">
+        {/* <div className="sidebar__bottom">
           {user?.role === 'ADMINISTRADOR' && <NavLink to="/usuarios" className={({ isActive }) => isActive ? 'nav-link nav-link--active' : 'nav-link'}><Settings size={19} /><span>Usuários e acessos</span></NavLink>}
           <div className="sidebar__support"><span>Integração</span><strong>API Gente Boa</strong><small>Dados sincronizados pelo backend</small></div>
-        </div>
+        </div> */}
       </aside>
 
       <div className="app-main">
         <header className="topbar">
           <div className="topbar__left"><button className="mobile-menu" onClick={() => setMenuOpen(true)} aria-label="Abrir menu"><Menu size={22} /></button><div className="breadcrumb"><span>Gente Boa</span><b>/</b><strong>{routeNames[pathname] || 'Gestão'}</strong></div><span className="demo-mode-badge">API integrada</span></div>
-          <form className="global-search" onSubmit={submitSearch}><Search size={18} /><input ref={searchRef} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Ir para cliente, OS ou nota..." aria-label="Navegação rápida" /><kbd>Ctrl K</kbd></form>
+          <form className="global-search" onSubmit={submitSearch}><Search size={18} /><input ref={searchRef} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Ir para cliente, contrato, OS ou nota..." aria-label="Navegação rápida" /><kbd>Ctrl K</kbd></form>
           <div className="topbar__actions">
             <div className="popover-anchor"><button className="topbar-icon" onClick={() => setNotificationsOpen((value) => !value)} aria-label="Notificações"><Bell size={19} />{notificationCount > 0 && <i />}</button>{notificationsOpen && <div className="popover notifications-popover"><div className="popover__title"><strong>Notificações</strong><span>{notificationCount} pendentes</span></div>{pendingInvoices.length > 0 && <button onClick={() => navigate('/notas-fiscais')}><i className="notification-dot notification-dot--orange" /><span><strong>{pendingInvoices.length} notas aguardam ação</strong><small>Prontas ou em revisão</small></span></button>}{urgentOrders.length > 0 && <button onClick={() => navigate('/ordens-de-servico')}><i className="notification-dot notification-dot--red" /><span><strong>{urgentOrders.length} ordens urgentes</strong><small>Atendimentos não finalizados</small></span></button>}{notificationCount === 0 && <div className="popover-empty">Nenhuma pendência encontrada.</div>}</div>}</div>
             <div className="popover-anchor profile-anchor"><button className="profile-button" onClick={() => setProfileOpen((value) => !value)}><span className="avatar">{user?.initials || initials(user?.name)}</span><span className="profile-copy"><strong>{user?.name}</strong><small>{enumLabel(user?.role)}</small></span><ChevronDown size={16} /></button>{profileOpen && <div className="popover profile-popover">{user?.role === 'ADMINISTRADOR' && <button onClick={() => navigate('/usuarios')}>Usuários e acessos</button>}<button className="profile-popover__logout" onClick={() => { logout(); navigate('/login', { replace: true }) }}><LogOut size={15} /> Sair do sistema</button></div>}</div>

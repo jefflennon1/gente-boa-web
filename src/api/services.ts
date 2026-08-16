@@ -2,25 +2,61 @@ import type {
   AppUser,
   AuthResponse,
   Client,
+  CepAddressResponse,
+  ClientListItem,
+  ClientListSortBy,
   ClientPayload,
+  ClientStatisticsResponse,
+  CancelContractPayload,
+  Contract,
+  ContractListItem,
+  ContractListSortBy,
+  ContractPayload,
   CreateUserPayload,
   Invoice,
   InvoicePayload,
   PagedResponse,
   ServiceOrder,
   ServiceOrderPayload,
+  ServiceCatalogItem,
   Statement,
   StatementPayload,
+  SortDirection,
   UpdateUserPayload,
 } from '../types'
 import { http } from './client'
 
-type ListParams = { query?: string; date?: string; page?: number; size?: number }
+export type ListParams = {
+  query?: string
+  date?: string
+  status?: 'ATIVO' | 'INATIVO'
+  sortBy?: ClientListSortBy
+  direction?: SortDirection
+  page?: number
+  size?: number
+}
 
-function resource<T, TPayload>(path: string) {
+export type ContractListParams = {
+  query?: string
+  clientId?: number
+  status?: 'ATIVO' | 'CANCELADO'
+  sortBy?: ContractListSortBy
+  direction?: SortDirection
+  page?: number
+  size?: number
+}
+
+export type ServiceCatalogListParams = {
+  query?: string
+  groupId?: number
+  page?: number
+  size?: number
+}
+
+function resource<T, TPayload, TList = T>(path: string) {
   return {
     async list(params: ListParams = {}) {
-      const { data } = await http.get<PagedResponse<T>>(path, { params: { page: 0, size: 100, ...params } })
+      const { data } = await http.get<PagedResponse<TList>>(path, { params: { page: 0, size: 100, ...params } })
       return data
     },
     async find(id: number) {
@@ -52,7 +88,59 @@ export const api = {
       return data
     },
   },
-  clients: resource<Client, ClientPayload>('/clients'),
+  clients: {
+    ...resource<Client, ClientPayload, ClientListItem>('/clients'),
+    async statistics() {
+      const { data } = await http.get<ClientStatisticsResponse>('/clients/statistics')
+      return data
+    },
+  },
+  addresses: {
+    async findByCep(cep: string) {
+      const { data } = await http.get<CepAddressResponse>(`/addresses/cep/${cep}`)
+      return data
+    },
+  },
+  contracts: {
+    async list(params: ContractListParams = {}) {
+      const { data } = await http.get<PagedResponse<ContractListItem>>('/contracts', { params: { page: 0, size: 20, ...params } })
+      return data
+    },
+    async find(id: number) {
+      const { data } = await http.get<Contract>(`/contracts/${id}`)
+      return data
+    },
+    async byClient(clientId: number, params: Pick<ContractListParams, 'page' | 'size'> = {}) {
+      const { data } = await http.get<PagedResponse<Contract> | Contract[]>(`/clients/${clientId}/contracts`, { params: { page: 0, size: 20, ...params } })
+      if (!Array.isArray(data)) return data
+      return { content: data, total: data.length, page: 0, size: data.length, totalPages: data.length ? 1 : 0 }
+    },
+    async create(payload: ContractPayload) {
+      const { data } = await http.post<Contract>('/contracts', payload)
+      return data
+    },
+    async update(id: number, payload: ContractPayload) {
+      const { data } = await http.put<Contract>(`/contracts/${id}`, payload)
+      return data
+    },
+    async cancel(id: number, payload: CancelContractPayload) {
+      const { data } = await http.post<Contract>(`/contracts/${id}/cancel`, payload)
+      return data
+    },
+    async remove(id: number) {
+      await http.delete(`/contracts/${id}`)
+    },
+  },
+  serviceCatalog: {
+    async list(params: ServiceCatalogListParams = {}) {
+      const { data } = await http.get<PagedResponse<ServiceCatalogItem>>('/services', { params: { page: 0, size: 100, ...params } })
+      return data
+    },
+    async find(id: number) {
+      const { data } = await http.get<ServiceCatalogItem>(`/services/${id}`)
+      return data
+    },
+  },
   serviceOrders: resource<ServiceOrder, ServiceOrderPayload>('/service-orders'),
   invoices: resource<Invoice, InvoicePayload>('/invoices'),
   statements: resource<Statement, StatementPayload>('/statements'),
@@ -60,7 +148,10 @@ export const api = {
 }
 
 export const queryKeys = {
+  addresses: ['addresses'] as const,
   clients: ['clients'] as const,
+  contracts: ['contracts'] as const,
+  serviceCatalog: ['service-catalog'] as const,
   serviceOrders: ['service-orders'] as const,
   invoices: ['invoices'] as const,
   statements: ['statements'] as const,

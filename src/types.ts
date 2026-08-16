@@ -3,7 +3,6 @@ export type ISODateTime = string
 
 export type ClientKind = 'PESSOA_FISICA' | 'PESSOA_JURIDICA'
 export type ClientStatus = 'ATIVO' | 'ATENCAO' | 'INATIVO'
-export type DueDay = 'DIA_10' | 'DIA_20' | 'SOB_DEMANDA'
 export type Priority = 'NORMAL' | 'URGENTE'
 export type ServiceCategory = 'ELETRICA' | 'HIDRAULICA' | 'INSTALACAO' | 'VISITA_TECNICA' | 'SERVICOS_GERAIS'
 export type ServiceOrderStatus = 'ABERTA' | 'ENCAMINHADA' | 'AGENDADA' | 'EM_ATENDIMENTO' | 'FINALIZADA' | 'CANCELADA'
@@ -11,6 +10,10 @@ export type InvoiceStatus = 'PRONTA' | 'REVISAR' | 'EMITIDA' | 'CANCELADA'
 export type PaymentDocumentStatus = 'PENDENTE' | 'PRONTO' | 'REGISTRADO' | 'EMITIDO' | 'ENVIADO' | 'REVISAR'
 export type UserRole = 'ADMINISTRADOR' | 'OPERACAO' | 'FINANCEIRO'
 export type UserStatus = 'ATIVO' | 'INATIVO'
+export type ClientListSortBy = 'STATUS' | 'NAME' | 'SERVICE_ORDER_COUNT' | 'TOTAL_VALUE'
+export type ContractStatus = 'ATIVO' | 'CANCELADO'
+export type ContractListSortBy = 'CLIENT' | 'CONTRACT_DATE' | 'RENEWAL_DATE' | 'DUE_DAY' | 'ADHESION_FEE'
+export type SortDirection = 'ASC' | 'DESC'
 
 export interface PagedResponse<T> {
   content: T[]
@@ -18,6 +21,22 @@ export interface PagedResponse<T> {
   page: number
   size: number
   totalPages: number
+}
+
+export interface CepAddressResponse {
+  cep: string | null
+  logradouro: string | null
+  complemento: string | null
+  unidade: string | null
+  bairro: string | null
+  localidade: string | null
+  uf: string | null
+  estado: string | null
+  regiao: string | null
+  ibge: string | null
+  gia: string | null
+  ddd: string | null
+  siafi: string | null
 }
 
 export interface Client {
@@ -31,23 +50,23 @@ export interface Client {
   address: string | null
   contract: boolean
   status: ClientStatus
-  contractNumber?: string | null
-  plan?: string | null
-  dueDay?: DueDay | null
-  monthly?: number | null
-  hourValue?: number | null
-  extraMinuteValue?: number | null
-  usedHours?: number | null
-  contractedHours?: number | null
-  channel?: string | null
-  lastServiceAt?: ISODateTime | null
+  dsindic?: string | null
+  idindic?: number | null
+  dtcadas?: ISODateTime | null
+  idusuar?: number | null
   nmrazao?: string | null
   nmfanta?: string | null
-  nrcnpj?: string | null
-  nrcpf?: string | null
   nrtele1?: string | null
   nrtele2?: string | null
+  nrfax?: string | null
   dsemail?: string | null
+  flclien?: string | null
+  nrcnpj?: string | null
+  nrcpf?: string | null
+  nmcont1?: string | null
+  nrtelc1?: string | null
+  nmcont2?: string | null
+  nrtelc2?: string | null
   dsender?: string | null
   dscompl?: string | null
   dsbairr?: string | null
@@ -55,13 +74,180 @@ export interface Client {
   dsestad?: string | null
   nrcep?: string | null
   dsobser?: string | null
-  dsindic?: string | null
+  flaudit?: string | null
+  fliss?: string | null
+  vliss?: number | null
+  flinss?: string | null
+  vlinss?: number | null
+  idfunci?: number | null
   idtabel?: number | null
-  flclien?: string | null
   flstatu?: string | null
+  dtanive?: string | null
+  dtliber?: ISODateTime | null
+  idliber?: number | null
+  dsinscr?: string | null
+  nmcont3?: string | null
+  nrtelc3?: string | null
+  nmcont4?: string | null
+  nrtelc4?: string | null
+  dsponto?: string | null
+  dsusuario?: string | null
+  flenvio?: string | null
+  flaniv?: string | null
+  flenvioboleto?: string | null
+  flenvioextrato?: string | null
+  addresses?: ClientAddress[]
 }
 
-export type ClientPayload = Partial<Omit<Client, 'id'>>
+export interface ClientListItem {
+  id: number
+  name: string | null
+  document: string | null
+  kind: ClientKind
+  email: string | null
+  phone: string | null
+  city: string | null
+  contract: boolean
+  status: Exclude<ClientStatus, 'ATENCAO'>
+  serviceOrderCount: number
+  totalValue: number
+}
+
+export interface ClientStatisticsResponse {
+  total: number
+  active: number
+  inactive: number
+}
+
+export interface ClientAddress {
+  id: number
+  clientId: number | null
+  description: string | null
+  street: string | null
+  complement: string | null
+  district: string | null
+  city: string | null
+  state: string | null
+  zipCode: string | null
+  map: string | null
+  accountName: string | null
+  phone: string | null
+  reference: string | null
+}
+
+export interface ClientAddressPayload {
+  id?: number
+  description?: string | null
+  street?: string | null
+  complement?: string | null
+  district?: string | null
+  city?: string | null
+  state?: string | null
+  zipCode?: string | null
+  map?: string | null
+  accountName?: string | null
+  phone?: string | null
+  reference?: string | null
+}
+
+export type ClientPayload = Partial<Omit<Client, 'id' | 'name' | 'document' | 'kind' | 'email' | 'phone' | 'city' | 'address' | 'contract' | 'status' | 'addresses'>> & {
+  addresses?: ClientAddressPayload[] | null
+}
+
+export interface ServiceCatalogItem {
+  id: number
+  groupId?: number | null
+  description: string | null
+  defaultValue?: number | null
+  defaultPrice?: number | null
+  unit: string | null
+  minimumValue?: number | null
+}
+
+export interface ContractServiceItem {
+  sequence: number
+  serviceId: number
+  serviceName: string | null
+  serviceDescription?: string | null
+  unit: string | null
+  quantity: number
+  unitValue: number
+  totalValue: number
+  extraMinuteValue: number | null
+  bonusQuantity: number | null
+}
+
+export interface ContractServicePayload {
+  sequence?: number
+  serviceId: number
+  quantity: number
+  unitValue: number
+  extraMinuteValue?: number | null
+  bonusQuantity?: number | null
+}
+
+export interface Contract {
+  id: number
+  clientId: number
+  clientName: string | null
+  contractDate: ISODateTime | null
+  renewalDate: ISODateTime | null
+  adhesionFee: number | null
+  dueDay: number | null
+  gracePeriod: boolean
+  adjustmentIndexId: number | null
+  salePercentage: number | null
+  renewalPercentage: number | null
+  canceled: boolean
+  cancellationDate: ISODateTime | null
+  cancellationReason: string | null
+  employeeId: number | null
+  employeePercentage: number | null
+  supplierId: number | null
+  statusFlag: string | null
+  lastAdjustmentDate: ISODateTime | null
+  status: ContractStatus
+  services: ContractServiceItem[]
+}
+
+export interface ContractListItem {
+  id: number
+  clientId: number
+  clientName: string | null
+  contractDate: ISODateTime | null
+  renewalDate: ISODateTime | null
+  adhesionFee: number | null
+  dueDay: number | null
+  canceled: boolean
+  status: ContractStatus
+  serviceCount?: number | null
+}
+
+export interface ContractPayload {
+  clientId: number
+  contractDate: ISODateTime
+  renewalDate?: ISODateTime | null
+  adhesionFee?: number | null
+  dueDay?: number | null
+  gracePeriod: boolean
+  adjustmentIndexId?: number | null
+  salePercentage?: number | null
+  renewalPercentage?: number | null
+  canceled: boolean
+  cancellationDate?: ISODateTime | null
+  cancellationReason?: string | null
+  employeeId?: number | null
+  employeePercentage?: number | null
+  supplierId?: number | null
+  statusFlag?: string | null
+  lastAdjustmentDate?: ISODateTime | null
+  services: ContractServicePayload[]
+}
+
+export interface CancelContractPayload {
+  cancellationDate: ISODateTime
+  reason: string
+}
 
 export interface ServiceOrder {
   id: number

@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, FormEvent, ReactNode } from 'react'
-import { AlertTriangle, CheckCircle2, LoaderCircle, RefreshCw, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, LoaderCircle, RefreshCw, Trash2, X } from 'lucide-react'
 
 export function PageHeader({ eyebrow, title, subtitle, actions }: { eyebrow?: string; title: string; subtitle: string; actions?: ReactNode }) {
   return (
@@ -40,7 +40,7 @@ export function Badge({ children, tone = 'neutral' }: { children: ReactNode; ton
   return <span className={`badge badge--${tone}`}><i />{children}</span>
 }
 
-export function Modal({ open, onClose, title, description, children, size = 'medium' }: { open: boolean; onClose: () => void; title: string; description?: string; children: ReactNode; size?: 'medium' | 'large' }) {
+export function Modal({ open, onClose, title, description, children, size = 'medium' }: { open: boolean; onClose: () => void; title: string; description?: string; children: ReactNode; size?: 'medium' | 'large' | 'xlarge' }) {
   if (!open) return null
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -55,6 +55,15 @@ export function Modal({ open, onClose, title, description, children, size = 'med
         {children}
       </section>
     </div>
+  )
+}
+
+export function DetailModal({ open, onClose, title, description, children, actions, size = 'large' }: { open: boolean; onClose: () => void; title: string; description?: string; children: ReactNode; actions?: ReactNode; size?: 'medium' | 'large' | 'xlarge' }) {
+  return (
+    <Modal open={open} onClose={onClose} title={title} description={description} size={size}>
+      <div className="modal__body detail-modal__body">{children}</div>
+      {actions && <footer className="modal__footer detail-modal__footer">{actions}</footer>}
+    </Modal>
   )
 }
 
@@ -110,4 +119,19 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
 
 export function FormError({ message }: { message?: string }) {
   return message ? <div className="form-error" role="alert"><AlertTriangle size={16} /><span>{message}</span></div> : null
+}
+
+export function ConfirmDialog({ open, title, description, confirmLabel = 'Confirmar exclusão', busy = false, error, onConfirm, onCancel }: { open: boolean; title: string; description: string; confirmLabel?: string; busy?: boolean; error?: string; onConfirm: () => void; onCancel: () => void }) {
+  if (!open) return null
+  return (
+    <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !busy && onCancel()}>
+      <section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-description">
+        <button className="confirm-dialog__close" onClick={onCancel} disabled={busy} aria-label="Fechar"><X size={18} /></button>
+        <span className="confirm-dialog__icon"><Trash2 size={24} /></span>
+        <div className="confirm-dialog__copy"><span>Ação permanente</span><h2 id="confirm-dialog-title">{title}</h2><p id="confirm-dialog-description">{description}</p></div>
+        <FormError message={error} />
+        <footer><Button variant="secondary" onClick={onCancel} disabled={busy}>Cancelar</Button><Button variant="danger" icon={busy ? <LoaderCircle className="api-state__spinner" size={16} /> : <Trash2 size={16} />} onClick={onConfirm} disabled={busy}>{busy ? 'Excluindo...' : confirmLabel}</Button></footer>
+      </section>
+    </div>
+  )
 }

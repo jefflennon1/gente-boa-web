@@ -50,7 +50,7 @@ export function Login() {
       <section className="login-form-panel">
         <div className="login-mobile-brand"><span className="login-brand__mark">GB</span><span><strong>Gente Boa</strong><small>Gestão</small></span></div>
         <div className="login-card">
-          <div className="login-demo-notice"><ShieldCheck size={15} /> Ambiente integrado à API</div>
+          {/* <div className="login-demo-notice"><ShieldCheck size={15} /> Ambiente integrado à API</div> */}
           <header><span className="login-card__welcome">Bem-vinda de volta</span><h2>Acesse sua conta</h2><p>Entre com seu nome de usuário e senha.</p></header>
           <form onSubmit={submit}>
             <label className="login-field">
@@ -72,7 +72,7 @@ export function Login() {
             <div className="login-options"><label><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /><span>Manter conectado</span></label></div>
             <button className="login-submit" type="submit" disabled={loading}>{loading ? <><i />Validando acesso...</> : <>Entrar no sistema <ArrowRight size={18} /></>}</button>
           </form>
-          <div className="api-login-help"><strong>Primeiro acesso?</strong><span>Use o usuário administrador configurado no backend.</span></div>
+          {/* <div className="api-login-help"><strong>Primeiro acesso?</strong><span>Use o usuário administrador configurado no backend.</span></div> */}
           <footer>Gente Boa Manutenção e Serviços <span>•</span> Sistema de gestão</footer>
         </div>
       </section>

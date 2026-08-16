@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, CheckCircle2, ChevronRight, CircleDollarSign, FileCheck2, FilePlus2, Landmark, Plus, ReceiptText, Search, Send, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react'
+import { Check, CheckCircle2, ChevronRight, CircleDollarSign, Edit3, FileCheck2, FilePlus2, Landmark, Plus, ReceiptText, Search, Send, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money, toDateInput } from '../lib/format'
 import type { Invoice, InvoicePayload, InvoiceStatus } from '../types'
-import { Badge, Button, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
+import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 const steps = [
   { label: 'Fechamento', detail: 'Dados conferidos', icon: CheckCircle2 },
@@ -53,6 +53,8 @@ export function Invoices() {
   const [modalOpen, setModalOpen] = useState(false)
   const [emitModal, setEmitModal] = useState(false)
   const [selected, setSelected] = useState<Invoice | null>(null)
+  const [detail, setDetail] = useState<Invoice | null>(null)
+  const [invoiceToDelete, setInvoiceToDelete] = useState<Invoice | null>(null)
   const [toast, setToast] = useState('')
   const [formError, setFormError] = useState('')
   const debouncedSearch = useDebouncedValue(search)
@@ -66,6 +68,7 @@ export function Invoices() {
       await queryClient.invalidateQueries({ queryKey: queryKeys.invoices })
       setModalOpen(false)
       setSelected(null)
+      setDetail(null)
       showToast(variables.id ? 'Nota fiscal atualizada.' : 'Nota fiscal cadastrada.')
     },
     onError: (error) => setFormError(apiErrorMessage(error)),
@@ -86,11 +89,12 @@ export function Invoices() {
     mutationFn: (id: number) => api.invoices.remove(id),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.invoices })
+      setInvoiceToDelete(null)
       setModalOpen(false)
       setSelected(null)
       showToast('Nota fiscal removida.')
     },
-    onError: (error) => setFormError(apiErrorMessage(error)),
+    onError: (error) => { setInvoiceToDelete(null); showToast(apiErrorMessage(error)) },
   })
 
   const invoices = invoicesQuery.data?.content ?? []
@@ -111,6 +115,7 @@ export function Invoices() {
   }
 
   function openEdit(invoice: Invoice) {
+    setDetail(null)
     setSelected(invoice)
     setFormError('')
     setModalOpen(true)
@@ -177,19 +182,30 @@ export function Invoices() {
 
         {invoicesQuery.isLoading ? <LoadingState label="Carregando notas fiscais..." /> : invoicesQuery.isError ? <ErrorState message={apiErrorMessage(invoicesQuery.error)} onRetry={() => invoicesQuery.refetch()} /> : filtered.length === 0 ? <EmptyState title="Nenhuma nota encontrada" description="Altere os filtros ou cadastre uma nota fiscal." /> : (
           <div className="table-wrap"><table className="data-table invoice-table"><thead><tr><th className="check-column"><input type="checkbox" checked={readyInvoices.length > 0 && readyInvoices.every((invoice) => selectedIds.includes(invoice.id))} onChange={toggleAll} aria-label="Selecionar notas prontas" /></th><th>Nota / Cliente</th><th>Competência</th><th>Valor</th><th>ISSQN</th><th>Situação</th><th /></tr></thead><tbody>{filtered.map((invoice) => (
-            <tr key={invoice.id} className={selectedIds.includes(invoice.id) ? 'row-selected' : ''} onClick={() => openEdit(invoice)}>
+            <tr key={invoice.id} className={selectedIds.includes(invoice.id) ? 'row-selected' : ''} onClick={() => setDetail(invoice)}>
               <td className="check-column" onClick={(event) => event.stopPropagation()}><input type="checkbox" disabled={invoice.status !== 'PRONTA'} checked={selectedIds.includes(invoice.id)} onChange={() => setSelectedIds((ids) => ids.includes(invoice.id) ? ids.filter((id) => id !== invoice.id) : [...ids, invoice.id])} /></td>
               <td><strong>{invoiceCode(invoice)}</strong><small className="table-secondary">{invoice.clientName || 'Cliente não informado'} · {invoice.document || 'Sem documento'}</small></td>
               <td>{invoice.competence || 'Não informada'}<small className="table-secondary">{formatDate(invoice.issuedAt)}</small></td>
               <td><strong>{money(invoice.amount)}</strong></td>
               <td>{invoice.issRetained ? <Badge tone="purple">ISS retido</Badge> : <span>{money(invoice.tax)}</span>}</td>
               <td><Badge tone={invoice.status === 'PRONTA' ? 'green' : invoice.status === 'REVISAR' ? 'orange' : invoice.status === 'CANCELADA' ? 'red' : 'blue'}>{enumLabel(invoice.status)}</Badge></td>
-              <td><button className="row-action"><ChevronRight size={18} /></button></td>
+              <td><button className="row-action" aria-label={`Visualizar ${invoiceCode(invoice)}`}><ChevronRight size={18} /></button></td>
             </tr>
           ))}</tbody></table></div>
         )}
         <footer className="table-footer"><span><strong>{filtered.length}</strong> de {invoicesQuery.data?.total ?? 0} notas</span><span>Dados fiscais retornados pela API</span></footer>
       </section>
+
+      <DetailModal
+        open={Boolean(detail)}
+        onClose={() => setDetail(null)}
+        title={detail ? `${invoiceCode(detail)} · ${detail.clientName || 'Cliente não informado'}` : 'Detalhes da nota fiscal'}
+        description="Informações fiscais, valores, retenções e situação da nota."
+        size="large"
+        actions={detail ? <><Button variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending} onClick={() => setInvoiceToDelete(detail)}>Excluir</Button><Button icon={<Edit3 size={16} />} onClick={() => openEdit(detail)}>Editar nota</Button></> : undefined}
+      >
+        {detail && <InvoiceDetail invoice={detail} />}
+      </DetailModal>
 
       <Modal open={modalOpen} onClose={() => !saveMutation.isPending && setModalOpen(false)} title={selected ? `Editar ${invoiceCode(selected)}` : 'Cadastrar nota fiscal'} description="Campos alinhados ao modelo Invoice do backend." size="large">
         <ModalForm onSubmit={submit} onCancel={() => setModalOpen(false)} submitting={saveMutation.isPending} submitLabel={saveMutation.isPending ? 'Salvando...' : selected ? 'Salvar alterações' : 'Cadastrar nota'}>
@@ -214,7 +230,7 @@ export function Invoices() {
             <FormField label="Materiais"><input name="materialAmount" type="number" min="0" step="0.01" defaultValue={selected?.vlmater ?? 0} /></FormField>
           </div>
           <FormField label="Observações"><textarea name="notes" rows={3} defaultValue={selected?.dsobser ?? ''} /></FormField>
-          {selected && <div className="destructive-row"><span><strong>Excluir nota</strong><small>Remove definitivamente o registro da API.</small></span><Button type="button" variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending} onClick={() => window.confirm(`Excluir ${invoiceCode(selected)}?`) && deleteMutation.mutate(selected.id)}>Excluir</Button></div>}
+          {selected && <div className="destructive-row"><span><strong>Excluir nota</strong><small>Remove definitivamente o registro da API.</small></span><Button type="button" variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending} onClick={() => setInvoiceToDelete(selected)}>Excluir</Button></div>}
         </ModalForm>
       </Modal>
 
@@ -222,7 +238,21 @@ export function Invoices() {
         <div className="modal__body emission-summary"><FormError message={formError} /><span className="emission-summary__icon"><ShieldCheck size={25} /></span><div><strong>{readySelected.length} {readySelected.length === 1 ? 'nota pronta' : 'notas prontas'}</strong><small>Valor total de {money(readySelected.reduce((sum, invoice) => sum + Number(invoice.amount ?? 0), 0))}</small></div><ul>{readySelected.map((invoice) => <li key={invoice.id}><span>{invoice.clientName}</span><strong>{money(invoice.amount)}</strong></li>)}</ul></div>
         <footer className="modal__footer"><Button variant="secondary" onClick={() => setEmitModal(false)}>Voltar</Button><Button icon={<ReceiptText size={17} />} disabled={emitMutation.isPending} onClick={() => emitMutation.mutate(readySelected)}>{emitMutation.isPending ? 'Emitindo...' : 'Confirmar emissão'}</Button></footer>
       </Modal>
+      <ConfirmDialog open={Boolean(invoiceToDelete)} title={`Excluir ${invoiceToDelete ? invoiceCode(invoiceToDelete) : 'esta nota'}?`} description="A nota fiscal será removida permanentemente. Esta ação não poderá ser desfeita." confirmLabel="Excluir nota" busy={deleteMutation.isPending} onCancel={() => setInvoiceToDelete(null)} onConfirm={() => invoiceToDelete && !deleteMutation.isPending && deleteMutation.mutate(invoiceToDelete.id)} />
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
     </>
   )
+}
+
+function InvoiceDetail({ invoice }: { invoice: Invoice }) {
+  const tone = invoice.status === 'PRONTA' ? 'green' : invoice.status === 'REVISAR' ? 'orange' : invoice.status === 'CANCELADA' ? 'red' : 'blue'
+  return <div className="detail-modal-content">
+    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><ReceiptText /></span><div><span>{invoiceCode(invoice)}</span><h2>{invoice.clientName || 'Cliente não informado'}</h2><p>{invoice.document || 'Documento não informado'}</p></div></div><Badge tone={tone}>{enumLabel(invoice.status)}</Badge></div>
+    <div className="detail-metrics"><span><small>Competência</small><strong>{invoice.competence || 'Não informada'}</strong></span><span><small>Data de emissão</small><strong>{formatDate(invoice.issuedAt)}</strong></span><span><small>Valor total</small><strong>{money(invoice.amount)}</strong></span><span><small>ISSQN</small><strong>{money(invoice.tax)}</strong></span></div>
+    <div className="detail-sections-grid">
+      <section className="drawer-section"><h3>Dados fiscais</h3><dl><div><dt>Número da nota</dt><dd>{invoice.number || 'Não informado'}</dd></div><div><dt>Natureza da operação</dt><dd>{invoice.dsnatur || 'Não informada'}</dd></div><div><dt>Alíquota</dt><dd>{invoice.vlaliqu == null ? 'Não informada' : `${invoice.vlaliqu}%`}</dd></div><div><dt>ISS retido</dt><dd>{invoice.issRetained ? 'Sim' : 'Não'}</dd></div></dl></section>
+      <section className="drawer-section"><h3>Composição do valor</h3><dl><div><dt>Mão de obra</dt><dd>{money(invoice.vlmao)}</dd></div><div><dt>Materiais</dt><dd>{money(invoice.vlmater)}</dd></div><div><dt>Base de cálculo</dt><dd>{money(invoice.vlbasei)}</dd></div><div><dt>Valor do ISSQN</dt><dd>{money(invoice.tax)}</dd></div></dl></section>
+      {(invoice.dsender || invoice.dsobser) && <section className="drawer-section drawer-section--wide"><h3>Endereço e observações</h3>{invoice.dsender && <p className="drawer-section__text"><strong>Endereço:</strong> {invoice.dsender}</p>}{invoice.dsobser && <p className="drawer-section__text detail-text-spaced">{invoice.dsobser}</p>}</section>}
+    </div>
+  </div>
 }

@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowDownCircle, ArrowUpCircle, ChevronRight, Landmark, Plus, Search, Trash2, WalletCards } from 'lucide-react'
+import { ArrowDownCircle, ArrowUpCircle, ChevronRight, Edit3, Landmark, Plus, Search, Trash2, WalletCards } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { formatDate, money, toDateTimeInput } from '../lib/format'
 import type { Statement, StatementPayload } from '../types'
-import { Badge, Button, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
+import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 type FlowFilter = 'Todos' | 'Créditos' | 'Débitos'
 
@@ -27,6 +27,8 @@ export function Statements() {
   const [filter, setFilter] = useState<FlowFilter>('Todos')
   const [modalOpen, setModalOpen] = useState(false)
   const [selected, setSelected] = useState<Statement | null>(null)
+  const [detail, setDetail] = useState<Statement | null>(null)
+  const [statementToDelete, setStatementToDelete] = useState<Statement | null>(null)
   const [toast, setToast] = useState('')
   const [formError, setFormError] = useState('')
   const debouncedSearch = useDebouncedValue(search)
@@ -48,10 +50,12 @@ export function Statements() {
     mutationFn: (id: number) => api.statements.remove(id),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.statements })
+      setStatementToDelete(null)
       setModalOpen(false)
+      setDetail(null)
       showToast('Movimento removido.')
     },
-    onError: (error) => setFormError(apiErrorMessage(error)),
+    onError: (error) => { setStatementToDelete(null); showToast(apiErrorMessage(error)) },
   })
 
   const statements = statementsQuery.data?.content ?? []
@@ -72,6 +76,7 @@ export function Statements() {
   }
 
   function openEdit(statement: Statement) {
+    setDetail(null)
     setSelected(statement)
     setFormError('')
     setModalOpen(true)
@@ -120,7 +125,7 @@ export function Statements() {
 
         {statementsQuery.isLoading ? <LoadingState label="Carregando extratos..." /> : statementsQuery.isError ? <ErrorState message={apiErrorMessage(statementsQuery.error)} onRetry={() => statementsQuery.refetch()} /> : filtered.length === 0 ? <EmptyState title="Nenhum movimento encontrado" description="Altere os filtros ou registre um movimento." /> : (
           <div className="table-wrap"><table className="data-table statement-table"><thead><tr><th>Código / Descrição</th><th>Data</th><th>Banco</th><th>Agência / Conta</th><th>Créditos</th><th>Débitos</th><th>Saldo</th><th /></tr></thead><tbody>{filtered.map((statement) => (
-            <tr key={statement.id} onClick={() => openEdit(statement)}>
+            <tr key={statement.id} onClick={() => setDetail(statement)}>
               <td><strong>EXT-{statement.id}</strong><small className="table-secondary">{statement.clientName || 'Sem descrição'}</small></td>
               <td>{formatDate(statement.sentAt, true)}</td>
               <td>{statement.nrbanco || 'Não informado'}</td>
@@ -128,12 +133,23 @@ export function Statements() {
               <td><strong className="positive-value">{money(statement.qtcredi)}</strong></td>
               <td><strong className="negative-value">{money(statement.qtdebit)}</strong></td>
               <td><Badge tone={statement.amount >= 0 ? 'green' : 'red'}>{money(statement.amount)}</Badge></td>
-              <td><button className="row-action"><ChevronRight size={18} /></button></td>
+              <td><button className="row-action" aria-label={`Visualizar EXT-${statement.id}`}><ChevronRight size={18} /></button></td>
             </tr>
           ))}</tbody></table></div>
         )}
         <footer className="table-footer"><span><strong>{filtered.length}</strong> de {statementsQuery.data?.total ?? 0} movimentos</span><span>Saldo calculado pela API</span></footer>
       </section>
+
+      <DetailModal
+        open={Boolean(detail)}
+        onClose={() => setDetail(null)}
+        title={detail ? `Movimento EXT-${detail.id}` : 'Detalhes do movimento'}
+        description="Identificação bancária, composição financeira e saldo do registro."
+        size="large"
+        actions={detail ? <><Button variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending} onClick={() => setStatementToDelete(detail)}>Excluir</Button><Button icon={<Edit3 size={16} />} onClick={() => openEdit(detail)}>Editar movimento</Button></> : undefined}
+      >
+        {detail && <StatementDetail statement={detail} />}
+      </DetailModal>
 
       <Modal open={modalOpen} onClose={() => !saveMutation.isPending && setModalOpen(false)} title={selected ? `Editar EXT-${selected.id}` : 'Novo movimento'} description="Campos financeiros do modelo Statement." size="large">
         <ModalForm onSubmit={submit} onCancel={() => setModalOpen(false)} submitting={saveMutation.isPending} submitLabel={saveMutation.isPending ? 'Salvando...' : selected ? 'Salvar alterações' : 'Registrar movimento'}>
@@ -157,10 +173,22 @@ export function Statements() {
             <FormField label="Cheques"><input name="checks" type="number" min="0" step="0.01" defaultValue={selected?.qtchequ ?? 0} /></FormField>
             <FormField label="Outros"><input name="others" type="number" min="0" step="0.01" defaultValue={selected?.qtoutro ?? 0} /></FormField>
           </div>
-          {selected && <div className="destructive-row"><span><strong>Excluir movimento</strong><small>Remove definitivamente o registro da API.</small></span><Button type="button" variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending} onClick={() => window.confirm(`Excluir EXT-${selected.id}?`) && deleteMutation.mutate(selected.id)}>Excluir</Button></div>}
+          {selected && <div className="destructive-row"><span><strong>Excluir movimento</strong><small>Remove definitivamente o registro da API.</small></span><Button type="button" variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending} onClick={() => setStatementToDelete(selected)}>Excluir</Button></div>}
         </ModalForm>
       </Modal>
+      <ConfirmDialog open={Boolean(statementToDelete)} title={`Excluir EXT-${statementToDelete?.id}?`} description="O movimento financeiro será removido permanentemente. Esta ação não poderá ser desfeita." confirmLabel="Excluir movimento" busy={deleteMutation.isPending} onCancel={() => setStatementToDelete(null)} onConfirm={() => statementToDelete && !deleteMutation.isPending && deleteMutation.mutate(statementToDelete.id)} />
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
     </>
   )
+}
+
+function StatementDetail({ statement }: { statement: Statement }) {
+  return <div className="detail-modal-content">
+    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><Landmark /></span><div><span>EXT-{statement.id}</span><h2>{statement.clientName || 'Movimento sem descrição'}</h2><p>{formatDate(statement.sentAt, true)}</p></div></div><Badge tone={statement.amount >= 0 ? 'green' : 'red'}>{money(statement.amount)}</Badge></div>
+    <div className="detail-metrics"><span><small>Saldo inicial</small><strong>{money(statement.vlinici)}</strong></span><span><small>Créditos</small><strong className="positive-value">{money(statement.qtcredi)}</strong></span><span><small>Débitos</small><strong className="negative-value">{money(statement.qtdebit)}</strong></span><span><small>Saldo movimentado</small><strong>{money(statement.amount)}</strong></span></div>
+    <div className="detail-sections-grid">
+      <section className="drawer-section"><h3>Dados bancários</h3><dl><div><dt>Banco</dt><dd>{statement.nrbanco || 'Não informado'}</dd></div><div><dt>Agência</dt><dd>{statement.nragenc || 'Não informada'}</dd></div><div><dt>Conta</dt><dd>{statement.nrconta || 'Não informada'}</dd></div><div><dt>Data do movimento</dt><dd>{formatDate(statement.sentAt, true)}</dd></div></dl></section>
+      <section className="drawer-section"><h3>Meios de movimentação</h3><dl><div><dt>Boletos</dt><dd>{money(statement.qtbolet)}</dd></div><div><dt>Depósitos</dt><dd>{money(statement.qtdepos)}</dd></div><div><dt>Transferências</dt><dd>{money(statement.qttrans)}</dd></div><div><dt>Resgates</dt><dd>{money(statement.qtresga)}</dd></div><div><dt>Cheques</dt><dd>{money(statement.qtchequ)}</dd></div><div><dt>Outros</dt><dd>{money(statement.qtoutro)}</dd></div></dl></section>
+    </div>
+  </div>
 }

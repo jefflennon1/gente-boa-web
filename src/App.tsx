@@ -7,6 +7,7 @@ import { useRouter } from './router'
 const pages = {
   '/': lazy(() => import('./pages/Dashboard').then((module) => ({ default: module.Dashboard }))),
   '/clientes': lazy(() => import('./pages/Clients').then((module) => ({ default: module.Clients }))),
+  '/contratos': lazy(() => import('./pages/Contracts').then((module) => ({ default: module.Contracts }))),
   '/ordens-de-servico': lazy(() => import('./pages/ServiceOrders').then((module) => ({ default: module.ServiceOrders }))),
   '/notas-fiscais': lazy(() => import('./pages/Invoices').then((module) => ({ default: module.Invoices }))),
   '/extratos': lazy(() => import('./pages/Statements').then((module) => ({ default: module.Statements }))),

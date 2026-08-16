@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ChevronRight, Clock3, KeyRound, Mail, Plus, Search, ShieldCheck, Trash2, UserCheck, UserCog } from 'lucide-react'
+import { Check, ChevronRight, Clock3, Edit3, KeyRound, Mail, Plus, Search, ShieldCheck, Trash2, UserCheck, UserCog } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useAuth } from '../auth'
 import { enumLabel, formatDate, initials } from '../lib/format'
 import type { AppUser, CreateUserPayload, UpdateUserPayload, UserRole, UserStatus } from '../types'
-import { Badge, Button, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
+import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 const permissionOptions = ['Dashboard', 'Clientes', 'Ordens de servico', 'Financeiro', 'Notas fiscais', 'Relatorios', 'Usuarios']
 
@@ -28,6 +28,8 @@ export function Users() {
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [selected, setSelected] = useState<AppUser | null>(null)
+  const [detail, setDetail] = useState<AppUser | null>(null)
+  const [userToDelete, setUserToDelete] = useState<AppUser | null>(null)
   const [toast, setToast] = useState('')
   const [formError, setFormError] = useState('')
 
@@ -49,6 +51,7 @@ export function Users() {
     onSuccess: async (updated) => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.users })
       setModalOpen(false)
+      setDetail((current) => current ? updated : null)
       showToast(`${updated.name} agora está ${enumLabel(updated.status).toLowerCase()}.`)
     },
     onError: (error) => setFormError(apiErrorMessage(error)),
@@ -58,10 +61,12 @@ export function Users() {
     mutationFn: (id: number) => api.users.remove(id),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.users })
+      setUserToDelete(null)
       setModalOpen(false)
+      setDetail(null)
       showToast('Usuário removido.')
     },
-    onError: (error) => setFormError(apiErrorMessage(error)),
+    onError: (error) => { setUserToDelete(null); showToast(apiErrorMessage(error)) },
   })
 
   const users = usersQuery.data?.content ?? []
@@ -79,6 +84,7 @@ export function Users() {
   }
 
   function openEdit(user: AppUser) {
+    setDetail(null)
     setSelected(user)
     setFormError('')
     setModalOpen(true)
@@ -119,18 +125,29 @@ export function Users() {
 
         {usersQuery.isLoading ? <LoadingState label="Carregando usuários..." /> : usersQuery.isError ? <ErrorState message={apiErrorMessage(usersQuery.error)} onRetry={() => usersQuery.refetch()} /> : filtered.length === 0 ? <EmptyState title="Nenhum usuário encontrado" description="Altere a busca ou cadastre um usuário." /> : (
           <div className="user-list">{filtered.map((user) => (
-            <article key={user.id}>
+            <article key={user.id} onClick={() => setDetail(user)}>
               <span className={`user-avatar user-avatar--${user.id % 4}`}>{user.initials || initials(user.name)}</span>
               <div className="user-identity"><strong>{user.name}{user.id === currentUser?.id && <small>Você</small>}</strong><span><Mail size={13} />{user.email}</span></div>
               <div className="user-role"><small>Perfil</small><strong>{enumLabel(user.role)}</strong></div>
               <div className="user-permissions"><small>Acessos</small><span>{(user.permissions || []).slice(0, 3).map((permission) => <i key={permission}>{permission}</i>)}{(user.permissions || []).length > 3 && <b>+{user.permissions.length - 3}</b>}</span></div>
               <div className="user-access"><Badge tone={user.status === 'ATIVO' ? 'green' : 'neutral'}>{enumLabel(user.status)}</Badge><small>{user.lastAccessAt ? formatDate(user.lastAccessAt, true) : 'Sem registro de acesso'}</small></div>
-              <button className="row-action" onClick={() => openEdit(user)} aria-label={`Editar ${user.name}`}><ChevronRight size={18} /></button>
+              <button className="row-action" aria-label={`Visualizar ${user.name}`}><ChevronRight size={18} /></button>
             </article>
           ))}</div>
         )}
         <footer className="table-footer"><span><strong>{filtered.length}</strong> de {usersQuery.data?.total ?? 0} usuários</span><span>Endpoint protegido por perfil administrador</span></footer>
       </section>
+
+      <DetailModal
+        open={Boolean(detail)}
+        onClose={() => setDetail(null)}
+        title={detail ? `Usuário #${detail.id} · ${detail.name}` : 'Detalhes do usuário'}
+        description="Identificação, perfil, acessos e situação da conta."
+        size="large"
+        actions={detail ? <><Button variant={detail.status === 'ATIVO' ? 'danger' : 'secondary'} disabled={statusMutation.isPending || detail.id === currentUser?.id} onClick={() => statusMutation.mutate({ user: detail, status: detail.status === 'ATIVO' ? 'INATIVO' : 'ATIVO' })}>{detail.status === 'ATIVO' ? 'Desativar acesso' : 'Reativar acesso'}</Button><Button variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending || detail.id === currentUser?.id} onClick={() => setUserToDelete(detail)}>Excluir</Button><Button icon={<Edit3 size={16} />} onClick={() => openEdit(detail)}>Editar usuário</Button></> : undefined}
+      >
+        {detail && <UserDetail user={detail} current={detail.id === currentUser?.id} />}
+      </DetailModal>
 
       <Modal open={modalOpen} onClose={() => !saveMutation.isPending && setModalOpen(false)} title={selected ? 'Editar usuário' : 'Adicionar usuário'} description="Conta criada diretamente no backend." size="large">
         <ModalForm onSubmit={submit} onCancel={() => setModalOpen(false)} submitting={saveMutation.isPending} submitLabel={saveMutation.isPending ? 'Salvando...' : selected ? 'Salvar alterações' : 'Criar usuário'}>
@@ -145,10 +162,21 @@ export function Users() {
           </div>
           <div className="form-section-title"><span>2</span><div><strong>Permissões de acesso</strong><small>Valores enviados no campo permissions</small></div></div>
           <div className="permission-grid">{permissionOptions.map((permission) => <label key={permission} className="permission-option"><input type="checkbox" name="permissions" value={permission} defaultChecked={selected ? (selected.permissions || []).includes(permission) : ['Dashboard', 'Clientes', 'Ordens de servico'].includes(permission)} /><span><i><Check size={15} /></i><strong>{permission}</strong><small>Acessar e gerenciar este módulo</small></span></label>)}</div>
-          {selected && <div className="user-modal-actions"><span><strong>Ações de segurança</strong><small>Altere o status ou remova a conta.</small></span><Button type="button" variant={selected.status === 'ATIVO' ? 'danger' : 'secondary'} disabled={statusMutation.isPending || selected.id === currentUser?.id} onClick={() => statusMutation.mutate({ user: selected, status: selected.status === 'ATIVO' ? 'INATIVO' : 'ATIVO' })}>{selected.status === 'ATIVO' ? 'Desativar acesso' : 'Reativar acesso'}</Button><Button type="button" variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending || selected.id === currentUser?.id} onClick={() => window.confirm(`Excluir o usuário ${selected.name}?`) && deleteMutation.mutate(selected.id)}>Excluir</Button></div>}
+          {selected && <div className="user-modal-actions"><span><strong>Ações de segurança</strong><small>Altere o status ou remova a conta.</small></span><Button type="button" variant={selected.status === 'ATIVO' ? 'danger' : 'secondary'} disabled={statusMutation.isPending || selected.id === currentUser?.id} onClick={() => statusMutation.mutate({ user: selected, status: selected.status === 'ATIVO' ? 'INATIVO' : 'ATIVO' })}>{selected.status === 'ATIVO' ? 'Desativar acesso' : 'Reativar acesso'}</Button><Button type="button" variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending || selected.id === currentUser?.id} onClick={() => setUserToDelete(selected)}>Excluir</Button></div>}
         </ModalForm>
       </Modal>
+      <ConfirmDialog open={Boolean(userToDelete)} title={`Excluir ${userToDelete?.name || 'este usuário'}?`} description="A conta será removida permanentemente e perderá o acesso ao sistema. Esta ação não poderá ser desfeita." confirmLabel="Excluir usuário" busy={deleteMutation.isPending} onCancel={() => setUserToDelete(null)} onConfirm={() => userToDelete && !deleteMutation.isPending && deleteMutation.mutate(userToDelete.id)} />
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
     </>
   )
+}
+
+function UserDetail({ user, current }: { user: AppUser; current: boolean }) {
+  return <div className="detail-modal-content">
+    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className={`user-avatar user-avatar--${user.id % 4}`}>{user.initials || initials(user.name)}</span><div><span>Usuário #{user.id}{current ? ' · sua conta' : ''}</span><h2>{user.name}</h2><p>{user.email}</p></div></div><Badge tone={user.status === 'ATIVO' ? 'green' : 'neutral'}>{enumLabel(user.status)}</Badge></div>
+    <div className="detail-metrics"><span><small>Perfil</small><strong>{enumLabel(user.role)}</strong></span><span><small>Situação</small><strong>{enumLabel(user.status)}</strong></span><span><small>Último acesso</small><strong>{user.lastAccessAt ? formatDate(user.lastAccessAt, true) : 'Sem registro'}</strong></span><span><small>Total de permissões</small><strong>{user.permissions?.length ?? 0}</strong></span></div>
+    <div className="detail-sections-grid">
+      <section className="drawer-section drawer-section--wide"><h3>Permissões de acesso</h3>{(user.permissions?.length ?? 0) === 0 ? <p className="drawer-section__text">Nenhuma permissão configurada.</p> : <div className="detail-permission-list">{user.permissions.map((permission) => <span key={permission}><Check size={14} />{permission}</span>)}</div>}</section>
+    </div>
+  </div>
 }

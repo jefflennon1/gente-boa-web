@@ -34,6 +34,8 @@ O corpo enviado para autenticação segue o contrato `{ "login": "usuario", "pas
 
 - `/api/auth/login` e `/api/auth/me`
 - `/api/clients`
+- `/api/contracts` e `/api/clients/{id}/contracts`
+- `/api/services` — catálogo usado nos itens do contrato
 - `/api/service-orders`
 - `/api/invoices`
 - `/api/statements`
@@ -41,7 +43,25 @@ O corpo enviado para autenticação segue o contrato `{ "login": "usuario", "pas
 
 As listagens atuais aceitam no máximo 100 itens por chamada. Dashboard e relatórios consolidam os dados retornados por essas listagens; quando o volume crescer, o backend deverá oferecer endpoints agregados ou paginação completa para os indicadores.
 
+### Listagem de clientes
+
+A tela de clientes consome a paginação real de `GET /api/clients` e aceita:
+
+- `query`: nome, CPF ou CNPJ
+- `status`: `ATIVO` ou `INATIVO`
+- `sortBy`: `STATUS`, `NAME`, `SERVICE_ORDER_COUNT` ou `TOTAL_VALUE`
+- `direction`: `ASC` ou `DESC`
+- `page` e `size`
+
+Sem ordenação explícita, o backend retorna clientes ativos primeiro e usa o nome como desempate. A listagem usa `ClientListResponse`; ao abrir ou editar uma linha, o frontend consulta `GET /api/clients/{id}` para carregar o cadastro completo.
+
 Os campos transientes e limitações de persistência encontrados durante a integração estão detalhados em [`BACKEND-INTEGRATION-NOTES.md`](./BACKEND-INTEGRATION-NOTES.md).
+
+### Contratos
+
+A tela de contratos usa `GET /api/contracts` com `query`, `status`, `sortBy`, `direction`, `page` e `size`. O CRUD usa `POST /api/contracts`, `GET/PUT/DELETE /api/contracts/{id}` e `POST /api/contracts/{id}/cancel`. O detalhe inclui a lista `services`, formada pelo catálogo de `/api/services` e pelos itens persistidos em `tbcontratoservico`.
+
+Na ficha de cada cliente, `GET /api/clients/{id}/contracts` carrega o histórico contratual sem usar `idtabel` como substituto de contrato.
 
 ## Configuração em produção
 

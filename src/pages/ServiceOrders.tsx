@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarDays, CheckCircle2, ChevronRight, CircleAlert, Clock3, Columns3, List, MapPin, Plus, Search, Trash2, UserRound, Wrench } from 'lucide-react'
+import { CalendarDays, CheckCircle2, ChevronRight, CircleAlert, Clock3, Columns3, Edit3, List, MapPin, Plus, Search, Trash2, UserRound, Wrench } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money, toDateInput } from '../lib/format'
 import type { Priority, ServiceCategory, ServiceOrder, ServiceOrderPayload, ServiceOrderStatus } from '../types'
-import { Badge, Button, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
+import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 const stages: ServiceOrderStatus[] = ['ABERTA', 'ENCAMINHADA', 'AGENDADA', 'EM_ATENDIMENTO', 'FINALIZADA', 'CANCELADA']
 const flowStages: ServiceOrderStatus[] = stages.filter((status) => status !== 'CANCELADA')
@@ -56,6 +56,8 @@ export function ServiceOrders() {
   const [date, setDate] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [selected, setSelected] = useState<ServiceOrder | null>(null)
+  const [detail, setDetail] = useState<ServiceOrder | null>(null)
+  const [orderToDelete, setOrderToDelete] = useState<ServiceOrder | null>(null)
   const [toast, setToast] = useState('')
   const [formError, setFormError] = useState('')
   const debouncedSearch = useDebouncedValue(search)
@@ -90,10 +92,12 @@ export function ServiceOrders() {
     mutationFn: (id: number) => api.serviceOrders.remove(id),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.serviceOrders })
+      setOrderToDelete(null)
       setModalOpen(false)
+      setDetail(null)
       showToast('Ordem de serviço removida.')
     },
-    onError: (error) => setFormError(apiErrorMessage(error)),
+    onError: (error) => { setOrderToDelete(null); showToast(apiErrorMessage(error)) },
   })
 
   const orders = ordersQuery.data?.content ?? []
@@ -116,6 +120,7 @@ export function ServiceOrders() {
   }
 
   function openEdit(order: ServiceOrder) {
+    setDetail(null)
     setSelected(order)
     setFormError('')
     setModalOpen(true)
@@ -192,7 +197,7 @@ export function ServiceOrders() {
             {stages.map((stage) => {
               const stageOrders = filtered.filter((order) => order.status === stage)
               return <section className={`kanban-column kanban-column--${stage.toLowerCase()}`} key={stage}><header><span><i />{enumLabel(stage)}</span><b>{stageOrders.length}</b></header><div className="kanban-column__body">
-                {stageOrders.map((order) => <article className="os-card" key={order.id} onClick={() => openEdit(order)}>
+                {stageOrders.map((order) => <article className="os-card" key={order.id} onClick={() => setDetail(order)}>
                   <div className="os-card__top"><span>OS-{order.id}</span>{order.priority === 'URGENTE' && <Badge tone="red">Urgente</Badge>}</div>
                   <h3>{order.clientName || order.client?.name || 'Cliente não identificado'}</h3><p>{order.description || `Serviço ${order.service || 'não informado'}`}</p>
                   <div className="os-meta"><span><Clock3 size={14} />{order.scheduledTime?.slice(0, 5) || 'Sem hora'}</span><span><UserRound size={14} />{order.technician ? `ID ${order.technician}` : 'Sem técnico'}</span><span><MapPin size={14} />{order.location || 'Sem local'}</span></div>
@@ -203,10 +208,21 @@ export function ServiceOrders() {
             })}
           </div>
         ) : (
-          <div className="table-wrap"><table className="data-table os-table"><thead><tr><th>OS / Cliente</th><th>Serviço</th><th>Agenda</th><th>Técnico</th><th>Valor</th><th>Status</th><th /></tr></thead><tbody>{filtered.map((order) => <tr key={order.id} onClick={() => openEdit(order)}><td><strong>OS-{order.id}</strong><small className="table-secondary">{order.clientName || order.client?.name || 'Cliente não identificado'}</small></td><td><strong className="table-primary">{order.description || order.service || 'Não informado'}</strong><small className="table-secondary">{enumLabel(order.category)}</small></td><td>{order.scheduledTime?.slice(0, 5) || 'Sem hora'}<small className="table-secondary">{formatDate(order.scheduledDate)}</small></td><td>{order.technician ? `ID ${order.technician}` : 'Não atribuído'}</td><td>{money(order.vlcobra)}</td><td><Badge tone={statusTone[order.status]}>{enumLabel(order.status)}</Badge></td><td><button className="row-action"><ChevronRight size={18} /></button></td></tr>)}</tbody></table></div>
+          <div className="table-wrap"><table className="data-table os-table"><thead><tr><th>OS / Cliente</th><th>Serviço</th><th>Agenda</th><th>Técnico</th><th>Valor</th><th>Status</th><th /></tr></thead><tbody>{filtered.map((order) => <tr key={order.id} onClick={() => setDetail(order)}><td><strong>OS-{order.id}</strong><small className="table-secondary">{order.clientName || order.client?.name || 'Cliente não identificado'}</small></td><td><strong className="table-primary">{order.description || order.service || 'Não informado'}</strong><small className="table-secondary">{enumLabel(order.category)}</small></td><td>{order.scheduledTime?.slice(0, 5) || 'Sem hora'}<small className="table-secondary">{formatDate(order.scheduledDate)}</small></td><td>{order.technician ? `ID ${order.technician}` : 'Não atribuído'}</td><td>{money(order.vlcobra)}</td><td><Badge tone={statusTone[order.status]}>{enumLabel(order.status)}</Badge></td><td><button className="row-action" aria-label={`Visualizar OS-${order.id}`}><ChevronRight size={18} /></button></td></tr>)}</tbody></table></div>
         )}
         <footer className="table-footer"><span>Mostrando <strong>{filtered.length}</strong> de {ordersQuery.data?.total ?? 0} ordens</span><button className="table-link" onClick={() => setDate('')}>Limpar data</button></footer>
       </section>
+
+      <DetailModal
+        open={Boolean(detail)}
+        onClose={() => setDetail(null)}
+        title={detail ? `Ordem de serviço OS-${detail.id}` : 'Detalhes da ordem de serviço'}
+        description="Dados do atendimento, agenda, execução e valores registrados."
+        size="large"
+        actions={detail ? <><Button variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending} onClick={() => setOrderToDelete(detail)}>Excluir</Button>{!['FINALIZADA', 'CANCELADA'].includes(detail.status) && <Button variant="secondary" icon={<ChevronRight size={16} />} disabled={advanceMutation.isPending} onClick={() => { advance(detail); setDetail(null) }}>Avançar etapa</Button>}<Button icon={<Edit3 size={16} />} onClick={() => openEdit(detail)}>Editar OS</Button></> : undefined}
+      >
+        {detail && <ServiceOrderDetail order={detail} />}
+      </DetailModal>
 
       <Modal open={modalOpen} onClose={() => !saveMutation.isPending && setModalOpen(false)} title={selected ? `Editar OS-${selected.id}` : 'Nova ordem de serviço'} description="Campos alinhados ao modelo ServiceOrder do backend." size="large">
         <ModalForm onSubmit={submit} onCancel={() => setModalOpen(false)} submitting={saveMutation.isPending} submitLabel={saveMutation.isPending ? 'Salvando...' : selected ? 'Salvar alterações' : 'Criar ordem'}>
@@ -235,10 +251,23 @@ export function ServiceOrders() {
             <FormField label="Material"><input name="materialAmount" type="number" min="0" step="0.01" defaultValue={selected?.vlmater ?? 0} /></FormField>
             <FormField label="Valor da hora"><input name="hourAmount" type="number" min="0" step="0.01" defaultValue={selected?.vlhorar ?? 0} /></FormField>
           </div>
-          {selected && <div className="destructive-row"><span><strong>Excluir ordem</strong><small>Esta ação remove o registro da API.</small></span><Button type="button" variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending} onClick={() => window.confirm(`Excluir OS-${selected.id}?`) && deleteMutation.mutate(selected.id)}>Excluir</Button></div>}
+          {selected && <div className="destructive-row"><span><strong>Excluir ordem</strong><small>Esta ação remove o registro da API.</small></span><Button type="button" variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending} onClick={() => setOrderToDelete(selected)}>Excluir</Button></div>}
         </ModalForm>
       </Modal>
+      <ConfirmDialog open={Boolean(orderToDelete)} title={`Excluir OS-${orderToDelete?.id}?`} description="A ordem de serviço será removida permanentemente. Esta ação não poderá ser desfeita." confirmLabel="Excluir ordem" busy={deleteMutation.isPending} onCancel={() => setOrderToDelete(null)} onConfirm={() => orderToDelete && !deleteMutation.isPending && deleteMutation.mutate(orderToDelete.id)} />
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
     </>
   )
+}
+
+function ServiceOrderDetail({ order }: { order: ServiceOrder }) {
+  return <div className="detail-modal-content">
+    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><Wrench /></span><div><span>OS-{order.id}</span><h2>{order.clientName || order.client?.name || 'Cliente não identificado'}</h2><p>{order.description || 'Descrição não informada'}</p></div></div><Badge tone={statusTone[order.status]}>{enumLabel(order.status)}</Badge></div>
+    <div className="detail-metrics"><span><small>Data agendada</small><strong>{formatDate(order.scheduledDate)}</strong></span><span><small>Horário</small><strong>{order.scheduledTime?.slice(0, 5) || 'Não informado'}</strong></span><span><small>Prioridade</small><strong>{enumLabel(order.priority || 'NORMAL')}</strong></span><span><small>Valor cobrado</small><strong>{money(order.vlcobra)}</strong></span></div>
+    <div className="detail-sections-grid">
+      <section className="drawer-section"><h3>Atendimento</h3><dl><div><dt>Cliente</dt><dd>{order.clientName || order.client?.name || 'Não informado'}</dd></div><div><dt>Solicitante</dt><dd>{order.nmsolic || 'Não informado'}</dd></div><div><dt>Categoria</dt><dd>{enumLabel(order.category)}</dd></div><div><dt>Código do serviço</dt><dd>{order.service || 'Não informado'}</dd></div></dl></section>
+      <section className="drawer-section"><h3>Execução</h3><dl><div><dt>Técnico / operador</dt><dd>{order.technician || order.idopera || 'Não atribuído'}</dd></div><div><dt>Local</dt><dd>{order.location || order.idlocal || 'Não informado'}</dd></div><div><dt>Valor de material</dt><dd>{money(order.vlmater)}</dd></div><div><dt>Valor da hora</dt><dd>{money(order.vlhorar)}</dd></div></dl></section>
+      {(order.description || order.dsobser) && <section className="drawer-section drawer-section--wide"><h3>Descrição e observações</h3>{order.description && <p className="drawer-section__text">{order.description}</p>}{order.dsobser && <p className="drawer-section__text detail-text-spaced">{order.dsobser}</p>}</section>}
+    </div>
+  </div>
 }
