@@ -9,6 +9,5 @@ dist/
 .review-*.png
 .tmp-*/
 .wrangler/
-*.tsbuildinfogit 
-.env.example
+*.tsbuildinfo
 BACKEND-INTEGRATION-NOTES.md

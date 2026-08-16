@@ -1,0 +1,14 @@
+name: gente-boa
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gente-boa-web:latest
+    container_name: gente-boa-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3000}:80"
+    environment:
+      API_URL: "${API_URL:?Defina API_URL no arquivo .env}"

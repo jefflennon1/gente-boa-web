@@ -2,7 +2,7 @@ import axios, { AxiosError } from 'axios'
 import type { ApiProblem } from '../types'
 import { clearStoredToken, getStoredToken } from './storage'
 
-const configuredUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080/api'
+const configuredUrl = window.__GENTE_BOA_CONFIG__?.apiUrl || import.meta.env.VITE_API_URL || 'http://localhost:8080/api'
 
 export const API_BASE_URL = configuredUrl.replace(/\/+$/, '')
 export const AUTH_EXPIRED_EVENT = 'gente-boa:auth-expired'

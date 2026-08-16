@@ -1,0 +1,14 @@
+node_modules
+dist
+.git
+.gitignore
+.wrangler
+.chrome-*
+.review-*.png
+.tmp-*
+*.log
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+DEPLOY-CLOUDFLARE.md

@@ -9,7 +9,7 @@ Frontend do ERP Gente Boa, construído com React, TypeScript e Vite e integrado 
 - Axios para o cliente HTTP
 - TanStack Query para cache, estados assíncronos e invalidação após CRUD
 - Recharts e Lucide React
-- Cloudflare Workers para hospedagem do frontend
+- Nginx e Docker para entrega do build de produção
 
 ## Executar localmente
 
@@ -65,13 +65,30 @@ Na ficha de cada cliente, `GET /api/clients/{id}/contracts` carrega o histórico
 
 ## Configuração em produção
 
-Defina `VITE_API_URL` no ambiente de build da Cloudflare com a URL HTTPS pública do backend, por exemplo:
+Fora do Docker, defina `VITE_API_URL` durante o build com a URL HTTPS pública do backend, por exemplo:
 
 ```text
 VITE_API_URL=https://api.seudominio.com/api
 ```
 
 O backend precisa liberar no CORS o domínio do frontend publicado. Atualmente o `SecurityConfig` permite apenas `http://localhost:5173` e `http://127.0.0.1:5173`, portanto uma implantação web não conseguirá chamar a API até essa origem ser adicionada.
+
+### Docker e Hostinger
+
+A imagem Docker usa configuração em tempo de execução. Informe `API_URL` ao iniciar o container:
+
+```bash
+docker build -t gente-boa-web:latest .
+docker run -d --name gente-boa-web --restart unless-stopped -p 3000:80 -e API_URL=https://api.seudominio.com/api gente-boa-web:latest
+```
+
+Também é possível copiar `.env.example` para `.env`, ajustar `API_URL` e executar:
+
+```bash
+docker compose up -d --build
+```
+
+O roteiro completo de publicação, atualização, domínio, HTTPS e health check está em [`DEPLOY-HOSTINGER.md`](./DEPLOY-HOSTINGER.md).
 
 ## Validação
 
