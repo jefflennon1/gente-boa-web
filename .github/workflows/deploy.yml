@@ -1,0 +1,42 @@
+name: Deploy to Hostinger
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  deploy-producao:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Deploy to Hostinger (Produção)
+        uses: hostinger/deploy-action@v1
+        with:
+          api-key: ${{ secrets.HOSTINGER_API_KEY }}
+          virtual-machine: ${{ vars.HOSTINGER_VM_ID }}
+          project-name: gente-boa-web-prod
+          docker-compose-path: compose.yaml
+          environment-variables: |
+            API_URL=http://93.127.211.234:8080
+            WEB_PORT=3000
+
+  deploy-homologacao:
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Deploy to Hostinger (Homologação)
+        uses: hostinger/deploy-action@v1
+        with:
+          api-key: ${{ secrets.HOSTINGER_API_KEY }}
+          virtual-machine: ${{ vars.HOSTINGER_VM_ID }}
+          project-name: gente-boa-web-homolog
+          docker-compose-path: compose.yaml
+          environment-variables: |
+            API_URL=http://93.127.211.234:8081
+            WEB_PORT=3001
