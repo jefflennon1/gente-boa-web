@@ -1,3 +1,4 @@
+name: gente-boa-web-prod
 services:
   web:
     build:
