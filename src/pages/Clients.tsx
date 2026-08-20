@@ -491,7 +491,7 @@ export function Clients() {
             <FormField label="Fone do contato 4"><input name="nrtelc4" maxLength={50} defaultValue={selected?.nrtelc4 ?? ''} /></FormField>
           </div>
 
-          <div className="form-section-title form-section-title--with-action"><span>3</span><div><strong>Endereços do cliente</strong><small>Endereço de cobrança principal e locais adicionais</small></div><button type="button" className="section-add-button" onClick={() => setAdditionalAddresses((addresses) => [...addresses, emptyClientAddressRow()])}><Plus size={15} />Adicionar endereço</button></div>
+          {/* <div className="form-section-title form-section-title--with-action"><span>3</span><div><strong>Endereços do cliente</strong><small>Endereço de cobrança principal e locais adicionais</small></div><button type="button" className="section-add-button" onClick={() => setAdditionalAddresses((addresses) => [...addresses, emptyClientAddressRow()])}><Plus size={15} />Adicionar endereço</button></div> */}
           <div className="primary-address-label"><strong>Endereço de cobrança principal</strong><small>Utilizado no cadastro principal do cliente</small></div>
           {cepLookupValue && cepQuery.isError && <FormError message={apiErrorMessage(cepQuery.error)} />}
           <div className="form-grid form-grid--two">
@@ -503,7 +503,7 @@ export function Clients() {
             <FormField label="UF"><input name="dsestad" maxLength={2} autoComplete="address-level1" value={addressFields.dsestad} onChange={(event) => updateAddressField('dsestad', event.target.value.toUpperCase())} /></FormField>
             <FormField label="Ponto de referência"><input name="dsponto" maxLength={200} value={addressFields.dsponto} onChange={(event) => updateAddressField('dsponto', event.target.value)} /></FormField>
           </div>
-
+{/* 
           {additionalAddresses.length === 0 ? <div className="additional-addresses-empty"><FileSignature size={18} /><span>Nenhum endereço adicional. Clique em “Adicionar endereço” para incluir um local.</span></div> : <div className="additional-address-list">{additionalAddresses.map((address, index) => <article className="additional-address-card" key={address.key}>
             <header><div><span>Endereço adicional {index + 1}</span><strong>{address.description || 'Novo local'}{address.id != null ? ` · código #${address.id}` : ''}</strong></div><button type="button" onClick={() => setAdditionalAddresses((addresses) => addresses.filter((item) => item.key !== address.key))} aria-label={`Remover endereço adicional ${index + 1}`}><Trash2 size={16} /></button></header>
             {address.cepError && <FormError message={address.cepError} />}
@@ -520,7 +520,7 @@ export function Clients() {
               <FormField label="Mapa"><input maxLength={50} value={address.map} onChange={(event) => updateAdditionalAddress(address.key, { map: event.target.value })} placeholder="Código ou referência do mapa" /></FormField>
               <FormField label="Ponto de referência"><textarea rows={2} maxLength={300} value={address.reference} onChange={(event) => updateAdditionalAddress(address.key, { reference: event.target.value })} /></FormField>
             </div>
-          </article>)}</div>}
+          </article>)}</div>} */}
 
           <div className="form-section-title"><span>4</span><div><strong>Tributação</strong><small>Auditoria e retenções do cadastro legado</small></div></div>
           <div className="form-grid form-grid--three">
@@ -551,7 +551,7 @@ export function Clients() {
       <DetailModal
         open={detailId !== null}
         onClose={() => setDetailId(null)}
-        title={detailQuery.data ? `Cliente #${detailQuery.data.id} · ${detailQuery.data.name || 'Sem nome'}` : 'Detalhes do cliente'}
+        title={detailQuery.data ? `Cliente #${detailQuery.data.id} · ${detailQuery.data.name || detailQuery.data.nmfanta}` : 'Detalhes do cliente'}
         description="Cadastro completo, contatos, endereço, preferências e histórico contratual."
         size="xlarge"
         actions={detailQuery.data ? <><Button variant="danger" icon={<Trash2 size={17} />} disabled={deleteMutation.isPending} onClick={() => setClientToDelete(detailQuery.data)}>Excluir</Button><Button icon={<Edit3 size={17} />} onClick={() => openEdit(detailQuery.data)}>Editar cadastro</Button></> : undefined}
@@ -582,7 +582,9 @@ function ClientDetail({ client }: { client: Client }) {
   })
 
   return <div className="detail-modal-content">
-    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><Building2 /></span><div><span>Cliente #{client.id}</span><h2>{client.name || 'Sem nome'}</h2><p>{client.document || 'Documento não informado'}</p></div></div><Badge tone={client.status === 'ATIVO' ? 'green' : 'neutral'}>{enumLabel(client.status)}</Badge></div>
+    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><Building2 /></span><div><span>Cliente #{client.id}</span>
+      
+    <h2>{client.nmfanta || client.name ||'Sem nome'}</h2><p>{client.document || 'Documento não informado'}</p></div></div></div>
     <div className="detail-metrics"><span><small>Tipo de pessoa</small><strong>{enumLabel(client.kind)}</strong></span><span><small>Fantasia / Apelido</small><strong>{client.nmfanta || 'Não informado'}</strong></span><span><small>Data de cadastro</small><strong>{formatDate(client.dtcadas, true)}</strong></span><span><small>Usuário responsável</small><strong>{client.dsusuario || 'Não informado'}</strong></span></div>
     <div className="detail-sections-grid">
     <section className="drawer-section"><h3>Documentos e contato principal</h3><dl>
@@ -618,7 +620,7 @@ function ClientDetail({ client }: { client: Client }) {
       <div><dt>Envio de extrato</dt><dd>{client.flenvioextrato || 'Não informado'}</dd></div>
       <div><dt>Comunicações habilitadas</dt><dd>{yesNo(client.flenvio)}</dd></div>
     </dl></section>
-    <section className="drawer-section drawer-section--wide"><div className="drawer-section__heading"><h3>Locais e endereços adicionais</h3><span>{client.addresses?.length ?? 0}</span></div>
+    {/* <section className="drawer-section drawer-section--wide"><div className="drawer-section__heading"><h3>Locais e endereços adicionais</h3><span>{client.addresses?.length ?? 0}</span></div>
       {(client.addresses?.length ?? 0) === 0 ? <p className="drawer-section__text">Nenhum endereço adicional vinculado a este cliente.</p> : <div className="client-address-detail-list">{client.addresses?.map((address, index) => <article key={address.id}>
         <header><span className="client-address-detail-list__number">{index + 1}</span><div><strong>{address.description || `Endereço ${index + 1}`}</strong><small>Código #{address.id}</small></div></header>
         <p>{[address.street, address.complement, address.district].filter(Boolean).join(' · ') || 'Endereço não informado'}</p>
@@ -630,7 +632,7 @@ function ClientDetail({ client }: { client: Client }) {
         </div>
         {(address.reference || address.map) && <footer>{address.reference && <span><small>Referência</small><strong>{address.reference}</strong></span>}{address.map && <span><small>Mapa</small><strong>{address.map}</strong></span>}</footer>}
       </article>)}</div>}
-    </section>
+    </section> */}
     {client.dsobser && <section className="drawer-section drawer-section--wide"><h3>Observações</h3><p className="drawer-section__text">{client.dsobser}</p></section>}
     <section className="drawer-section drawer-section--contract drawer-section--wide"><h3>Contratos</h3>
       {contractsQuery.isLoading ? <p className="drawer-section__text">Consultando histórico...</p> : contractsQuery.isError ? <p className="drawer-section__text">Não foi possível consultar os contratos deste cliente.</p> : (contractsQuery.data?.content.length ?? 0) === 0 ? <p className="drawer-section__text">Nenhum contrato cadastrado para este cliente.</p> : <div className="client-contract-history">{contractsQuery.data?.content.map((contract) => <article key={contract.id}><span><strong>Contrato #{contract.id}</strong><small>{formatDate(contract.contractDate)} · renovação {formatDate(contract.renewalDate)}</small></span><Badge tone={contract.status === 'ATIVO' ? 'green' : 'neutral'}>{enumLabel(contract.status)}</Badge></article>)}</div>}
