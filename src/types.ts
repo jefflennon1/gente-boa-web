@@ -102,6 +102,7 @@ export interface Client {
 export interface ClientListItem {
   id: number
   name: string | null
+  tradeName: string | null
   document: string | null
   kind: ClientKind
   email: string | null

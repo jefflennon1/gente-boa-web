@@ -69,7 +69,7 @@ function clientAddressRowFrom(address: ClientAddress): ClientAddressRow {
 
 const sortOptions: { value: '' | ClientListSortBy; label: string }[] = [
   { value: '', label: 'Ativos primeiro' },
-  { value: 'NAME', label: 'Ordem alfabética' },
+  { value: 'NAME', label: 'Razão social' },
   { value: 'STATUS', label: 'Situação cadastral' },
   { value: 'SERVICE_ORDER_COUNT', label: 'Quantidade de OS' },
   { value: 'TOTAL_VALUE', label: 'Valor das OS' },
@@ -416,7 +416,7 @@ export function Clients() {
 
       <section className="panel data-panel">
         <div className="data-toolbar data-toolbar--clients">
-          <div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); resetPage() }} placeholder="Buscar por nome, CPF ou CNPJ..." /></div>
+          <div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); resetPage() }} placeholder="Buscar por código, nome, nome fantasia, CPF ou CNPJ..." /></div>
           <div className="segmented-control" aria-label="Filtrar situação">{(['TODOS', 'ATIVO', 'INATIVO'] as const).map((item) => <button key={item} className={statusFilter === item ? 'active' : ''} onClick={() => { setStatusFilter(item); resetPage() }}>{item === 'TODOS' ? 'Todos' : item === 'ATIVO' ? 'Ativos' : 'Inativos'}</button>)}</div>
           <label className="toolbar-select"><span>Ordenar por</span><select value={sortBy} onChange={(event) => { setSortBy(event.target.value as '' | ClientListSortBy); resetPage() }}>{sortOptions.map((option) => <option key={option.value || 'default'} value={option.value}>{option.label}</option>)}</select></label>
           <label className="toolbar-select toolbar-select--compact"><span>Direção</span><select value={direction} disabled={!sortBy} onChange={(event) => { setDirection(event.target.value as SortDirection); resetPage() }}><option value="ASC">Crescente</option><option value="DESC">Decrescente</option></select></label>
@@ -425,16 +425,16 @@ export function Clients() {
         {clientsQuery.isLoading ? <LoadingState label="Carregando clientes..." /> : clientsQuery.isError ? <ErrorState message={apiErrorMessage(clientsQuery.error)} onRetry={() => clientsQuery.refetch()} /> : clients.length === 0 ? <EmptyState title="Nenhum cliente encontrado" description="Altere os filtros ou cadastre um novo cliente." /> : (
           <div className={`table-wrap ${clientsQuery.isFetching ? 'table-wrap--refreshing' : ''}`}>
             <table className="data-table clients-table">
-              <thead><tr><th>Cliente</th><th>Contato</th><th>Cidade</th><th>Contrato</th><th>Ordens de serviço</th><th>Valor das OS</th><th>Situação</th><th /></tr></thead>
+              <thead><tr><th>Nome fantasia</th><th>Razão social</th><th>Contato</th><th>Cidade</th><th>Contrato</th><th>Ordens de serviço</th><th>Valor das OS</th><th /></tr></thead>
               <tbody>{clients.map((client) => <tr key={client.id} onClick={() => setDetailId(client.id)}>
-                <td><div className="entity-cell"><span className="entity-avatar"><Building2 size={18} /></span><span><strong>{client.name || 'Sem nome'}</strong><small>#{client.id} · {client.document || 'Documento não informado'} · {enumLabel(client.kind)}</small></span></div></td>
+                <td><div className="entity-cell"><span className="entity-avatar"><Building2 size={18} /></span><span><strong>{client.tradeName || 'Não informado'}</strong><small>Código #{client.id}</small></span></div></td>
+                <td><strong className="table-primary">{client.name || 'Sem razão social'}</strong><small className="table-secondary">{client.document || 'Documento não informado'} · {enumLabel(client.kind)}</small></td>
                 <td><strong className="table-primary">{client.phone || 'Sem telefone'}</strong><small className="table-secondary">{client.email || 'Sem e-mail'}</small></td>
                 <td>{client.city || 'Não informada'}</td>
                 <td>{client.contract ? <Badge tone="blue">Contratado</Badge> : <span className="muted">Avulso</span>}</td>
                 <td><strong>{client.serviceOrderCount.toLocaleString('pt-BR')}</strong></td>
                 <td><strong>{money(client.totalValue)}</strong></td>
-                <td><Badge tone={client.status === 'ATIVO' ? 'green' : 'neutral'}>{enumLabel(client.status)}</Badge></td>
-                <td><button className="row-action" onClick={(event) => { event.stopPropagation(); setDetailId(client.id) }} aria-label={`Abrir ${client.name}`}><ChevronRight size={18} /></button></td>
+                <td><button className="row-action" onClick={(event) => { event.stopPropagation(); setDetailId(client.id) }} aria-label={`Abrir ${client.tradeName || client.name || `cliente #${client.id}`}`}><ChevronRight size={18} /></button></td>
               </tr>)}</tbody>
             </table>
           </div>

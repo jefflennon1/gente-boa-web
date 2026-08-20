@@ -47,7 +47,7 @@ As listagens atuais aceitam no máximo 100 itens por chamada. Dashboard e relat�
 
 A tela de clientes consome a paginação real de `GET /api/clients` e aceita:
 
-- `query`: nome, CPF ou CNPJ
+- `query`: código (ID), nome, nome fantasia, CPF ou CNPJ
 - `status`: `ATIVO` ou `INATIVO`
 - `sortBy`: `STATUS`, `NAME`, `SERVICE_ORDER_COUNT` ou `TOTAL_VALUE`
 - `direction`: `ASC` ou `DESC`
