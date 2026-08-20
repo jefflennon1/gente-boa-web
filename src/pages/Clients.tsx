@@ -526,7 +526,7 @@ export function Clients() {
           <div className="form-grid form-grid--three">
             <FormField label="Auditado"><select name="flaudit" defaultValue={flagIsOn(selected?.flaudit) ? '1' : '0'}><option value="0">Não</option><option value="1">Sim</option></select></FormField>
             <FormField label="Retém ISS"><select name="fliss" defaultValue={flagIsOn(selected?.fliss) ? '1' : '0'}><option value="0">Não</option><option value="1">Sim</option></select></FormField>
-            <FormField label="Valor / alíquota de ISS"><input name="vliss" type="number" min="0" step="0.01" defaultValue={selected?.vliss ?? ''} /></FormField>
+            <FormField label="Valor / alíquota de ISS %"><input name="vliss" type="number" min="0" step="0.01" defaultValue={selected?.vliss ?? ''} /></FormField>
             <FormField label="Retém INSS"><select name="flinss" defaultValue={flagIsOn(selected?.flinss) ? '1' : '0'}><option value="0">Não</option><option value="1">Sim</option></select></FormField>
             <FormField label="Valor / alíquota de INSS"><input name="vlinss" type="number" min="0" step="0.01" defaultValue={selected?.vlinss ?? ''} /></FormField>
           </div>
