@@ -102,6 +102,7 @@ export interface Client {
 export interface ClientListItem {
   id: number
   name: string | null
+  tradeName: string | null
   document: string | null
   kind: ClientKind
   email: string | null
@@ -190,6 +191,7 @@ export interface Contract {
   id: number
   clientId: number
   clientName: string | null
+  clientTradeName: string | null
   contractDate: ISODateTime | null
   renewalDate: ISODateTime | null
   adhesionFee: number | null
@@ -214,6 +216,7 @@ export interface ContractListItem {
   id: number
   clientId: number
   clientName: string | null
+  clientTradeName: string | null
   contractDate: ISODateTime | null
   renewalDate: ISODateTime | null
   adhesionFee: number | null

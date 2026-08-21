@@ -110,6 +110,10 @@ export const api = {
       const { data } = await http.get<Contract>(`/contracts/${id}`)
       return data
     },
+    async document(id: number) {
+      const { data } = await http.get<Blob>(`/contracts/${id}/document`, { responseType: 'blob' })
+      return data
+    },
     async byClient(clientId: number, params: Pick<ContractListParams, 'page' | 'size'> = {}) {
       const { data } = await http.get<PagedResponse<Contract> | Contract[]>(`/clients/${clientId}/contracts`, { params: { page: 0, size: 20, ...params } })
       if (!Array.isArray(data)) return data

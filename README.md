@@ -47,7 +47,7 @@ As listagens atuais aceitam no máximo 100 itens por chamada. Dashboard e relat�
 
 A tela de clientes consome a paginação real de `GET /api/clients` e aceita:
 
-- `query`: nome, CPF ou CNPJ
+- `query`: código (ID), nome, nome fantasia, CPF ou CNPJ
 - `status`: `ATIVO` ou `INATIVO`
 - `sortBy`: `STATUS`, `NAME`, `SERVICE_ORDER_COUNT` ou `TOTAL_VALUE`
 - `direction`: `ASC` ou `DESC`
@@ -59,7 +59,7 @@ Os campos transientes e limitações de persistência encontrados durante a inte
 
 ### Contratos
 
-A tela de contratos usa `GET /api/contracts` com `query`, `status`, `sortBy`, `direction`, `page` e `size`. O CRUD usa `POST /api/contracts`, `GET/PUT/DELETE /api/contracts/{id}` e `POST /api/contracts/{id}/cancel`. O detalhe inclui a lista `services`, formada pelo catálogo de `/api/services` e pelos itens persistidos em `tbcontratoservico`.
+A tela de contratos usa `GET /api/contracts` com `query`, `status`, `sortBy`, `direction`, `page` e `size`. A busca por `query` considera razão social, nome fantasia, código do cliente e código do contrato. O CRUD usa `POST /api/contracts`, `GET/PUT/DELETE /api/contracts/{id}` e `POST /api/contracts/{id}/cancel`. O detalhe inclui a lista `services`, formada pelo catálogo de `/api/services` e pelos itens persistidos em `tbcontratoservico`.
 
 Na ficha de cada cliente, `GET /api/clients/{id}/contracts` carrega o histórico contratual sem usar `idtabel` como substituto de contrato.
 

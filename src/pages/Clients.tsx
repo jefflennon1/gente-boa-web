@@ -69,7 +69,7 @@ function clientAddressRowFrom(address: ClientAddress): ClientAddressRow {
 
 const sortOptions: { value: '' | ClientListSortBy; label: string }[] = [
   { value: '', label: 'Ativos primeiro' },
-  { value: 'NAME', label: 'Ordem alfabética' },
+  { value: 'NAME', label: 'Razão social' },
   { value: 'STATUS', label: 'Situação cadastral' },
   { value: 'SERVICE_ORDER_COUNT', label: 'Quantidade de OS' },
   { value: 'TOTAL_VALUE', label: 'Valor das OS' },
@@ -416,7 +416,7 @@ export function Clients() {
 
       <section className="panel data-panel">
         <div className="data-toolbar data-toolbar--clients">
-          <div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); resetPage() }} placeholder="Buscar por nome, CPF ou CNPJ..." /></div>
+          <div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); resetPage() }} placeholder="Buscar por código, nome, nome fantasia, CPF ou CNPJ..." /></div>
           <div className="segmented-control" aria-label="Filtrar situação">{(['TODOS', 'ATIVO', 'INATIVO'] as const).map((item) => <button key={item} className={statusFilter === item ? 'active' : ''} onClick={() => { setStatusFilter(item); resetPage() }}>{item === 'TODOS' ? 'Todos' : item === 'ATIVO' ? 'Ativos' : 'Inativos'}</button>)}</div>
           <label className="toolbar-select"><span>Ordenar por</span><select value={sortBy} onChange={(event) => { setSortBy(event.target.value as '' | ClientListSortBy); resetPage() }}>{sortOptions.map((option) => <option key={option.value || 'default'} value={option.value}>{option.label}</option>)}</select></label>
           <label className="toolbar-select toolbar-select--compact"><span>Direção</span><select value={direction} disabled={!sortBy} onChange={(event) => { setDirection(event.target.value as SortDirection); resetPage() }}><option value="ASC">Crescente</option><option value="DESC">Decrescente</option></select></label>
@@ -425,16 +425,16 @@ export function Clients() {
         {clientsQuery.isLoading ? <LoadingState label="Carregando clientes..." /> : clientsQuery.isError ? <ErrorState message={apiErrorMessage(clientsQuery.error)} onRetry={() => clientsQuery.refetch()} /> : clients.length === 0 ? <EmptyState title="Nenhum cliente encontrado" description="Altere os filtros ou cadastre um novo cliente." /> : (
           <div className={`table-wrap ${clientsQuery.isFetching ? 'table-wrap--refreshing' : ''}`}>
             <table className="data-table clients-table">
-              <thead><tr><th>Cliente</th><th>Contato</th><th>Cidade</th><th>Contrato</th><th>Ordens de serviço</th><th>Valor das OS</th><th>Situação</th><th /></tr></thead>
+              <thead><tr><th>Nome fantasia</th><th>Razão social</th><th>Contato</th><th>Cidade</th><th>Contrato</th><th>Ordens de serviço</th><th>Valor das OS</th><th /></tr></thead>
               <tbody>{clients.map((client) => <tr key={client.id} onClick={() => setDetailId(client.id)}>
-                <td><div className="entity-cell"><span className="entity-avatar"><Building2 size={18} /></span><span><strong>{client.name || 'Sem nome'}</strong><small>#{client.id} · {client.document || 'Documento não informado'} · {enumLabel(client.kind)}</small></span></div></td>
+                <td><div className="entity-cell"><span className="entity-avatar"><Building2 size={18} /></span><span><strong>{client.tradeName || 'Não informado'}</strong><small>Código #{client.id}</small></span></div></td>
+                <td><strong className="table-primary">{client.name || 'Sem razão social'}</strong><small className="table-secondary">{client.document || 'Documento não informado'} · {enumLabel(client.kind)}</small></td>
                 <td><strong className="table-primary">{client.phone || 'Sem telefone'}</strong><small className="table-secondary">{client.email || 'Sem e-mail'}</small></td>
                 <td>{client.city || 'Não informada'}</td>
                 <td>{client.contract ? <Badge tone="blue">Contratado</Badge> : <span className="muted">Avulso</span>}</td>
                 <td><strong>{client.serviceOrderCount.toLocaleString('pt-BR')}</strong></td>
                 <td><strong>{money(client.totalValue)}</strong></td>
-                <td><Badge tone={client.status === 'ATIVO' ? 'green' : 'neutral'}>{enumLabel(client.status)}</Badge></td>
-                <td><button className="row-action" onClick={(event) => { event.stopPropagation(); setDetailId(client.id) }} aria-label={`Abrir ${client.name}`}><ChevronRight size={18} /></button></td>
+                <td><button className="row-action" onClick={(event) => { event.stopPropagation(); setDetailId(client.id) }} aria-label={`Abrir ${client.tradeName || client.name || `cliente #${client.id}`}`}><ChevronRight size={18} /></button></td>
               </tr>)}</tbody>
             </table>
           </div>
@@ -491,7 +491,7 @@ export function Clients() {
             <FormField label="Fone do contato 4"><input name="nrtelc4" maxLength={50} defaultValue={selected?.nrtelc4 ?? ''} /></FormField>
           </div>
 
-          <div className="form-section-title form-section-title--with-action"><span>3</span><div><strong>Endereços do cliente</strong><small>Endereço de cobrança principal e locais adicionais</small></div><button type="button" className="section-add-button" onClick={() => setAdditionalAddresses((addresses) => [...addresses, emptyClientAddressRow()])}><Plus size={15} />Adicionar endereço</button></div>
+          {/* <div className="form-section-title form-section-title--with-action"><span>3</span><div><strong>Endereços do cliente</strong><small>Endereço de cobrança principal e locais adicionais</small></div><button type="button" className="section-add-button" onClick={() => setAdditionalAddresses((addresses) => [...addresses, emptyClientAddressRow()])}><Plus size={15} />Adicionar endereço</button></div> */}
           <div className="primary-address-label"><strong>Endereço de cobrança principal</strong><small>Utilizado no cadastro principal do cliente</small></div>
           {cepLookupValue && cepQuery.isError && <FormError message={apiErrorMessage(cepQuery.error)} />}
           <div className="form-grid form-grid--two">
@@ -503,7 +503,7 @@ export function Clients() {
             <FormField label="UF"><input name="dsestad" maxLength={2} autoComplete="address-level1" value={addressFields.dsestad} onChange={(event) => updateAddressField('dsestad', event.target.value.toUpperCase())} /></FormField>
             <FormField label="Ponto de referência"><input name="dsponto" maxLength={200} value={addressFields.dsponto} onChange={(event) => updateAddressField('dsponto', event.target.value)} /></FormField>
           </div>
-
+{/* 
           {additionalAddresses.length === 0 ? <div className="additional-addresses-empty"><FileSignature size={18} /><span>Nenhum endereço adicional. Clique em “Adicionar endereço” para incluir um local.</span></div> : <div className="additional-address-list">{additionalAddresses.map((address, index) => <article className="additional-address-card" key={address.key}>
             <header><div><span>Endereço adicional {index + 1}</span><strong>{address.description || 'Novo local'}{address.id != null ? ` · código #${address.id}` : ''}</strong></div><button type="button" onClick={() => setAdditionalAddresses((addresses) => addresses.filter((item) => item.key !== address.key))} aria-label={`Remover endereço adicional ${index + 1}`}><Trash2 size={16} /></button></header>
             {address.cepError && <FormError message={address.cepError} />}
@@ -520,13 +520,13 @@ export function Clients() {
               <FormField label="Mapa"><input maxLength={50} value={address.map} onChange={(event) => updateAdditionalAddress(address.key, { map: event.target.value })} placeholder="Código ou referência do mapa" /></FormField>
               <FormField label="Ponto de referência"><textarea rows={2} maxLength={300} value={address.reference} onChange={(event) => updateAdditionalAddress(address.key, { reference: event.target.value })} /></FormField>
             </div>
-          </article>)}</div>}
+          </article>)}</div>} */}
 
           <div className="form-section-title"><span>4</span><div><strong>Tributação</strong><small>Auditoria e retenções do cadastro legado</small></div></div>
           <div className="form-grid form-grid--three">
             <FormField label="Auditado"><select name="flaudit" defaultValue={flagIsOn(selected?.flaudit) ? '1' : '0'}><option value="0">Não</option><option value="1">Sim</option></select></FormField>
             <FormField label="Retém ISS"><select name="fliss" defaultValue={flagIsOn(selected?.fliss) ? '1' : '0'}><option value="0">Não</option><option value="1">Sim</option></select></FormField>
-            <FormField label="Valor / alíquota de ISS"><input name="vliss" type="number" min="0" step="0.01" defaultValue={selected?.vliss ?? ''} /></FormField>
+            <FormField label="Valor / alíquota de ISS %"><input name="vliss" type="number" min="0" step="0.01" defaultValue={selected?.vliss ?? ''} /></FormField>
             <FormField label="Retém INSS"><select name="flinss" defaultValue={flagIsOn(selected?.flinss) ? '1' : '0'}><option value="0">Não</option><option value="1">Sim</option></select></FormField>
             <FormField label="Valor / alíquota de INSS"><input name="vlinss" type="number" min="0" step="0.01" defaultValue={selected?.vlinss ?? ''} /></FormField>
           </div>
@@ -551,7 +551,7 @@ export function Clients() {
       <DetailModal
         open={detailId !== null}
         onClose={() => setDetailId(null)}
-        title={detailQuery.data ? `Cliente #${detailQuery.data.id} · ${detailQuery.data.name || 'Sem nome'}` : 'Detalhes do cliente'}
+        title={detailQuery.data ? `Cliente #${detailQuery.data.id} · ${detailQuery.data.name || detailQuery.data.nmfanta}` : 'Detalhes do cliente'}
         description="Cadastro completo, contatos, endereço, preferências e histórico contratual."
         size="xlarge"
         actions={detailQuery.data ? <><Button variant="danger" icon={<Trash2 size={17} />} disabled={deleteMutation.isPending} onClick={() => setClientToDelete(detailQuery.data)}>Excluir</Button><Button icon={<Edit3 size={17} />} onClick={() => openEdit(detailQuery.data)}>Editar cadastro</Button></> : undefined}
@@ -582,7 +582,9 @@ function ClientDetail({ client }: { client: Client }) {
   })
 
   return <div className="detail-modal-content">
-    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><Building2 /></span><div><span>Cliente #{client.id}</span><h2>{client.name || 'Sem nome'}</h2><p>{client.document || 'Documento não informado'}</p></div></div><Badge tone={client.status === 'ATIVO' ? 'green' : 'neutral'}>{enumLabel(client.status)}</Badge></div>
+    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><Building2 /></span><div><span>Cliente #{client.id}</span>
+      
+    <h2>{client.nmfanta || client.name ||'Sem nome'}</h2><p>{client.document || 'Documento não informado'}</p></div></div></div>
     <div className="detail-metrics"><span><small>Tipo de pessoa</small><strong>{enumLabel(client.kind)}</strong></span><span><small>Fantasia / Apelido</small><strong>{client.nmfanta || 'Não informado'}</strong></span><span><small>Data de cadastro</small><strong>{formatDate(client.dtcadas, true)}</strong></span><span><small>Usuário responsável</small><strong>{client.dsusuario || 'Não informado'}</strong></span></div>
     <div className="detail-sections-grid">
     <section className="drawer-section"><h3>Documentos e contato principal</h3><dl>
@@ -618,7 +620,7 @@ function ClientDetail({ client }: { client: Client }) {
       <div><dt>Envio de extrato</dt><dd>{client.flenvioextrato || 'Não informado'}</dd></div>
       <div><dt>Comunicações habilitadas</dt><dd>{yesNo(client.flenvio)}</dd></div>
     </dl></section>
-    <section className="drawer-section drawer-section--wide"><div className="drawer-section__heading"><h3>Locais e endereços adicionais</h3><span>{client.addresses?.length ?? 0}</span></div>
+    {/* <section className="drawer-section drawer-section--wide"><div className="drawer-section__heading"><h3>Locais e endereços adicionais</h3><span>{client.addresses?.length ?? 0}</span></div>
       {(client.addresses?.length ?? 0) === 0 ? <p className="drawer-section__text">Nenhum endereço adicional vinculado a este cliente.</p> : <div className="client-address-detail-list">{client.addresses?.map((address, index) => <article key={address.id}>
         <header><span className="client-address-detail-list__number">{index + 1}</span><div><strong>{address.description || `Endereço ${index + 1}`}</strong><small>Código #{address.id}</small></div></header>
         <p>{[address.street, address.complement, address.district].filter(Boolean).join(' · ') || 'Endereço não informado'}</p>
@@ -630,7 +632,7 @@ function ClientDetail({ client }: { client: Client }) {
         </div>
         {(address.reference || address.map) && <footer>{address.reference && <span><small>Referência</small><strong>{address.reference}</strong></span>}{address.map && <span><small>Mapa</small><strong>{address.map}</strong></span>}</footer>}
       </article>)}</div>}
-    </section>
+    </section> */}
     {client.dsobser && <section className="drawer-section drawer-section--wide"><h3>Observações</h3><p className="drawer-section__text">{client.dsobser}</p></section>}
     <section className="drawer-section drawer-section--contract drawer-section--wide"><h3>Contratos</h3>
       {contractsQuery.isLoading ? <p className="drawer-section__text">Consultando histórico...</p> : contractsQuery.isError ? <p className="drawer-section__text">Não foi possível consultar os contratos deste cliente.</p> : (contractsQuery.data?.content.length ?? 0) === 0 ? <p className="drawer-section__text">Nenhum contrato cadastrado para este cliente.</p> : <div className="client-contract-history">{contractsQuery.data?.content.map((contract) => <article key={contract.id}><span><strong>Contrato #{contract.id}</strong><small>{formatDate(contract.contractDate)} · renovação {formatDate(contract.renewalDate)}</small></span><Badge tone={contract.status === 'ATIVO' ? 'green' : 'neutral'}>{enumLabel(contract.status)}</Badge></article>)}</div>}

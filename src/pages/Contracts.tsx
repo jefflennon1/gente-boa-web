@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Ban, Building2, ChevronLeft, ChevronRight, CircleDollarSign, Edit3, FileSignature, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
+import { Ban, Building2, ChevronLeft, ChevronRight, CircleDollarSign, Download, Edit3, ExternalLink, FileSignature, Plus, Printer, RefreshCw, Search, Trash2, X } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useRouter } from '../router'
@@ -87,6 +87,9 @@ export function Contracts() {
   const [selected, setSelected] = useState<Contract | null>(null)
   const [serviceRows, setServiceRows] = useState<ServiceRow[]>(() => [emptyServiceRow()])
   const [detailId, setDetailId] = useState<number | null>(null)
+  const [documentLoadingId, setDocumentLoadingId] = useState<number | null>(null)
+  const [documentUrl, setDocumentUrl] = useState('')
+  const [documentContract, setDocumentContract] = useState<Contract | null>(null)
   const [contractToDelete, setContractToDelete] = useState<Contract | null>(null)
   const [contractToCancel, setContractToCancel] = useState<Contract | null>(null)
   const [toast, setToast] = useState('')
@@ -138,6 +141,12 @@ export function Contracts() {
 
   useEffect(() => setPage(0), [clientFilter])
 
+  useEffect(() => {
+    return () => {
+      if (documentUrl) window.URL.revokeObjectURL(documentUrl)
+    }
+  }, [documentUrl])
+
   const saveMutation = useMutation({
     mutationFn: ({ id, payload }: { id?: number; payload: ContractPayload }) => id ? api.contracts.update(id, payload) : api.contracts.create(payload),
     onSuccess: (contract) => {
@@ -181,6 +190,46 @@ export function Contracts() {
     onError: (error) => setDeleteError(apiErrorMessage(error, 'Não foi possível excluir este contrato.')),
   })
 
+  async function openContractDocument(contract: Contract) {
+    const id = contract.id
+    setDocumentLoadingId(id)
+    try {
+      const blob = await api.contracts.document(id)
+      const url = window.URL.createObjectURL(blob)
+      setDocumentUrl(url)
+      setDocumentContract(contract)
+    } catch (error) {
+      showToast(apiErrorMessage(error, 'Não foi possível gerar o documento do contrato.'))
+    } finally {
+      setDocumentLoadingId(null)
+    }
+  }
+
+  function closeDocumentModal() {
+    setDocumentContract(null)
+    setDocumentUrl('')
+  }
+
+  function downloadContractDocument() {
+    if (!documentUrl || !documentContract) return
+    const link = document.createElement('a')
+    link.href = documentUrl
+    link.download = `contrato-${documentContract.id}.pdf`
+    link.click()
+  }
+
+  function printContractDocument() {
+    const frame = document.getElementById('contract-document-preview') as HTMLIFrameElement | null
+    frame?.contentWindow?.focus()
+    frame?.contentWindow?.print()
+  }
+
+  function openContractDocumentInNewTab() {
+    if (!documentUrl) return
+    const preview = window.open(documentUrl, '_blank')
+    if (preview) preview.opener = null
+  }
+
   const contracts = contractsQuery.data?.content ?? []
   const total = contractsQuery.data?.total ?? 0
   const totalPages = contractsQuery.data?.totalPages ?? 0
@@ -192,7 +241,8 @@ export function Contracts() {
   const lastResult = Math.min((page + 1) * pageSize, total)
   const clientOptions = clientsQuery.data?.content ?? []
   const serviceOptions = servicesQuery.data?.content ?? []
-  const filteredClientName = filteredClientQuery.data?.name || clientOptions.find((client) => client.id === clientFilter)?.name || (clientFilter ? `Cliente #${clientFilter}` : '')
+  const filteredClientOption = clientOptions.find((client) => client.id === clientFilter)
+  const filteredClientName = filteredClientQuery.data?.nmfanta || filteredClientOption?.tradeName || filteredClientQuery.data?.name || filteredClientOption?.name || (clientFilter ? `Cliente #${clientFilter}` : '')
 
   function showToast(message: string) {
     setToast(message)
@@ -334,7 +384,7 @@ export function Contracts() {
       <section className="panel data-panel">
         {clientFilter !== null && <div className="contract-client-filter"><span className="contract-client-filter__icon"><Building2 size={17} /></span><div><small>Contratos filtrados por cliente</small><strong>{filteredClientQuery.isLoading ? `Carregando cliente #${clientFilter}...` : filteredClientName}</strong></div><button onClick={() => navigate('/contratos', { replace: true })}>Remover filtro <X size={15} /></button></div>}
         <div className="data-toolbar data-toolbar--clients">
-          <div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); resetPage() }} placeholder="Buscar por cliente ou código..." /></div>
+          <div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); resetPage() }} placeholder="Buscar por razão social, nome fantasia, código do cliente ou contrato..." /></div>
           <div className="segmented-control" aria-label="Filtrar contratos">{(['TODOS', 'ATIVO', 'CANCELADO'] as const).map((item) => <button key={item} className={statusFilter === item ? 'active' : ''} onClick={() => { setStatusFilter(item); resetPage() }}>{item === 'TODOS' ? 'Todos' : item === 'ATIVO' ? 'Ativos' : 'Cancelados'}</button>)}</div>
           <label className="toolbar-select"><span>Ordenar por</span><select value={sortBy} onChange={(event) => { setSortBy(event.target.value as ContractListSortBy); resetPage() }}>{sortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
           <label className="toolbar-select toolbar-select--compact"><span>Direção</span><select value={direction} onChange={(event) => { setDirection(event.target.value as SortDirection); resetPage() }}><option value="ASC">Crescente</option><option value="DESC">Decrescente</option></select></label>
@@ -346,7 +396,7 @@ export function Contracts() {
               <thead><tr><th>Contrato</th><th>Cliente</th><th>Data do contrato</th><th>Renovação</th><th>Vencimento</th><th>Adesão</th><th>Serviços</th><th>Situação</th><th /></tr></thead>
               <tbody>{contracts.map((contract) => <tr key={contract.id} onClick={() => setDetailId(contract.id)}>
                 <td><strong>#{contract.id}</strong></td>
-                <td><div className="entity-cell"><span className="entity-avatar"><Building2 size={17} /></span><span><strong>{contract.clientName || `Cliente #${contract.clientId}`}</strong><small>Código do cliente: {contract.clientId}</small></span></div></td>
+                <td><div className="entity-cell"><span className="entity-avatar"><Building2 size={17} /></span><span><strong>{contract.clientTradeName || contract.clientName || `Cliente #${contract.clientId}`}</strong><small>{contract.clientTradeName && contract.clientName ? `${contract.clientName} · ` : ''}Código do cliente: {contract.clientId}</small></span></div></td>
                 <td>{formatDate(contract.contractDate)}</td>
                 <td><strong className={renewalInNextDays(contract.renewalDate) && contract.status === 'ATIVO' ? 'contract-renewal-alert' : ''}>{formatDate(contract.renewalDate)}</strong></td>
                 <td>{contract.dueDay ? `Dia ${contract.dueDay}` : 'Não informado'}</td>
@@ -377,7 +427,7 @@ export function Contracts() {
             {clientsQuery.isError && <FormError message={`Não foi possível carregar os clientes: ${apiErrorMessage(clientsQuery.error)}`} />}
             <div className="form-section-title"><span>1</span><div><strong>Dados do contrato</strong><small>Cliente, vigência e vencimento</small></div></div>
             <div className="form-grid form-grid--four">
-              <FormField label="Cliente"><select name="clientId" required defaultValue={selected?.clientId ?? clientFilter ?? ''}><option value="" disabled>Selecione o cliente</option>{selected && !clientOptions.some((client) => client.id === selected.clientId) && <option value={selected.clientId}>{selected.clientName || `Cliente #${selected.clientId}`}</option>}{!selected && clientFilter !== null && !clientOptions.some((client) => client.id === clientFilter) && <option value={clientFilter}>{filteredClientName}</option>}{clientOptions.map((client) => <option key={client.id} value={client.id}>{client.name || `Cliente #${client.id}`} · {client.document || 'sem documento'}</option>)}</select></FormField>
+              <FormField label="Cliente"><select name="clientId" required defaultValue={selected?.clientId ?? clientFilter ?? ''}><option value="" disabled>Selecione o cliente</option>{selected && !clientOptions.some((client) => client.id === selected.clientId) && <option value={selected.clientId}>{selected.clientTradeName || selected.clientName || `Cliente #${selected.clientId}`}{selected.clientTradeName && selected.clientName ? ` · ${selected.clientName}` : ''}</option>}{!selected && clientFilter !== null && !clientOptions.some((client) => client.id === clientFilter) && <option value={clientFilter}>{filteredClientName}</option>}{clientOptions.map((client) => <option key={client.id} value={client.id}>{client.tradeName || client.name || `Cliente #${client.id}`}{client.tradeName && client.name ? ` · ${client.name}` : ''} · {client.document || 'sem documento'}</option>)}</select></FormField>
               <FormField label="Data do contrato"><input name="contractDate" type="date" required defaultValue={toDateInput(selected?.contractDate)} /></FormField>
               <FormField label="Data de renovação"><input name="renewalDate" type="date" defaultValue={selected?.renewalDate?.slice(0, 10) ?? ''} /></FormField>
               <FormField label="Dia do vencimento"><input name="dueDay" type="number" min="1" max="31" defaultValue={selected?.dueDay ?? 10} /></FormField>
@@ -425,13 +475,30 @@ export function Contracts() {
       <DetailModal
         open={detailId !== null}
         onClose={() => setDetailId(null)}
-        title={detailQuery.data ? `Contrato #${detailQuery.data.id} · ${detailQuery.data.clientName || `Cliente #${detailQuery.data.clientId}`}` : 'Detalhes do contrato'}
+        title={detailQuery.data ? `Contrato #${detailQuery.data.id} · ${detailQuery.data.clientTradeName || detailQuery.data.clientName || `Cliente #${detailQuery.data.clientId}`}` : 'Detalhes do contrato'}
         description="Condições comerciais, vigência, serviços contratados e situação atual."
         size="xlarge"
-        actions={detailQuery.data ? <><Button variant="danger" icon={<Trash2 size={17} />} onClick={() => { setDeleteError(''); setContractToDelete(detailQuery.data) }}>Excluir</Button>{!detailQuery.data.canceled && <Button variant="secondary" icon={<Ban size={17} />} onClick={() => { setCancelError(''); setContractToCancel(detailQuery.data) }}>Cancelar contrato</Button>}<Button icon={<Edit3 size={17} />} onClick={() => openEdit(detailQuery.data)}>Editar</Button></> : undefined}
+        actions={detailQuery.data ? <><Button variant="danger" icon={<Trash2 size={17} />} onClick={() => { setDeleteError(''); setContractToDelete(detailQuery.data) }}>Excluir</Button>{!detailQuery.data.canceled && <Button variant="secondary" icon={<Ban size={17} />} onClick={() => { setCancelError(''); setContractToCancel(detailQuery.data) }}>Cancelar contrato</Button>}<Button variant="secondary" icon={<FileSignature size={17} />} disabled={documentLoadingId === detailQuery.data.id} onClick={() => openContractDocument(detailQuery.data)}>{documentLoadingId === detailQuery.data.id ? 'Gerando PDF...' : 'Exibir documento de contrato'}</Button><Button icon={<Edit3 size={17} />} onClick={() => openEdit(detailQuery.data)}>Editar</Button></> : undefined}
       >
         {detailQuery.isLoading ? <LoadingState label="Carregando contrato..." /> : detailQuery.isError ? <ErrorState message={apiErrorMessage(detailQuery.error)} onRetry={() => detailQuery.refetch()} /> : detailQuery.data ? <ContractDetail contract={detailQuery.data} /> : null}
       </DetailModal>
+
+      <Modal
+        open={Boolean(documentContract && documentUrl)}
+        onClose={closeDocumentModal}
+        title={documentContract ? `Documento do contrato #${documentContract.id}` : 'Documento do contrato'}
+        description={documentContract ? documentContract.clientTradeName || documentContract.clientName || `Cliente #${documentContract.clientId}` : undefined}
+        size="xlarge"
+      >
+        <div className="modal__body contract-document-modal__body">
+          <iframe id="contract-document-preview" className="contract-document-frame" src={documentUrl} title="Documento de contrato" />
+        </div>
+        <footer className="modal__footer detail-modal__footer">
+          <Button variant="secondary" icon={<ExternalLink size={16} />} onClick={openContractDocumentInNewTab}>Abrir em nova aba</Button>
+          <Button variant="secondary" icon={<Download size={16} />} onClick={downloadContractDocument}>Baixar PDF</Button>
+          <Button icon={<Printer size={16} />} onClick={printContractDocument}>Imprimir</Button>
+        </footer>
+      </Modal>
 
       <Modal open={Boolean(contractToCancel)} onClose={() => !cancelMutation.isPending && setContractToCancel(null)} title={`Cancelar contrato #${contractToCancel?.id ?? ''}`} description="O contrato permanece no histórico e deixa de ser considerado ativo.">
         <ModalForm onSubmit={submitCancellation} onCancel={() => setContractToCancel(null)} submitting={cancelMutation.isPending} submitLabel={cancelMutation.isPending ? 'Cancelando...' : 'Confirmar cancelamento'}>
@@ -461,7 +528,7 @@ export function Contracts() {
 
 function ContractDetail({ contract }: { contract: Contract }) {
   return <div className="detail-modal-content">
-    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><FileSignature /></span><div><span>Contrato #{contract.id}</span><h2>{contract.clientName || `Cliente #${contract.clientId}`}</h2><p>Cliente #{contract.clientId}</p></div></div><Badge tone={contract.status === 'ATIVO' ? 'green' : 'neutral'}>{enumLabel(contract.status)}</Badge></div>
+    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><FileSignature /></span><div><span>Contrato #{contract.id} · Cliente #{contract.clientId}</span><h2>{contract.clientTradeName || contract.clientName || `Cliente #${contract.clientId}`}</h2><p>{contract.clientName || 'Razão social não informada'}</p></div></div><Badge tone={contract.status === 'ATIVO' ? 'green' : 'neutral'}>{enumLabel(contract.status)}</Badge></div>
     <div className="detail-metrics"><span><small>Data do contrato</small><strong>{formatDate(contract.contractDate)}</strong></span><span><small>Renovação</small><strong>{formatDate(contract.renewalDate)}</strong></span><span><small>Vencimento</small><strong>{contract.dueDay ? `Dia ${contract.dueDay}` : 'Não informado'}</strong></span><span><small>Taxa de adesão</small><strong>{money(contract.adhesionFee)}</strong></span></div>
     <div className="detail-sections-grid">
     <section className="drawer-section"><h3>Condições comerciais</h3><dl>

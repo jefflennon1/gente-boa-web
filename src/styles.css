@@ -219,6 +219,8 @@ h1, h2, h3, p { margin-top: 0; }
 .icon-button { width: 33px; height: 33px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); background: white; cursor: pointer; }
 .modal__body { padding: 21px; }
 .modal__footer { min-height: 67px; padding: 13px 21px; position: sticky; bottom: 0; z-index: 2; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 9px; background: #fbfbfd; }
+.contract-document-modal__body { height: min(72vh, 780px); padding: 0; background: #eef0f5; }
+.contract-document-frame { width: 100%; height: 100%; display: block; border: 0; background: white; }
 .form-section-title { display: flex; align-items: center; gap: 10px; margin: 5px 0 15px; }.form-section-title:not(:first-child) { margin-top: 25px; padding-top: 20px; border-top: 1px solid var(--line); }.form-section-title > span { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 8px; color: var(--brand); background: var(--brand-soft); font-size: 10px; font-weight: 850; }.form-section-title strong, .form-section-title small { display: block; }.form-section-title strong { font-size: 11px; }.form-section-title small { margin-top: 2px; color: var(--muted); font-size: 8.5px; }
 .form-section-title--with-action > div { min-width: 0; margin-right: auto; }
 .section-add-button { min-height: 34px; padding: 0 12px; flex: 0 0 auto; border: 1px solid #d8daea; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--brand); background: white; font-size: 9px; font-weight: 750; cursor: pointer; transition: .15s ease; }.section-add-button:hover { border-color: #b9bcdb; background: var(--brand-soft); }
