@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Ban, Building2, ChevronLeft, ChevronRight, CircleDollarSign, Edit3, FileSignature, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
+import { Ban, Building2, ChevronLeft, ChevronRight, CircleDollarSign, Download, Edit3, ExternalLink, FileSignature, Plus, Printer, RefreshCw, Search, Trash2, X } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useRouter } from '../router'
@@ -87,6 +87,9 @@ export function Contracts() {
   const [selected, setSelected] = useState<Contract | null>(null)
   const [serviceRows, setServiceRows] = useState<ServiceRow[]>(() => [emptyServiceRow()])
   const [detailId, setDetailId] = useState<number | null>(null)
+  const [documentLoadingId, setDocumentLoadingId] = useState<number | null>(null)
+  const [documentUrl, setDocumentUrl] = useState('')
+  const [documentContract, setDocumentContract] = useState<Contract | null>(null)
   const [contractToDelete, setContractToDelete] = useState<Contract | null>(null)
   const [contractToCancel, setContractToCancel] = useState<Contract | null>(null)
   const [toast, setToast] = useState('')
@@ -138,6 +141,12 @@ export function Contracts() {
 
   useEffect(() => setPage(0), [clientFilter])
 
+  useEffect(() => {
+    return () => {
+      if (documentUrl) window.URL.revokeObjectURL(documentUrl)
+    }
+  }, [documentUrl])
+
   const saveMutation = useMutation({
     mutationFn: ({ id, payload }: { id?: number; payload: ContractPayload }) => id ? api.contracts.update(id, payload) : api.contracts.create(payload),
     onSuccess: (contract) => {
@@ -180,6 +189,46 @@ export function Contracts() {
     },
     onError: (error) => setDeleteError(apiErrorMessage(error, 'Não foi possível excluir este contrato.')),
   })
+
+  async function openContractDocument(contract: Contract) {
+    const id = contract.id
+    setDocumentLoadingId(id)
+    try {
+      const blob = await api.contracts.document(id)
+      const url = window.URL.createObjectURL(blob)
+      setDocumentUrl(url)
+      setDocumentContract(contract)
+    } catch (error) {
+      showToast(apiErrorMessage(error, 'Não foi possível gerar o documento do contrato.'))
+    } finally {
+      setDocumentLoadingId(null)
+    }
+  }
+
+  function closeDocumentModal() {
+    setDocumentContract(null)
+    setDocumentUrl('')
+  }
+
+  function downloadContractDocument() {
+    if (!documentUrl || !documentContract) return
+    const link = document.createElement('a')
+    link.href = documentUrl
+    link.download = `contrato-${documentContract.id}.pdf`
+    link.click()
+  }
+
+  function printContractDocument() {
+    const frame = document.getElementById('contract-document-preview') as HTMLIFrameElement | null
+    frame?.contentWindow?.focus()
+    frame?.contentWindow?.print()
+  }
+
+  function openContractDocumentInNewTab() {
+    if (!documentUrl) return
+    const preview = window.open(documentUrl, '_blank')
+    if (preview) preview.opener = null
+  }
 
   const contracts = contractsQuery.data?.content ?? []
   const total = contractsQuery.data?.total ?? 0
@@ -429,10 +478,27 @@ export function Contracts() {
         title={detailQuery.data ? `Contrato #${detailQuery.data.id} · ${detailQuery.data.clientTradeName || detailQuery.data.clientName || `Cliente #${detailQuery.data.clientId}`}` : 'Detalhes do contrato'}
         description="Condições comerciais, vigência, serviços contratados e situação atual."
         size="xlarge"
-        actions={detailQuery.data ? <><Button variant="danger" icon={<Trash2 size={17} />} onClick={() => { setDeleteError(''); setContractToDelete(detailQuery.data) }}>Excluir</Button>{!detailQuery.data.canceled && <Button variant="secondary" icon={<Ban size={17} />} onClick={() => { setCancelError(''); setContractToCancel(detailQuery.data) }}>Cancelar contrato</Button>}<Button icon={<Edit3 size={17} />} onClick={() => openEdit(detailQuery.data)}>Editar</Button></> : undefined}
+        actions={detailQuery.data ? <><Button variant="danger" icon={<Trash2 size={17} />} onClick={() => { setDeleteError(''); setContractToDelete(detailQuery.data) }}>Excluir</Button>{!detailQuery.data.canceled && <Button variant="secondary" icon={<Ban size={17} />} onClick={() => { setCancelError(''); setContractToCancel(detailQuery.data) }}>Cancelar contrato</Button>}<Button variant="secondary" icon={<FileSignature size={17} />} disabled={documentLoadingId === detailQuery.data.id} onClick={() => openContractDocument(detailQuery.data)}>{documentLoadingId === detailQuery.data.id ? 'Gerando PDF...' : 'Exibir documento de contrato'}</Button><Button icon={<Edit3 size={17} />} onClick={() => openEdit(detailQuery.data)}>Editar</Button></> : undefined}
       >
         {detailQuery.isLoading ? <LoadingState label="Carregando contrato..." /> : detailQuery.isError ? <ErrorState message={apiErrorMessage(detailQuery.error)} onRetry={() => detailQuery.refetch()} /> : detailQuery.data ? <ContractDetail contract={detailQuery.data} /> : null}
       </DetailModal>
+
+      <Modal
+        open={Boolean(documentContract && documentUrl)}
+        onClose={closeDocumentModal}
+        title={documentContract ? `Documento do contrato #${documentContract.id}` : 'Documento do contrato'}
+        description={documentContract ? documentContract.clientTradeName || documentContract.clientName || `Cliente #${documentContract.clientId}` : undefined}
+        size="xlarge"
+      >
+        <div className="modal__body contract-document-modal__body">
+          <iframe id="contract-document-preview" className="contract-document-frame" src={documentUrl} title="Documento de contrato" />
+        </div>
+        <footer className="modal__footer detail-modal__footer">
+          <Button variant="secondary" icon={<ExternalLink size={16} />} onClick={openContractDocumentInNewTab}>Abrir em nova aba</Button>
+          <Button variant="secondary" icon={<Download size={16} />} onClick={downloadContractDocument}>Baixar PDF</Button>
+          <Button icon={<Printer size={16} />} onClick={printContractDocument}>Imprimir</Button>
+        </footer>
+      </Modal>
 
       <Modal open={Boolean(contractToCancel)} onClose={() => !cancelMutation.isPending && setContractToCancel(null)} title={`Cancelar contrato #${contractToCancel?.id ?? ''}`} description="O contrato permanece no histórico e deixa de ser considerado ativo.">
         <ModalForm onSubmit={submitCancellation} onCancel={() => setContractToCancel(null)} submitting={cancelMutation.isPending} submitLabel={cancelMutation.isPending ? 'Cancelando...' : 'Confirmar cancelamento'}>
