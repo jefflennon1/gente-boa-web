@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Ban, Building2, ChevronLeft, ChevronRight, CircleDollarSign, Download, Edit3, ExternalLink, FileSignature, Plus, Printer, RefreshCw, Search, Trash2, X } from 'lucide-react'
+import { Ban, Building2, ChevronLeft, ChevronRight, CircleDollarSign, Download, Edit3, ExternalLink, FileSignature, Plus, Printer, RefreshCw, Search, Trash2, Upload, X } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useRouter } from '../router'
@@ -73,6 +73,8 @@ function renewalInNextDays(value?: string | null, days = 60) {
 
 export function Contracts() {
   const queryClient = useQueryClient()
+  const signedDocumentInputRef = useRef<HTMLInputElement>(null)
+  const signedDocumentContractRef = useRef<Contract | null>(null)
   const { search: routeSearch, navigate } = useRouter()
   const clientIdParam = new URLSearchParams(routeSearch).get('clientId')
   const clientFilter = clientIdParam && /^\d+$/.test(clientIdParam) && Number(clientIdParam) > 0 ? Number(clientIdParam) : null
@@ -90,6 +92,7 @@ export function Contracts() {
   const [documentLoadingId, setDocumentLoadingId] = useState<number | null>(null)
   const [documentUrl, setDocumentUrl] = useState('')
   const [documentContract, setDocumentContract] = useState<Contract | null>(null)
+  const [signedDocumentUploadingId, setSignedDocumentUploadingId] = useState<number | null>(null)
   const [contractToDelete, setContractToDelete] = useState<Contract | null>(null)
   const [contractToCancel, setContractToCancel] = useState<Contract | null>(null)
   const [toast, setToast] = useState('')
@@ -228,6 +231,35 @@ export function Contracts() {
     if (!documentUrl) return
     const preview = window.open(documentUrl, '_blank')
     if (preview) preview.opener = null
+  }
+
+  function chooseSignedDocument(contract: Contract) {
+    signedDocumentContractRef.current = contract
+    signedDocumentInputRef.current?.click()
+  }
+
+  async function uploadSignedDocument(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    const contract = signedDocumentContractRef.current
+    event.target.value = ''
+    if (!file || !contract) return
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      showToast('Envie um arquivo PDF.')
+      return
+    }
+    setSignedDocumentUploadingId(contract.id)
+    try {
+      await api.contracts.uploadSignedDocument(contract.id, file)
+      showToast(`Contrato #${contract.id} assinado atualizado com sucesso.`)
+      if (documentContract?.id === contract.id) {
+        closeDocumentModal()
+      }
+    } catch (error) {
+      showToast(apiErrorMessage(error, 'NÃ£o foi possÃ­vel enviar o contrato assinado.'))
+    } finally {
+      setSignedDocumentUploadingId(null)
+      signedDocumentContractRef.current = null
+    }
   }
 
   const contracts = contractsQuery.data?.content ?? []
@@ -478,7 +510,7 @@ export function Contracts() {
         title={detailQuery.data ? `Contrato #${detailQuery.data.id} · ${detailQuery.data.clientTradeName || detailQuery.data.clientName || `Cliente #${detailQuery.data.clientId}`}` : 'Detalhes do contrato'}
         description="Condições comerciais, vigência, serviços contratados e situação atual."
         size="xlarge"
-        actions={detailQuery.data ? <><Button variant="danger" icon={<Trash2 size={17} />} onClick={() => { setDeleteError(''); setContractToDelete(detailQuery.data) }}>Excluir</Button>{!detailQuery.data.canceled && <Button variant="secondary" icon={<Ban size={17} />} onClick={() => { setCancelError(''); setContractToCancel(detailQuery.data) }}>Cancelar contrato</Button>}<Button variant="secondary" icon={<FileSignature size={17} />} disabled={documentLoadingId === detailQuery.data.id} onClick={() => openContractDocument(detailQuery.data)}>{documentLoadingId === detailQuery.data.id ? 'Gerando PDF...' : 'Exibir documento de contrato'}</Button><Button icon={<Edit3 size={17} />} onClick={() => openEdit(detailQuery.data)}>Editar</Button></> : undefined}
+        actions={detailQuery.data ? <><Button variant="danger" icon={<Trash2 size={17} />} onClick={() => { setDeleteError(''); setContractToDelete(detailQuery.data) }}>Excluir</Button>{!detailQuery.data.canceled && <Button variant="secondary" icon={<Ban size={17} />} onClick={() => { setCancelError(''); setContractToCancel(detailQuery.data) }}>Cancelar contrato</Button>}<Button variant="secondary" icon={<Upload size={17} />} disabled={signedDocumentUploadingId === detailQuery.data.id} onClick={() => chooseSignedDocument(detailQuery.data)}>{signedDocumentUploadingId === detailQuery.data.id ? 'Enviando PDF...' : 'Atualizar contrato assinado'}</Button><Button variant="secondary" icon={<FileSignature size={17} />} disabled={documentLoadingId === detailQuery.data.id} onClick={() => openContractDocument(detailQuery.data)}>{documentLoadingId === detailQuery.data.id ? 'Gerando PDF...' : 'Exibir documento de contrato'}</Button><Button icon={<Edit3 size={17} />} onClick={() => openEdit(detailQuery.data)}>Editar</Button></> : undefined}
       >
         {detailQuery.isLoading ? <LoadingState label="Carregando contrato..." /> : detailQuery.isError ? <ErrorState message={apiErrorMessage(detailQuery.error)} onRetry={() => detailQuery.refetch()} /> : detailQuery.data ? <ContractDetail contract={detailQuery.data} /> : null}
       </DetailModal>
@@ -520,6 +552,8 @@ export function Contracts() {
         onCancel={() => { setContractToDelete(null); setDeleteError('') }}
         onConfirm={() => { if (contractToDelete && !deleteMutation.isPending) { setDeleteError(''); deleteMutation.mutate(contractToDelete.id) } }}
       />
+
+      <input ref={signedDocumentInputRef} type="file" accept="application/pdf,.pdf" hidden onChange={uploadSignedDocument} />
 
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
     </>

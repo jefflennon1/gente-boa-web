@@ -114,6 +114,11 @@ export const api = {
       const { data } = await http.get<Blob>(`/contracts/${id}/document`, { responseType: 'blob' })
       return data
     },
+    async uploadSignedDocument(id: number, file: File) {
+      const formData = new FormData()
+      formData.append('file', file)
+      await http.post(`/contracts/${id}/signed-document`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+    },
     async byClient(clientId: number, params: Pick<ContractListParams, 'page' | 'size'> = {}) {
       const { data } = await http.get<PagedResponse<Contract> | Contract[]>(`/clients/${clientId}/contracts`, { params: { page: 0, size: 20, ...params } })
       if (!Array.isArray(data)) return data
