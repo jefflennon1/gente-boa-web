@@ -61,7 +61,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     <div className="app-shell">
       {menuOpen && <button className="sidebar-scrim" aria-label="Fechar menu" onClick={() => setMenuOpen(false)} />}
       <aside className={`sidebar ${menuOpen ? 'sidebar--open' : ''}`}>
-        <div className="sidebar__brand"><div className="brand-mark">GB</div><div><strong>Gente Boa</strong><span>Gestão</span></div><button className="sidebar__close" onClick={() => setMenuOpen(false)} aria-label="Fechar menu"><X size={20} /></button></div>
+        <div className="sidebar__brand"><div className="brand-mark"><img src="/images/logo.jpg" alt="Gente Boa" /></div><div><strong>Gente Boa</strong><span>Gestão</span></div><button className="sidebar__close" onClick={() => setMenuOpen(false)} aria-label="Fechar menu"><X size={20} /></button></div>
         <div className="sidebar__section-label">Menu principal</div>
         <nav className="sidebar__nav">{nav.map(({ to, label, icon: Icon, end }) => {
           const badge = to === '/ordens-de-servico' ? urgentOrders.length : to === '/notas-fiscais' ? pendingInvoices.length : 0
