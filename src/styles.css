@@ -58,7 +58,8 @@ h1, h2, h3, p { margin-top: 0; }
   padding: 22px 15px 18px;
 }
 .sidebar__brand { height: 58px; display: flex; align-items: center; gap: 12px; padding: 0 10px; margin-bottom: 25px; }
-.brand-mark { width: 42px; height: 42px; flex: 0 0 auto; border-radius: 12px; display: grid; place-items: center; font-weight: 900; font-size: 15px; letter-spacing: -.5px; color: #fff; background: linear-gradient(135deg, #ff9a45, var(--orange)); box-shadow: 0 8px 22px rgba(244,129,32,.26); }
+.brand-mark { width: 42px; height: 42px; flex: 0 0 auto; border-radius: 12px; display: grid; place-items: center; overflow: hidden; padding: 0px; background: #fff; box-shadow: 0 8px 22px rgba(244,129,32,.26); }
+.brand-mark img { width: 100%; height: 100%; object-fit: contain; }
 .sidebar__brand strong { display: block; font-size: 17px; line-height: 1.05; color: white; letter-spacing: -.2px; }
 .sidebar__brand span { display: block; margin-top: 4px; font-size: 9px; text-transform: uppercase; letter-spacing: 2.2px; color: #aaafd0; }
 .sidebar__close { display: none; margin-left: auto; border: 0; background: transparent; color: white; cursor: pointer; }
