@@ -96,6 +96,10 @@ export const api = {
       const { data } = await http.get<ClientStatisticsResponse>('/clients/statistics')
       return data
     },
+    async referralDescriptions() {
+      const { data } = await http.get<string[]>('/clients/referral-descriptions')
+      return data
+    },
   },
   addresses: {
     async findByCep(cep: string) {

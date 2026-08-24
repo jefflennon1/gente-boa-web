@@ -134,6 +134,7 @@ export function Clients() {
   const [clientToDelete, setClientToDelete] = useState<Client | null>(null)
   const [toast, setToast] = useState('')
   const [formError, setFormError] = useState('')
+  const [referralDescription, setReferralDescription] = useState('')
   const [addressFields, setAddressFields] = useState<AddressFields>(emptyAddressFields)
   const [additionalAddresses, setAdditionalAddresses] = useState<ClientAddressRow[]>([])
   const [cepLookupValue, setCepLookupValue] = useState<string | null>(null)
@@ -161,6 +162,12 @@ export function Clients() {
   const systemParametersQuery = useQuery({
     queryKey: queryKeys.systemParameters,
     queryFn: api.systemParameters.get,
+    enabled: modalOpen,
+  })
+
+  const referralDescriptionsQuery = useQuery({
+    queryKey: [...queryKeys.clients, 'referral-descriptions'],
+    queryFn: api.clients.referralDescriptions,
     enabled: modalOpen,
   })
 
@@ -243,6 +250,13 @@ export function Clients() {
   })
 
   const clients = clientsQuery.data?.content ?? []
+  const referralDescriptions = (referralDescriptionsQuery.data ?? [])
+    .map((description) => description.trim())
+    .filter((description, index, descriptions) => description !== '' && descriptions.findIndex((candidate) => candidate.toLocaleLowerCase('pt-BR') === description.toLocaleLowerCase('pt-BR')) === index)
+  const normalizedCurrentReferral = referralDescription.trim()
+  const canonicalCurrentReferral = referralDescriptions.find((description) => description.toLocaleLowerCase('pt-BR') === normalizedCurrentReferral.toLocaleLowerCase('pt-BR'))
+  const referralOptions = normalizedCurrentReferral && !canonicalCurrentReferral ? [normalizedCurrentReferral, ...referralDescriptions] : referralDescriptions
+  const referralSelectValue = canonicalCurrentReferral ?? normalizedCurrentReferral
   const total = clientsQuery.data?.total ?? 0
   const totalPages = clientsQuery.data?.totalPages ?? 0
   const activeOnPage = clients.filter((client) => client.status === 'ATIVO').length
@@ -263,6 +277,7 @@ export function Clients() {
 
   function openNew() {
     setSelected(null)
+    setReferralDescription('')
     setAddressFields(emptyAddressFields)
     setAdditionalAddresses([])
     setCepLookupValue(null)
@@ -272,6 +287,7 @@ export function Clients() {
 
   function openEdit(client: Client) {
     setSelected(client)
+    setReferralDescription(client.dsindic?.trim() ?? '')
     setAddressFields(addressFieldsFrom(client))
     setAdditionalAddresses((client.addresses ?? []).map(clientAddressRowFrom))
     setCepLookupValue(null)
@@ -461,6 +477,7 @@ export function Clients() {
         <ModalForm onSubmit={submit} onCancel={() => setModalOpen(false)} submitting={saveMutation.isPending} submitLabel={saveMutation.isPending ? 'Salvando...' : selected ? 'Salvar alterações' : 'Cadastrar cliente'}>
           <FormError message={formError} />
           {systemParametersQuery.isError && <FormError message={`Não foi possível carregar os parâmetros do sistema: ${apiErrorMessage(systemParametersQuery.error)}`} />}
+          {referralDescriptionsQuery.isError && <FormError message={`Não foi possível carregar as indicações cadastradas: ${apiErrorMessage(referralDescriptionsQuery.error)}`} />}
           <div className="form-section-title"><span>1</span><div><strong>Dados cadastrais</strong><small>Identificação conforme a tabela de clientes</small></div></div>
           <div className="form-grid form-grid--two">
             <FormField label="Código"><input readOnly value={selected?.id ?? 'Gerado ao salvar'} /></FormField>
@@ -483,7 +500,7 @@ export function Clients() {
           </div>
           <div className="form-grid form-grid--two form-grid--spaced">
             <FormField label="E-mail"><input name="dsemail" type="email" maxLength={50} defaultValue={selected?.dsemail ?? selected?.email ?? ''} /></FormField>
-            <FormField label="Indicado por"><input name="dsindic" maxLength={50} defaultValue={selected?.dsindic ?? ''} /></FormField>
+            <FormField label="Indicado por" hint={referralDescriptionsQuery.isLoading ? 'Carregando indicações registradas...' : referralDescriptions.length > 0 ? `${referralDescriptions.length} indicação(ões) agrupada(s), com as mais usadas primeiro.` : 'Nenhuma indicação válida foi encontrada nos clientes.'}><select name="dsindic" value={referralSelectValue} onChange={(event) => setReferralDescription(event.target.value)}><option value="">Sem indicação</option>{referralOptions.map((description) => <option key={description.toLocaleLowerCase('pt-BR')} value={description}>{description}</option>)}</select></FormField>
             <FormField label="Código do indicador"><input name="idindic" type="number" min="0" defaultValue={selected?.idindic ?? ''} /></FormField>
             <FormField label="Código do promotor de vendas"><input name="idfunci" type="number" min="0" defaultValue={selected?.idfunci ?? ''} /></FormField>
           </div>
