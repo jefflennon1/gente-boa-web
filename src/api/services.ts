@@ -22,6 +22,8 @@ import type {
   Statement,
   StatementPayload,
   SortDirection,
+  SystemParameters,
+  SystemParametersPayload,
   UpdateUserPayload,
 } from '../types'
 import { http } from './client'
@@ -101,6 +103,23 @@ export const api = {
       return data
     },
   },
+  systemParameters: {
+    async get() {
+      const { data } = await http.get<SystemParameters | null>('/system-parameters')
+      return data || null
+    },
+    async create(payload: SystemParametersPayload) {
+      const { data } = await http.post<SystemParameters>('/system-parameters', payload)
+      return data
+    },
+    async update(payload: SystemParametersPayload) {
+      const { data } = await http.put<SystemParameters>('/system-parameters', payload)
+      return data
+    },
+    async remove() {
+      await http.delete('/system-parameters')
+    },
+  },
   contracts: {
     async list(params: ContractListParams = {}) {
       const { data } = await http.get<PagedResponse<ContractListItem>>('/contracts', { params: { page: 0, size: 20, ...params } })
@@ -158,6 +177,7 @@ export const api = {
 
 export const queryKeys = {
   addresses: ['addresses'] as const,
+  systemParameters: ['system-parameters'] as const,
   clients: ['clients'] as const,
   contracts: ['contracts'] as const,
   serviceCatalog: ['service-catalog'] as const,

@@ -158,6 +158,12 @@ export function Clients() {
     enabled: detailId !== null,
   })
 
+  const systemParametersQuery = useQuery({
+    queryKey: queryKeys.systemParameters,
+    queryFn: api.systemParameters.get,
+    enabled: modalOpen,
+  })
+
   const editContractsQuery = useQuery({
     queryKey: [...queryKeys.contracts, 'client', selected?.id],
     queryFn: () => api.contracts.byClient(selected?.id as number, { page: 0, size: 20 }),
@@ -386,7 +392,7 @@ export function Clients() {
       dsponto: textValue(data, 'dsponto'),
       flaudit: textValue(data, 'flaudit'),
       fliss: textValue(data, 'fliss'),
-      vliss: nullableNumber(data, 'vliss'),
+      vliss: systemParametersQuery.data?.vliss ?? null,
       flinss: textValue(data, 'flinss'),
       vlinss: nullableNumber(data, 'vlinss'),
       flenvio: textValue(data, 'flenvio'),
@@ -454,6 +460,7 @@ export function Clients() {
       <Modal open={modalOpen} onClose={() => !saveMutation.isPending && setModalOpen(false)} title={selected ? 'Editar cliente' : 'Novo cliente'} description="Dados cadastrais, contatos, endereço, tributação e preferências de envio." size="large">
         <ModalForm onSubmit={submit} onCancel={() => setModalOpen(false)} submitting={saveMutation.isPending} submitLabel={saveMutation.isPending ? 'Salvando...' : selected ? 'Salvar alterações' : 'Cadastrar cliente'}>
           <FormError message={formError} />
+          {systemParametersQuery.isError && <FormError message={`Não foi possível carregar os parâmetros do sistema: ${apiErrorMessage(systemParametersQuery.error)}`} />}
           <div className="form-section-title"><span>1</span><div><strong>Dados cadastrais</strong><small>Identificação conforme a tabela de clientes</small></div></div>
           <div className="form-grid form-grid--two">
             <FormField label="Código"><input readOnly value={selected?.id ?? 'Gerado ao salvar'} /></FormField>
@@ -526,7 +533,7 @@ export function Clients() {
           <div className="form-grid form-grid--three">
             <FormField label="Auditado"><select name="flaudit" defaultValue={flagIsOn(selected?.flaudit) ? '1' : '0'}><option value="0">Não</option><option value="1">Sim</option></select></FormField>
             <FormField label="Retém ISS"><select name="fliss" defaultValue={flagIsOn(selected?.fliss) ? '1' : '0'}><option value="0">Não</option><option value="1">Sim</option></select></FormField>
-            <FormField label="Valor / alíquota de ISS %"><input name="vliss" type="number" min="0" step="0.01" defaultValue={selected?.vliss ?? ''} /></FormField>
+            <FormField label="Valor / alíquota de ISS %"><input name="vliss" type="number" readOnly value={systemParametersQuery.data?.vliss ?? ''} /></FormField>
             <FormField label="Retém INSS"><select name="flinss" defaultValue={flagIsOn(selected?.flinss) ? '1' : '0'}><option value="0">Não</option><option value="1">Sim</option></select></FormField>
             <FormField label="Valor / alíquota de INSS"><input name="vlinss" type="number" min="0" step="0.01" defaultValue={selected?.vlinss ?? ''} /></FormField>
           </div>

@@ -39,6 +39,23 @@ export interface CepAddressResponse {
   siafi: string | null
 }
 
+export interface SystemParameters {
+  nmempre: string
+  dsender: string | null
+  dsbairr: string | null
+  dscidad: string | null
+  nrbolet: string | null
+  qtinadi: number | null
+  dtrenov: ISODateTime | null
+  dspath: string | null
+  dspdf: string | null
+  vlorcam: number | null
+  vliss: number | null
+  vlaliq: number | null
+}
+
+export type SystemParametersPayload = SystemParameters
+
 export interface Client {
   id: number
   name: string | null

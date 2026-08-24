@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Ban, Building2, ChevronLeft, ChevronRight, CircleDollarSign, Download, Edit3, ExternalLink, FileSignature, Plus, Printer, RefreshCw, Search, Trash2, Upload, X } from 'lucide-react'
+import { Ban, Building2, ChevronLeft, ChevronRight, CircleDollarSign, Download, Edit3, ExternalLink, FileSignature, Plus, Printer, RefreshCw, Search, Settings2, Trash2, Upload, X } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useRouter } from '../router'
@@ -129,6 +129,12 @@ export function Contracts() {
   const servicesQuery = useQuery({
     queryKey: [...queryKeys.serviceCatalog, 'selector'],
     queryFn: () => api.serviceCatalog.list({ page: 0, size: 100 }),
+  })
+
+  const systemParametersQuery = useQuery({
+    queryKey: queryKeys.systemParameters,
+    queryFn: api.systemParameters.get,
+    enabled: modalOpen,
   })
 
   const detailQuery = useQuery({
@@ -457,6 +463,11 @@ export function Contracts() {
           <ModalForm onSubmit={submit} onCancel={() => setModalOpen(false)} submitting={saveMutation.isPending} submitLabel={saveMutation.isPending ? 'Salvando...' : selected ? 'Salvar alterações' : 'Cadastrar contrato'}>
             <FormError message={formError} />
             {clientsQuery.isError && <FormError message={`Não foi possível carregar os clientes: ${apiErrorMessage(clientsQuery.error)}`} />}
+            {systemParametersQuery.isError && <FormError message={`Não foi possível carregar os parâmetros do sistema: ${apiErrorMessage(systemParametersQuery.error)}`} />}
+            {systemParametersQuery.isLoading ? <aside className="contract-system-parameters contract-system-parameters--loading"><Settings2 size={18} /><span>Carregando referências de tbparametro...</span></aside> : systemParametersQuery.data ? <aside className="contract-system-parameters">
+              
+              <div><span><small>Valor do orçamento</small><strong>{systemParametersQuery.data.vlorcam == null ? 'Não informado' : money(systemParametersQuery.data.vlorcam)}</strong></span><span><small>ISS</small><strong>{systemParametersQuery.data.vliss == null ? 'Não informado' : `${systemParametersQuery.data.vliss.toLocaleString('pt-BR')}%`}</strong></span><span><small>Alíquota</small><strong>{systemParametersQuery.data.vlaliq == null ? 'Não informado' : `${systemParametersQuery.data.vlaliq.toLocaleString('pt-BR')}%`}</strong></span></div>
+              </aside> : <aside className="contract-system-parameters contract-system-parameters--empty"><Settings2 size={18} /><span><strong>Parâmetros não cadastrados</strong><small>Cadastre as referências globais em Parâmetros do sistema.</small></span></aside>}
             <div className="form-section-title"><span>1</span><div><strong>Dados do contrato</strong><small>Cliente, vigência e vencimento</small></div></div>
             <div className="form-grid form-grid--four">
               <FormField label="Cliente"><select name="clientId" required defaultValue={selected?.clientId ?? clientFilter ?? ''}><option value="" disabled>Selecione o cliente</option>{selected && !clientOptions.some((client) => client.id === selected.clientId) && <option value={selected.clientId}>{selected.clientTradeName || selected.clientName || `Cliente #${selected.clientId}`}{selected.clientTradeName && selected.clientName ? ` · ${selected.clientName}` : ''}</option>}{!selected && clientFilter !== null && !clientOptions.some((client) => client.id === clientFilter) && <option value={clientFilter}>{filteredClientName}</option>}{clientOptions.map((client) => <option key={client.id} value={client.id}>{client.tradeName || client.name || `Cliente #${client.id}`}{client.tradeName && client.name ? ` · ${client.name}` : ''} · {client.document || 'sem documento'}</option>)}</select></FormField>
