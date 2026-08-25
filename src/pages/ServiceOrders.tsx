@@ -181,7 +181,7 @@ export function ServiceOrders() {
         <StatCard label="Abertas" value={String(orders.filter((order) => order.status === 'ABERTA').length)} helper={`${orders.filter((order) => order.priority === 'URGENTE').length} urgentes`} icon={<CircleAlert />} tone="orange" />
         <StatCard label="Em atendimento" value={String(orders.filter((order) => order.status === 'EM_ATENDIMENTO').length)} helper="Execução em andamento" icon={<Wrench />} tone="green" />
         <StatCard label="Agendadas" value={String(orders.filter((order) => order.status === 'AGENDADA').length)} helper="Com data marcada" icon={<Clock3 />} tone="purple" />
-        <StatCard label="Finalizadas" value={String(orders.filter((order) => order.status === 'FINALIZADA').length)} helper={`${ordersQuery.data?.total ?? 0} registros na API`} icon={<CheckCircle2 />} tone="blue" />
+        <StatCard label="Finalizadas" value={String(orders.filter((order) => order.status === 'FINALIZADA').length)} helper={`${ordersQuery.data?.total ?? 0} registros.`} icon={<CheckCircle2 />} tone="blue" />
       </section>
 
       <section className="panel data-panel os-panel">

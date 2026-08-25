@@ -327,12 +327,12 @@ h1, h2, h3, p { margin-top: 0; }
 .login-brand-panel__glow { position: absolute; border-radius: 50%; filter: blur(2px); pointer-events: none; }
 .login-brand-panel__glow--one { width: 320px; height: 320px; right: -150px; bottom: -100px; background: radial-gradient(circle, rgba(244,129,32,.23), transparent 69%); }
 .login-brand-panel__glow--two { width: 260px; height: 260px; left: -140px; top: -120px; background: radial-gradient(circle, rgba(100,106,210,.3), transparent 69%); }
-.login-brand { position: relative; z-index: 1; display: flex; align-items: center; gap: 12px; }
+.login-brand { position: relative; z-index: 1; display: flex; align-items: center; gap: 12px; height: 20%;}
 .login-brand__mark { width: 47px; height: 47px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 14px; color: white; background: linear-gradient(135deg, #ff9d4c, var(--orange)); box-shadow: 0 12px 28px rgba(244,129,32,.27); font-size: 14px; font-weight: 900; letter-spacing: -.3px; }
 .login-brand > span:last-child strong, .login-brand > span:last-child small, .login-mobile-brand > span:last-child strong, .login-mobile-brand > span:last-child small { display: block; }
 .login-brand strong, .login-mobile-brand strong { color: white; font-size: 18px; line-height: 1; letter-spacing: -.3px; }
 .login-brand small, .login-mobile-brand small { margin-top: 5px; color: #b1b5d5; font-size: 8px; text-transform: uppercase; letter-spacing: 2.5px; }
-.login-pitch { width: min(500px, 100%); position: relative; z-index: 1; margin: auto 0; padding: 70px 0 50px; }
+.login-pitch { width: min(500px, 100%); position: relative; z-index: 1;  padding: 70px 0 50px; }
 .login-pitch__eyebrow { width: fit-content; margin-bottom: 21px; padding: 8px 11px; border: 1px solid rgba(255,255,255,.11); border-radius: 999px; display: flex; align-items: center; gap: 7px; color: #d2d5ec; background: rgba(255,255,255,.06); font-size: 9px; text-transform: uppercase; letter-spacing: 1.25px; font-weight: 750; }
 .login-pitch__eyebrow svg { color: #ffa55a; }
 .login-pitch h1 { margin-bottom: 17px; color: white; font-size: clamp(34px, 3.5vw, 52px); line-height: 1.05; letter-spacing: -2.15px; }
@@ -532,4 +532,5 @@ h1, h2, h3, p { margin-top: 0; }
   .demo-credentials dl { grid-template-columns: 1fr; }
   .contract-service-fields { grid-template-columns: 1fr; }.contract-service-fields .form-field:first-child { grid-column: auto; }
   .contract-client-filter { align-items: flex-start; flex-wrap: wrap; }.contract-client-filter > div { width: calc(100% - 44px); }.contract-client-filter > button { width: 100%; justify-content: center; }
+ 
 }

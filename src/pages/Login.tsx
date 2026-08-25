@@ -33,7 +33,11 @@ export function Login() {
       <section className="login-brand-panel">
         <div className="login-brand-panel__glow login-brand-panel__glow--one" />
         <div className="login-brand-panel__glow login-brand-panel__glow--two" />
-        <div className="login-brand"><span className="login-brand__mark">GB</span><span><strong>Gente Boa</strong><small>Gestão</small></span></div>
+
+        <div className="login-brand">
+          <div className="brand-mark" style={{ width: '4vw', height: '4vw' }}><img src="/images/logo.jpg" alt="Gente Boa" /></div><span><strong>Gente Boa</strong><small>Gestão</small></span>
+        </div>
+
         <div className="login-pitch">
           <span className="login-pitch__eyebrow"><Wrench size={14} /> Gestão simples. Serviço bem feito.</span>
           <h1>Toda a operação da Gente Boa, em um só lugar.</h1>
