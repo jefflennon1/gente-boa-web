@@ -102,6 +102,10 @@ function yesNo(value?: string | null) {
   return flagIsOn(value) ? 'Sim' : 'Não'
 }
 
+function decimalPtBr(value: number) {
+  return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 function formatCep(value?: string | null) {
   const digits = String(value ?? '').replace(/\D/g, '').slice(0, 8)
   return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits
@@ -136,6 +140,7 @@ export function Clients() {
   const [toast, setToast] = useState('')
   const [formError, setFormError] = useState('')
   const [referralDescription, setReferralDescription] = useState('')
+  const [issRetentionFlag, setIssRetentionFlag] = useState<'0' | '1'>('0')
   const [referralModalOpen, setReferralModalOpen] = useState(false)
   const [newReferralDescription, setNewReferralDescription] = useState('')
   const [referralFormError, setReferralFormError] = useState('')
@@ -298,6 +303,7 @@ export function Clients() {
   function openNew() {
     setSelected(null)
     setReferralDescription('')
+    setIssRetentionFlag('0')
     setAddressFields(emptyAddressFields)
     setAdditionalAddresses([])
     setCepLookupValue(null)
@@ -308,6 +314,7 @@ export function Clients() {
   function openEdit(client: Client) {
     setSelected(client)
     setReferralDescription(client.dsindic?.trim() ?? '')
+    setIssRetentionFlag(flagIsOn(client.fliss) ? '1' : '0')
     setAddressFields(addressFieldsFrom(client))
     setAdditionalAddresses((client.addresses ?? []).map(clientAddressRowFrom))
     setCepLookupValue(null)
@@ -451,7 +458,7 @@ export function Clients() {
       dsponto: textValue(data, 'dsponto'),
       flaudit: textValue(data, 'flaudit'),
       fliss: textValue(data, 'fliss'),
-      vliss: systemParametersQuery.data?.vliss ?? null,
+      vliss: textValue(data, 'fliss') === '1' ? systemParametersQuery.data?.vliss ?? null : 0,
       flinss: textValue(data, 'flinss'),
       vlinss: nullableNumber(data, 'vlinss'),
       flenvio: textValue(data, 'flenvio'),
@@ -592,8 +599,8 @@ export function Clients() {
           <div className="form-section-title"><span>4</span><div><strong>Tributação</strong><small>Auditoria e retenções do cadastro legado</small></div></div>
           <div className="form-grid form-grid--three">
             <FormField label="Auditado"><select name="flaudit" defaultValue={flagIsOn(selected?.flaudit) ? '1' : '0'}><option value="0">Não</option><option value="1">Sim</option></select></FormField>
-            <FormField label="Retém ISS"><select name="fliss" defaultValue={flagIsOn(selected?.fliss) ? '1' : '0'}><option value="0">Não</option><option value="1">Sim</option></select></FormField>
-            <FormField label="Valor / alíquota de ISS %"><input name="vliss" type="number" readOnly value={systemParametersQuery.data?.vliss ?? ''} /></FormField>
+            <FormField label="Retém ISS"><select name="fliss" value={issRetentionFlag} onChange={(event) => setIssRetentionFlag(event.target.value as '0' | '1')}><option value="0">Não</option><option value="1">Sim</option></select></FormField>
+            <FormField label="Valor / alíquota de ISS %"><input name="vliss" type="text" inputMode="decimal" readOnly value={issRetentionFlag === '1' ? systemParametersQuery.data?.vliss == null ? '' : decimalPtBr(systemParametersQuery.data.vliss) : '0,00'} /></FormField>
             <FormField label="Retém INSS"><select name="flinss" defaultValue={flagIsOn(selected?.flinss) ? '1' : '0'}><option value="0">Não</option><option value="1">Sim</option></select></FormField>
             <FormField label="Valor / alíquota de INSS"><input name="vlinss" type="number" min="0" step="0.01" defaultValue={selected?.vlinss ?? ''} /></FormField>
           </div>

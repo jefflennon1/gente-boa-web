@@ -23,6 +23,11 @@ type ServiceRow = {
   bonusQuantity: number
 }
 
+type PendingSignedDocument = {
+  contract: Contract
+  file: File
+}
+
 const sortOptions: { value: ContractListSortBy; label: string }[] = [
   { value: 'CONTRACT_DATE', label: 'Data do contrato' },
   { value: 'RENEWAL_DATE', label: 'Data de renovação' },
@@ -71,6 +76,12 @@ function renewalInNextDays(value?: string | null, days = 60) {
   return renewal >= now && renewal <= now + days * 86_400_000
 }
 
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} KB`
+  return `${(bytes / (1024 * 1024)).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB`
+}
+
 export function Contracts() {
   const queryClient = useQueryClient()
   const signedDocumentInputRef = useRef<HTMLInputElement>(null)
@@ -93,6 +104,9 @@ export function Contracts() {
   const [documentUrl, setDocumentUrl] = useState('')
   const [documentContract, setDocumentContract] = useState<Contract | null>(null)
   const [signedDocumentUploadingId, setSignedDocumentUploadingId] = useState<number | null>(null)
+  const [pendingSignedDocument, setPendingSignedDocument] = useState<PendingSignedDocument | null>(null)
+  const [signedDocumentPreviewUrl, setSignedDocumentPreviewUrl] = useState('')
+  const [signedDocumentUploadError, setSignedDocumentUploadError] = useState('')
   const [contractToDelete, setContractToDelete] = useState<Contract | null>(null)
   const [contractToCancel, setContractToCancel] = useState<Contract | null>(null)
   const [toast, setToast] = useState('')
@@ -155,6 +169,16 @@ export function Contracts() {
       if (documentUrl) window.URL.revokeObjectURL(documentUrl)
     }
   }, [documentUrl])
+
+  useEffect(() => {
+    if (!pendingSignedDocument) {
+      setSignedDocumentPreviewUrl('')
+      return
+    }
+    const previewUrl = window.URL.createObjectURL(pendingSignedDocument.file)
+    setSignedDocumentPreviewUrl(previewUrl)
+    return () => window.URL.revokeObjectURL(previewUrl)
+  }, [pendingSignedDocument])
 
   const saveMutation = useMutation({
     mutationFn: ({ id, payload }: { id?: number; payload: ContractPayload }) => id ? api.contracts.update(id, payload) : api.contracts.create(payload),
@@ -244,27 +268,43 @@ export function Contracts() {
     signedDocumentInputRef.current?.click()
   }
 
-  async function uploadSignedDocument(event: React.ChangeEvent<HTMLInputElement>) {
+  function prepareSignedDocumentUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     const contract = signedDocumentContractRef.current
     event.target.value = ''
+    signedDocumentContractRef.current = null
     if (!file || !contract) return
     if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
       showToast('Envie um arquivo PDF.')
       return
     }
+    setSignedDocumentUploadError('')
+    setPendingSignedDocument({ contract, file })
+  }
+
+  function closeSignedDocumentConfirmation() {
+    if (signedDocumentUploadingId !== null) return
+    setPendingSignedDocument(null)
+    setSignedDocumentUploadError('')
+  }
+
+  async function confirmSignedDocumentUpload(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!pendingSignedDocument || signedDocumentUploadingId !== null) return
+    const { contract, file } = pendingSignedDocument
     setSignedDocumentUploadingId(contract.id)
+    setSignedDocumentUploadError('')
     try {
       await api.contracts.uploadSignedDocument(contract.id, file)
+      setPendingSignedDocument(null)
       showToast(`Contrato #${contract.id} assinado atualizado com sucesso.`)
       if (documentContract?.id === contract.id) {
         closeDocumentModal()
       }
     } catch (error) {
-      showToast(apiErrorMessage(error, 'NÃ£o foi possÃ­vel enviar o contrato assinado.'))
+      setSignedDocumentUploadError(apiErrorMessage(error, 'Não foi possível enviar o contrato assinado.'))
     } finally {
       setSignedDocumentUploadingId(null)
-      signedDocumentContractRef.current = null
     }
   }
 
@@ -543,6 +583,21 @@ export function Contracts() {
         </footer>
       </Modal>
 
+      <Modal
+        open={Boolean(pendingSignedDocument)}
+        onClose={closeSignedDocumentConfirmation}
+        title={`Confirmar upload do contrato #${pendingSignedDocument?.contract.id ?? ''}`}
+        description="Confira o arquivo selecionado antes de enviá-lo para a API."
+        size="xlarge"
+      >
+        <ModalForm onSubmit={confirmSignedDocumentUpload} onCancel={closeSignedDocumentConfirmation} submitting={signedDocumentUploadingId !== null} submitLabel={signedDocumentUploadingId !== null ? 'Enviando PDF...' : 'Confirmar upload'}>
+          <FormError message={signedDocumentUploadError} />
+          {pendingSignedDocument && <div className="signed-document-confirmation"><span className="signed-document-confirmation__icon"><FileSignature size={22} /></span><div><small>Arquivo PDF selecionado</small><strong>{pendingSignedDocument.file.name}</strong><p>{formatFileSize(pendingSignedDocument.file.size)} · Contrato #{pendingSignedDocument.contract.id} · {pendingSignedDocument.contract.clientTradeName || pendingSignedDocument.contract.clientName || `Cliente #${pendingSignedDocument.contract.clientId}`}</p></div></div>}
+          {signedDocumentPreviewUrl && <div className="signed-document-confirmation__preview"><iframe src={signedDocumentPreviewUrl} title={`Pré-visualização de ${pendingSignedDocument?.file.name ?? 'contrato assinado'}`} /></div>}
+          <p className="signed-document-confirmation__notice">O arquivo somente será enviado após a confirmação e passará a ser o contrato assinado atual.</p>
+        </ModalForm>
+      </Modal>
+
       <Modal open={Boolean(contractToCancel)} onClose={() => !cancelMutation.isPending && setContractToCancel(null)} title={`Cancelar contrato #${contractToCancel?.id ?? ''}`} description="O contrato permanece no histórico e deixa de ser considerado ativo.">
         <ModalForm onSubmit={submitCancellation} onCancel={() => setContractToCancel(null)} submitting={cancelMutation.isPending} submitLabel={cancelMutation.isPending ? 'Cancelando...' : 'Confirmar cancelamento'}>
           <FormError message={cancelError} />
@@ -564,7 +619,7 @@ export function Contracts() {
         onConfirm={() => { if (contractToDelete && !deleteMutation.isPending) { setDeleteError(''); deleteMutation.mutate(contractToDelete.id) } }}
       />
 
-      <input ref={signedDocumentInputRef} type="file" accept="application/pdf,.pdf" hidden onChange={uploadSignedDocument} />
+      <input ref={signedDocumentInputRef} type="file" accept="application/pdf,.pdf" hidden onChange={prepareSignedDocumentUpload} />
 
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
     </>
