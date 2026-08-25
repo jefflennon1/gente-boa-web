@@ -11,6 +11,7 @@ import type { Client, ClientAddress, ClientAddressPayload, ClientKind, ClientLis
 import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 type StatusFilter = 'TODOS' | 'ATIVO' | 'INATIVO'
+const referralDescriptionsQueryKey = [...queryKeys.clients, 'referral-descriptions'] as const
 
 type AddressFields = {
   nrcep: string
@@ -135,6 +136,9 @@ export function Clients() {
   const [toast, setToast] = useState('')
   const [formError, setFormError] = useState('')
   const [referralDescription, setReferralDescription] = useState('')
+  const [referralModalOpen, setReferralModalOpen] = useState(false)
+  const [newReferralDescription, setNewReferralDescription] = useState('')
+  const [referralFormError, setReferralFormError] = useState('')
   const [addressFields, setAddressFields] = useState<AddressFields>(emptyAddressFields)
   const [additionalAddresses, setAdditionalAddresses] = useState<ClientAddressRow[]>([])
   const [cepLookupValue, setCepLookupValue] = useState<string | null>(null)
@@ -166,7 +170,7 @@ export function Clients() {
   })
 
   const referralDescriptionsQuery = useQuery({
-    queryKey: [...queryKeys.clients, 'referral-descriptions'],
+    queryKey: referralDescriptionsQueryKey,
     queryFn: api.clients.referralDescriptions,
     enabled: modalOpen,
   })
@@ -232,6 +236,22 @@ export function Clients() {
     onError: (error) => setFormError(apiErrorMessage(error)),
   })
 
+  const createReferralMutation = useMutation({
+    mutationFn: api.clients.createReferralDescription,
+    onSuccess: (created) => {
+      queryClient.setQueryData<string[]>(referralDescriptionsQueryKey, (current = []) =>
+        [...current, created.description].sort((first, second) => first.localeCompare(second, 'pt-BR', { sensitivity: 'base' })),
+      )
+      setReferralDescription(created.description)
+      setReferralModalOpen(false)
+      setNewReferralDescription('')
+      setReferralFormError('')
+      showToast(`Indicação “${created.description}” cadastrada com sucesso.`)
+      void queryClient.invalidateQueries({ queryKey: referralDescriptionsQueryKey })
+    },
+    onError: (error) => setReferralFormError(apiErrorMessage(error)),
+  })
+
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.clients.remove(id),
     onMutate: async (id) => {
@@ -294,6 +314,29 @@ export function Clients() {
     setDetailId(null)
     setFormError('')
     setModalOpen(true)
+  }
+
+  function openReferralModal() {
+    setNewReferralDescription('')
+    setReferralFormError('')
+    setReferralModalOpen(true)
+  }
+
+  function closeReferralModal() {
+    if (createReferralMutation.isPending) return
+    setReferralModalOpen(false)
+    setReferralFormError('')
+  }
+
+  function submitReferral(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const description = newReferralDescription.trim()
+    if (!description) {
+      setReferralFormError('Informe a descrição da indicação.')
+      return
+    }
+    setReferralFormError('')
+    createReferralMutation.mutate(description)
   }
 
   function updateAddressField(field: keyof AddressFields, value: string) {
@@ -500,7 +543,7 @@ export function Clients() {
           </div>
           <div className="form-grid form-grid--two form-grid--spaced">
             <FormField label="E-mail"><input name="dsemail" type="email" maxLength={50} defaultValue={selected?.dsemail ?? selected?.email ?? ''} /></FormField>
-            <FormField label="Indicado por" hint={referralDescriptionsQuery.isLoading ? 'Carregando indicações registradas...' : referralDescriptions.length > 0 ? `${referralDescriptions.length} indicação(ões) agrupada(s), com as mais usadas primeiro.` : 'Nenhuma indicação válida foi encontrada nos clientes.'}><select name="dsindic" value={referralSelectValue} onChange={(event) => setReferralDescription(event.target.value)}><option value="">Sem indicação</option>{referralOptions.map((description) => <option key={description.toLocaleLowerCase('pt-BR')} value={description}>{description}</option>)}</select></FormField>
+            <FormField label="Indicado por" hint={referralDescriptionsQuery.isLoading ? 'Carregando tipos de indicação...' : referralDescriptions.length > 0 ? `${referralDescriptions.length} tipo(s) de indicação cadastrado(s).` : 'Nenhum tipo de indicação foi cadastrado.'}><div className="referral-select-control"><select name="dsindic" value={referralSelectValue} onChange={(event) => setReferralDescription(event.target.value)}><option value="">Sem indicação</option>{referralOptions.map((description) => <option key={description.toLocaleLowerCase('pt-BR')} value={description}>{description}</option>)}</select><button type="button" className="referral-select-add-button" title="Adicionar novo tipo de indicação" aria-label="Adicionar novo tipo de indicação" onClick={openReferralModal}><Plus size={18} /></button></div></FormField>
             <FormField label="Código do indicador"><input name="idindic" type="number" min="0" defaultValue={selected?.idindic ?? ''} /></FormField>
             <FormField label="Código do promotor de vendas"><input name="idfunci" type="number" min="0" defaultValue={selected?.idfunci ?? ''} /></FormField>
           </div>
@@ -569,6 +612,13 @@ export function Clients() {
             <header><span className="client-form-contracts__icon"><FileSignature size={18} /></span><div><strong>Contratos do cliente</strong><small>{selected ? 'Dados consultados diretamente no módulo de contratos' : 'Disponível após salvar o cadastro do cliente'}</small></div>{selected && <Button type="button" variant="secondary" icon={<ArrowUpRight size={15} />} onClick={() => { setModalOpen(false); navigate(`/contratos?clientId=${selected.id}`) }}>Gerenciar contratos</Button>}</header>
             {!selected ? <div className="client-form-contracts__empty"><span>Salve o cliente primeiro para cadastrar e vincular contratos.</span></div> : editContractsQuery.isLoading ? <div className="client-form-contracts__state"><RefreshCw className="api-state__spinner" size={17} /><span>Carregando contratos completos...</span></div> : editContractsQuery.isError ? <div className="client-form-contracts__state client-form-contracts__state--error"><span>Não foi possível consultar os contratos.</span><button type="button" onClick={() => editContractsQuery.refetch()}>Tentar novamente</button></div> : (editContractsQuery.data?.content.length ?? 0) === 0 ? <div className="client-form-contracts__empty"><span>Nenhum contrato cadastrado para este cliente.</span><button type="button" onClick={() => { setModalOpen(false); navigate(`/contratos?clientId=${selected.id}`) }}>Cadastrar contrato <ArrowUpRight size={14} /></button></div> : <div className="client-form-contracts__list">{editContractsQuery.data?.content.map((contract) => <article key={contract.id}><span className="client-form-contracts__number">#{contract.id}</span><div><strong>Contrato {contract.id}</strong><small>Início {formatDate(contract.contractDate)} · renovação {formatDate(contract.renewalDate)} · {contract.services?.length ?? 0} serviços</small></div><span><small>Vencimento</small><strong>{contract.dueDay ? `Dia ${contract.dueDay}` : 'Não informado'}</strong></span><span><small>Adesão</small><strong>{money(contract.adhesionFee)}</strong></span><Badge tone={contract.status === 'ATIVO' ? 'green' : 'neutral'}>{enumLabel(contract.status)}</Badge></article>)}</div>}
           </div>
+        </ModalForm>
+      </Modal>
+
+      <Modal open={referralModalOpen} onClose={closeReferralModal} title="Nova indicação" description="Cadastre uma nova descrição para disponibilizá-la na seleção de clientes.">
+        <ModalForm onSubmit={submitReferral} onCancel={closeReferralModal} submitting={createReferralMutation.isPending} submitLabel={createReferralMutation.isPending ? 'Cadastrando...' : 'Cadastrar indicação'}>
+          <FormError message={referralFormError} />
+          <FormField label="Descrição da indicação" hint="Use uma descrição clara, com no máximo 50 caracteres."><input autoFocus required maxLength={50} value={newReferralDescription} onChange={(event) => setNewReferralDescription(event.target.value)} placeholder="Ex.: Campanha nas redes sociais" /></FormField>
         </ModalForm>
       </Modal>
 

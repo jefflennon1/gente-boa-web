@@ -137,6 +137,11 @@ export interface ClientStatisticsResponse {
   inactive: number
 }
 
+export interface ClientReferral {
+  id: number
+  description: string
+}
+
 export interface ClientAddress {
   id: number
   clientId: number | null

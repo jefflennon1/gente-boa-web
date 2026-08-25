@@ -6,6 +6,7 @@ import type {
   ClientListItem,
   ClientListSortBy,
   ClientPayload,
+  ClientReferral,
   ClientStatisticsResponse,
   CancelContractPayload,
   Contract,
@@ -98,6 +99,10 @@ export const api = {
     },
     async referralDescriptions() {
       const { data } = await http.get<string[]>('/clients/referral-descriptions')
+      return data
+    },
+    async createReferralDescription(description: string) {
+      const { data } = await http.post<ClientReferral>('/clients/referral-descriptions', { description })
       return data
     },
   },
