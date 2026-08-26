@@ -18,6 +18,8 @@ import type {
   InvoicePayload,
   PagedResponse,
   ServiceOrder,
+  ServiceOrderListItem,
+  ServiceOrderStatus,
   ServiceOrderPayload,
   ServiceCatalogItem,
   Statement,
@@ -178,7 +180,31 @@ export const api = {
       return data
     },
   },
-  serviceOrders: resource<ServiceOrder, ServiceOrderPayload>('/service-orders'),
+  serviceOrders: {
+    async list(params: ListParams = {}) {
+      const { data } = await http.get<PagedResponse<ServiceOrderListItem>>('/service-orders', { params: { page: 0, size: 100, ...params } })
+      return data
+    },
+    async find(id: number) {
+      const { data } = await http.get<ServiceOrder>(`/service-orders/${id}`)
+      return data
+    },
+    async create(payload: ServiceOrderPayload) {
+      const { data } = await http.post<ServiceOrder>('/service-orders', payload)
+      return data
+    },
+    async update(id: number, payload: ServiceOrderPayload) {
+      const { data } = await http.put<ServiceOrder>(`/service-orders/${id}`, payload)
+      return data
+    },
+    async updateStatus(id: number, status: ServiceOrderStatus) {
+      const { data } = await http.put<ServiceOrder>(`/service-orders/${id}/status`, null, { params: { status } })
+      return data
+    },
+    async remove(id: number) {
+      await http.delete(`/service-orders/${id}`)
+    },
+  },
   invoices: resource<Invoice, InvoicePayload>('/invoices'),
   statements: resource<Statement, StatementPayload>('/statements'),
   users: resource<AppUser, CreateUserPayload | UpdateUserPayload>('/users'),

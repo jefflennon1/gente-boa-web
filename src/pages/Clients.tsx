@@ -13,6 +13,13 @@ import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, Form
 type StatusFilter = 'TODOS' | 'ATIVO' | 'INATIVO'
 const referralDescriptionsQueryKey = [...queryKeys.clients, 'referral-descriptions'] as const
 
+function referralDisplayName(description: string) {
+  return description
+    .trim()
+    .toLocaleLowerCase('pt-BR')
+    .replace(/(^|[^\p{L}\p{N}])(\p{L})/gu, (_match, separator: string, letter: string) => `${separator}${letter.toLocaleUpperCase('pt-BR')}`)
+}
+
 type AddressFields = {
   nrcep: string
   dsender: string
@@ -550,7 +557,7 @@ export function Clients() {
           </div>
           <div className="form-grid form-grid--two form-grid--spaced">
             <FormField label="E-mail"><input name="dsemail" type="email" maxLength={50} defaultValue={selected?.dsemail ?? selected?.email ?? ''} /></FormField>
-            <FormField label="Indicado por" hint={referralDescriptionsQuery.isLoading ? 'Carregando tipos de indicação...' : referralDescriptions.length > 0 ? `${referralDescriptions.length} tipo(s) de indicação cadastrado(s).` : 'Nenhum tipo de indicação foi cadastrado.'}><div className="referral-select-control"><select name="dsindic" value={referralSelectValue} onChange={(event) => setReferralDescription(event.target.value)}><option value="">Sem indicação</option>{referralOptions.map((description) => <option key={description.toLocaleLowerCase('pt-BR')} value={description}>{description}</option>)}</select><button type="button" className="referral-select-add-button" title="Adicionar novo tipo de indicação" aria-label="Adicionar novo tipo de indicação" onClick={openReferralModal}><Plus size={18} /></button></div></FormField>
+            <FormField label="Indicado por" hint={referralDescriptionsQuery.isLoading ? 'Carregando tipos de indicação...' : referralDescriptions.length > 0 ? `${referralDescriptions.length} tipo(s) de indicação cadastrado(s).` : 'Nenhum tipo de indicação foi cadastrado.'}><div className="referral-select-control"><select name="dsindic" value={referralSelectValue} onChange={(event) => setReferralDescription(event.target.value)}><option value="">Sem indicação</option>{referralOptions.map((description) => <option key={description.toLocaleLowerCase('pt-BR')} value={description}>{referralDisplayName(description)}</option>)}</select><button type="button" className="referral-select-add-button" title="Adicionar novo tipo de indicação" aria-label="Adicionar novo tipo de indicação" onClick={openReferralModal}><Plus size={18} /></button></div></FormField>
             <FormField label="Código do indicador"><input name="idindic" type="number" min="0" defaultValue={selected?.idindic ?? ''} /></FormField>
             <FormField label="Código do promotor de vendas"><input name="idfunci" type="number" min="0" defaultValue={selected?.idfunci ?? ''} /></FormField>
           </div>

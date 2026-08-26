@@ -8,7 +8,7 @@ import { useAuth } from '../auth'
 import { Badge, Button, ErrorState, LoadingState, PageHeader, StatCard } from '../components/ui'
 import { enumLabel, formatDate, money } from '../lib/format'
 import { useRouter } from '../router'
-import type { Invoice, ServiceOrder } from '../types'
+import type { Invoice } from '../types'
 
 function buildCashFlow(invoices: Invoice[]) {
   const formatter = new Intl.DateTimeFormat('pt-BR', { month: 'short' })
@@ -45,10 +45,10 @@ export function Dashboard() {
   const currentMonth = today.slice(0, 7)
   const revenue = invoices.filter((invoice) => invoice.status === 'EMITIDA' && (invoice.issuedAt || invoice.dtemiss)?.startsWith(currentMonth)).reduce((sum, invoice) => sum + Number(invoice.amount ?? 0), 0)
   const receivable = invoices.filter((invoice) => !['EMITIDA', 'CANCELADA'].includes(invoice.status)).reduce((sum, invoice) => sum + Number(invoice.amount ?? 0), 0)
-  const todayOrders = orders.filter((order) => order.scheduledDate === today)
+  const todayOrders = orders.filter((order) => order.orderedAt?.slice(0, 10) === today)
   const readyInvoices = invoices.filter((invoice) => invoice.status === 'PRONTA')
   const cashFlow = useMemo(() => buildCashFlow(invoices), [invoices])
-  const activity = useMemo(() => [...orders].filter((order) => !['FINALIZADA', 'CANCELADA'].includes(order.status)).sort((a, b) => `${a.scheduledDate || ''}${a.scheduledTime || ''}`.localeCompare(`${b.scheduledDate || ''}${b.scheduledTime || ''}`)).slice(0, 4), [orders])
+  const activity = useMemo(() => [...orders].filter((order) => !['FINALIZADA', 'CANCELADA'].includes(order.status)).sort((a, b) => (a.orderedAt || '').localeCompare(b.orderedAt || '')).slice(0, 4), [orders])
   const isLoading = clientStatisticsQuery.isLoading || ordersQuery.isLoading || invoicesQuery.isLoading || statementsQuery.isLoading
   const failedQuery = [clientStatisticsQuery, ordersQuery, invoicesQuery, statementsQuery].find((query) => query.isError)
 
@@ -62,7 +62,7 @@ export function Dashboard() {
       <section className="stats-grid stats-grid--four">
         <StatCard label="Receita emitida no mês" value={money(revenue)} helper={`${invoices.filter((invoice) => invoice.status === 'EMITIDA').length} notas emitidas no retorno`} icon={<TrendingUp />} tone="green" />
         <StatCard label="A faturar" value={money(receivable)} helper={`${readyInvoices.length} notas prontas`} icon={<CircleDollarSign />} tone="blue" />
-        <StatCard label="Ordens hoje" value={String(todayOrders.length)} helper={`${todayOrders.filter((order) => order.status === 'EM_ATENDIMENTO').length} em atendimento`} icon={<ClipboardCheck />} tone="orange" />
+        <StatCard label="Ordens hoje" value={String(todayOrders.length)} helper={`${todayOrders.filter((order) => order.status === 'ABERTA').length} abertas`} icon={<ClipboardCheck />} tone="orange" />
         <StatCard label="Clientes ativos" value={String(clientStatisticsQuery.data?.active ?? 0)} helper={`${clientStatisticsQuery.data?.total ?? 0} clientes cadastrados · ${clientStatisticsQuery.data?.inactive ?? 0} inativos`} icon={<UsersRound />} tone="purple" />
       </section>
 
@@ -77,7 +77,7 @@ export function Dashboard() {
 
         <article className="panel schedule-panel">
           <div className="panel__header"><div><span className="eyebrow">Agenda operacional</span><h2>Próximos atendimentos</h2></div><button className="panel-link" onClick={() => navigate('/ordens-de-servico')}>Ver agenda <ArrowRight size={15} /></button></div>
-          <div className="schedule-list">{activity.length ? activity.map((item: ServiceOrder) => <button key={item.id} className="schedule-row" onClick={() => navigate('/ordens-de-servico')}><span className={`schedule-time ${item.priority === 'URGENTE' ? 'schedule-time--urgent' : ''}`}>{item.scheduledTime?.slice(0, 5) || '—'}</span><span className="schedule-main"><strong>{item.clientName || item.client?.name || `Cliente #${item.idclien}`}</strong><small>{item.description || `Serviço ${item.service || ''}`}</small></span><span className="schedule-tech">{enumLabel(item.status)}</span></button>) : <div className="kanban-empty">Nenhum atendimento pendente.</div>}</div>
+          <div className="schedule-list">{activity.length ? activity.map((item) => <button key={item.id} className="schedule-row" onClick={() => navigate('/ordens-de-servico')}><span className={`schedule-time ${item.priority === 'URGENTE' ? 'schedule-time--urgent' : ''}`}>{formatDate(item.orderedAt)}</span><span className="schedule-main"><strong>{item.clientTradeName || item.clientName || `Cliente #${item.clientId}`}</strong><small>{item.description || 'Descrição não informada'}</small></span><span className="schedule-tech">{enumLabel(item.status)}</span></button>) : <div className="kanban-empty">Nenhum atendimento pendente.</div>}</div>
           <div className="schedule-footer"><ClipboardCheck size={16} /><span><strong>{ordersQuery.data?.total ?? 0}</strong> ordens cadastradas na API</span></div>
         </article>
       </section>

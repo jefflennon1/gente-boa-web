@@ -4,7 +4,8 @@ export type ISODateTime = string
 export type ClientKind = 'PESSOA_FISICA' | 'PESSOA_JURIDICA'
 export type ClientStatus = 'ATIVO' | 'ATENCAO' | 'INATIVO'
 export type Priority = 'NORMAL' | 'URGENTE'
-export type ServiceCategory = 'ELETRICA' | 'HIDRAULICA' | 'INSTALACAO' | 'VISITA_TECNICA' | 'SERVICOS_GERAIS'
+export type ServiceCategory = 'MAO_DE_OBRA' | 'GARANTIA' | 'VISITA_TECNICA' | 'CANCELAMENTO' | 'DESLOCAMENTO'
+export type ServiceSearchType = 'ELETRICOS' | 'AMBOS' | 'ALVENARIA' | 'HIDRAULICO' | 'HIDRO' | 'OUTROS'
 export type ServiceOrderStatus = 'ABERTA' | 'ENCAMINHADA' | 'AGENDADA' | 'EM_ATENDIMENTO' | 'FINALIZADA' | 'CANCELADA'
 export type InvoiceStatus = 'PRONTA' | 'REVISAR' | 'EMITIDA' | 'CANCELADA'
 export type PaymentDocumentStatus = 'PENDENTE' | 'PRONTO' | 'REGISTRADO' | 'EMITIDO' | 'ENVIADO' | 'REVISAR'
@@ -185,6 +186,7 @@ export interface ServiceCatalogItem {
   defaultPrice?: number | null
   unit: string | null
   minimumValue?: number | null
+  legacyMinuteValue?: number | null
 }
 
 export interface ContractServiceItem {
@@ -274,6 +276,55 @@ export interface CancelContractPayload {
   reason: string
 }
 
+export interface ServiceOrderSchedule {
+  serviceOrderId?: number | null
+  scheduleId?: number | null
+  expectedDate: ISODateTime
+  expectedStart?: string | null
+  expectedEnd?: string | null
+  expectedDuration?: string | null
+  employeeId?: number | null
+  roleId?: number | null
+  actualDate?: ISODateTime | null
+  actualStart?: string | null
+  actualEnd?: string | null
+  actualQuantity?: number | null
+  actualDuration?: string | null
+  urgentFlag?: string | null
+  scheduledTimeFlag?: string | null
+  startedFlag?: string | null
+  finishedFlag?: string | null
+  routedFlag?: string | null
+  finishedAt?: ISODateTime | null
+  startedAt?: ISODateTime | null
+  serviceType?: string | null
+}
+
+export interface ServiceOrderServiceItem {
+  serviceOrderId?: number | null
+  serviceId: number
+  quantity?: number | null
+  hours?: string | null
+  unitValue?: number | null
+  totalValue?: number | null
+  minimumValue?: number | null
+  minuteValue?: number | null
+}
+
+export interface ServiceOrderListItem {
+  id: number
+  orderedAt: ISODateTime
+  clientName: string | null
+  clientTradeName: string | null
+  clientId: number | null
+  requester: string | null
+  category: ServiceCategory
+  status: ServiceOrderStatus
+  description: string | null
+  totalValue: number | null
+  priority: Priority
+}
+
 export interface ServiceOrder {
   id: number
   code: string | null
@@ -302,13 +353,49 @@ export interface ServiceOrder {
   flstatu?: string | null
   flcateg?: string | null
   tpservic?: string | null
+  flordem?: string | null
+  nrbloco?: string | null
+  dtvenci?: ISODateTime | null
+  txbolet?: number | null
+  qthorac?: string | null
+  qthorat?: string | null
+  sdanter?: string | null
+  sdutili?: string | null
+  sdfinal?: string | null
+  sdexced?: string | null
+  hireali?: string | null
+  dtfecha?: ISODateTime | null
+  vldesco?: number | null
+  vldesc?: number | null
+  dtfinal?: ISODateTime | null
+  dtinicial?: ISODateTime | null
+  idpedi?: number | null
+  vltrans?: number | null
+  vlalug?: number | null
+  fltrans?: string | null
+  flalug?: string | null
+  qthrest?: string | null
+  flexc?: string | null
+  sdcontr?: string | null
+  nrcnpj?: string | null
+  nrorca?: string | null
+  dtorca?: ISODateTime | null
+  dsorca?: string | null
+  vlorca?: number | null
+  dscancel?: string | null
+  flfideli?: string | null
+  idfidel?: number | null
+  nmconta?: string | null
+  schedules?: ServiceOrderSchedule[] | null
+  serviceItems?: ServiceOrderServiceItem[] | null
 }
 
 export type ServiceOrderPayload = Partial<Omit<ServiceOrder, 'id' | 'code' | 'client' | 'clientName'>> & {
   idclien: number
-  service: string
-  scheduledDate: ISODate
+  dtordem: ISODateTime
   status: ServiceOrderStatus
+  schedules: ServiceOrderSchedule[]
+  serviceItems: ServiceOrderServiceItem[]
 }
 
 export interface Invoice {
