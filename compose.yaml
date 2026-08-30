@@ -1,5 +1,4 @@
 name: gente-boa-web-homolog
-services:
   web:
     build:
       context: .
