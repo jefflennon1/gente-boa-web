@@ -4,6 +4,7 @@ import type {
   Client,
   CepAddressResponse,
   ClientListItem,
+  ClientSearchOption,
   ClientListSortBy,
   ClientPayload,
   ClientReferral,
@@ -16,6 +17,8 @@ import type {
   CreateUserPayload,
   Invoice,
   InvoicePayload,
+  Material,
+  MaterialPayload,
   PagedResponse,
   ServiceOrder,
   ServiceOrderListItem,
@@ -27,6 +30,7 @@ import type {
   SortDirection,
   SystemParameters,
   SystemParametersPayload,
+  Supplier,
   UpdateUserPayload,
 } from '../types'
 import { http } from './client'
@@ -117,6 +121,10 @@ export const api = {
       const { data } = await http.post<ClientReferral>('/clients/referral-descriptions', { description })
       return data
     },
+    async search(query: string) {
+      const { data } = await http.get<ClientSearchOption[]>('/clients/search', { params: { query } })
+      return data
+    },
   },
   addresses: {
     async findByCep(cep: string) {
@@ -190,6 +198,13 @@ export const api = {
       return data
     },
   },
+  materials: resource<Material, MaterialPayload>('/materials'),
+  suppliers: {
+    async list(params: Pick<ListParams, 'query' | 'page' | 'size'> = {}) {
+      const { data } = await http.get<PagedResponse<Supplier>>('/suppliers', { params: { page: 0, size: 20, ...params } })
+      return data
+    },
+  },
   serviceOrders: {
     async list(params: ServiceOrderListParams = {}) {
       const { data } = await http.get<PagedResponse<ServiceOrderListItem>>('/service-orders', { params: { page: 0, size: 100, ...params } })
@@ -226,6 +241,8 @@ export const queryKeys = {
   clients: ['clients'] as const,
   contracts: ['contracts'] as const,
   serviceCatalog: ['service-catalog'] as const,
+  materials: ['materials'] as const,
+  suppliers: ['suppliers'] as const,
   serviceOrders: ['service-orders'] as const,
   invoices: ['invoices'] as const,
   statements: ['statements'] as const,

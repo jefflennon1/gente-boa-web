@@ -7,6 +7,7 @@ export type Priority = 'NORMAL' | 'URGENTE'
 export type ServiceCategory = 'MAO_DE_OBRA' | 'GARANTIA' | 'VISITA_TECNICA' | 'CANCELAMENTO' | 'DESLOCAMENTO'
 export type ServiceSearchType = 'ELETRICOS' | 'AMBOS' | 'ALVENARIA' | 'HIDRAULICO' | 'HIDRO' | 'OUTROS'
 export type ServiceOrderStatus = 'ABERTA' | 'ENCAMINHADA' | 'AGENDADA' | 'EM_ATENDIMENTO' | 'FINALIZADA' | 'CANCELADA'
+export type ServiceOrderOrigin = 'A' | 'C'
 export type InvoiceStatus = 'PRONTA' | 'REVISAR' | 'EMITIDA' | 'CANCELADA'
 export type PaymentDocumentStatus = 'PENDENTE' | 'PRONTO' | 'REGISTRADO' | 'EMITIDO' | 'ENVIADO' | 'REVISAR'
 export type UserRole = 'ADMINISTRADOR' | 'OPERACAO' | 'FINANCEIRO'
@@ -132,6 +133,14 @@ export interface ClientListItem {
   totalValue: number
 }
 
+export interface ClientSearchOption {
+  id: number
+  legalName: string | null
+  tradeName: string | null
+  document: string | null
+  status: Exclude<ClientStatus, 'ATENCAO'>
+}
+
 export interface ClientStatisticsResponse {
   total: number
   active: number
@@ -187,6 +196,66 @@ export interface ServiceCatalogItem {
   unit: string | null
   minimumValue?: number | null
   legacyMinuteValue?: number | null
+}
+
+export interface Material {
+  id: number
+  description: string | null
+  unit: string | null
+  minimumStock: number | null
+  currentStock: number | null
+  unitValue: number | null
+  brand: string | null
+}
+
+export type MaterialPayload = Omit<Material, 'id'>
+
+export interface Supplier {
+  id: number
+  tradeName: string | null
+  legalName: string | null
+  document: string | null
+  address: string | null
+  city: string | null
+  state: string | null
+  phone: string | null
+  contactName: string | null
+  contactPhone: string | null
+  contactEmail: string | null
+}
+
+export interface ServiceOrderMaterialItem {
+  itemId?: number | null
+  purchaseOrderId?: number | null
+  materialId: number
+  quantity?: number | null
+  unitValue?: number | null
+  totalValue?: number | null
+  materialDescription?: string | null
+  materialUnit?: string | null
+  materialBrand?: string | null
+}
+
+export interface ServiceOrderMaterialOrder {
+  id?: number | null
+  entryDate?: ISODateTime | null
+  invoiceNumber?: string | null
+  serviceOrderId?: number | null
+  supplierId?: number | null
+  supplierName?: string | null
+  supplierTradeName?: string | null
+  discountPercentage?: number | null
+  freightValue?: number | null
+  insuranceValue?: number | null
+  fobValue?: number | null
+  cifValue?: number | null
+  standardValue?: number | null
+  gbMarginValue?: number | null
+  rentalValue?: number | null
+  notes?: string | null
+  netValue?: number | null
+  grossValue?: number | null
+  items: ServiceOrderMaterialItem[]
 }
 
 export interface ContractServiceItem {
@@ -353,7 +422,7 @@ export interface ServiceOrder {
   flstatu?: string | null
   flcateg?: string | null
   tpservic?: string | null
-  flordem?: string | null
+  flordem?: ServiceOrderOrigin | null
   nrbloco?: string | null
   dtvenci?: ISODateTime | null
   txbolet?: number | null
@@ -388,6 +457,7 @@ export interface ServiceOrder {
   nmconta?: string | null
   schedules?: ServiceOrderSchedule[] | null
   serviceItems?: ServiceOrderServiceItem[] | null
+  materialOrder?: ServiceOrderMaterialOrder | null
 }
 
 export type ServiceOrderPayload = Partial<Omit<ServiceOrder, 'id' | 'code' | 'client' | 'clientName'>> & {

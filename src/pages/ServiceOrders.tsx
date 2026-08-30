@@ -6,7 +6,7 @@ import { apiErrorMessage } from '../api/client'
 import { useAuth } from '../auth'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money, toDateInput } from '../lib/format'
-import type { ClientListItem, PagedResponse, ServiceCatalogItem, ServiceCategory, ServiceOrder, ServiceOrderListItem, ServiceOrderPayload, ServiceOrderSchedule, ServiceOrderServiceItem, ServiceOrderStatus } from '../types'
+import type { Client, ClientAddress, ClientSearchOption, Material, PagedResponse, ServiceCatalogItem, ServiceCategory, ServiceOrder, ServiceOrderListItem, ServiceOrderMaterialItem, ServiceOrderMaterialOrder, ServiceOrderOrigin, ServiceOrderPayload, ServiceOrderSchedule, ServiceOrderServiceItem, ServiceOrderStatus, Supplier } from '../types'
 import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 const stages: ServiceOrderStatus[] = ['ABERTA', 'FINALIZADA', 'CANCELADA']
@@ -33,6 +33,7 @@ const statusTone: Record<ServiceOrderStatus, 'orange' | 'blue' | 'purple' | 'gre
 
 type ScheduleDraft = ServiceOrderSchedule & { rowKey: string }
 type ServiceDraft = ServiceOrderServiceItem & { rowKey: string }
+type MaterialDraft = ServiceOrderMaterialItem & { rowKey: string }
 type DateFilterMode = 'none' | 'date' | 'range' | 'month' | 'week'
 
 type DateBounds = {
@@ -108,8 +109,22 @@ function asDuration(minutes: number) {
   return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`
 }
 
-function clientDisplay(client: ClientListItem) {
-  return client.tradeName || client.name || `Cliente #${client.id}`
+function clientDisplay(client: Client | ClientSearchOption) {
+  if ('tradeName' in client) return client.tradeName || client.legalName || `Cliente #${client.id}`
+  return client.nmfanta || client.name || client.nmrazao || `Cliente #${client.id}`
+}
+
+function primaryClientAddress(client: Client | null | undefined) {
+  if (!client) return ''
+  const cityState = [client.dscidad || client.city, client.dsestad].filter(Boolean).join(' / ')
+  return [client.dsender || client.address, client.dscompl, client.dsbairr, cityState, client.nrcep].filter(Boolean).join(' · ')
+}
+
+function additionalClientAddress(address: ClientAddress) {
+  const cityState = [address.city, address.state].filter(Boolean).join(' / ')
+  const location = [address.street, address.complement, address.district, cityState, address.zipCode].filter(Boolean).join(' · ')
+  if (address.description && location) return `${address.description} — ${location}`
+  return address.description || location || `Local #${address.id}`
 }
 
 export function ServiceOrders() {
@@ -164,7 +179,6 @@ export function ServiceOrders() {
     enabled: !periodError,
     placeholderData: keepPreviousData,
   })
-  const clientsQuery = useQuery({ queryKey: queryKeys.clients, queryFn: () => api.clients.list({ size: 500 }) })
   const catalogQuery = useQuery({ queryKey: queryKeys.serviceCatalog, queryFn: () => api.serviceCatalog.list({ size: 500 }) })
   const detailQuery = useQuery({ queryKey: [...queryKeys.serviceOrders, 'detail', detailId], queryFn: () => api.serviceOrders.find(detailId!), enabled: detailId !== null })
 
@@ -332,18 +346,16 @@ export function ServiceOrders() {
     </DetailModal>
 
     <Modal open={modalOpen} onClose={() => !saveMutation.isPending && setModalOpen(false)} title={selected ? `Editar OS-${selected.id}` : 'Nova ordem de serviço'} description="Preenchimento baseado na tela operacional do sistema Delphi." size="xlarge">
-      <ServiceOrderForm key={formKey} selected={selected} clients={clientsQuery.data?.content ?? []} catalog={catalogQuery.data?.content ?? []} loadingReferences={clientsQuery.isLoading || catalogQuery.isLoading} formError={formError} submitting={saveMutation.isPending} onCancel={() => setModalOpen(false)} onDelete={(id) => setOrderToDelete(id)} onSubmit={(payload) => saveMutation.mutate({ id: selected?.id, payload })} />
+      <ServiceOrderForm key={formKey} selected={selected} catalog={catalogQuery.data?.content ?? []} formError={formError} submitting={saveMutation.isPending} onCancel={() => setModalOpen(false)} onDelete={(id) => setOrderToDelete(id)} onSubmit={(payload) => saveMutation.mutate({ id: selected?.id, payload })} />
     </Modal>
     <ConfirmDialog open={orderToDelete !== null} title={`Excluir OS-${orderToDelete ?? ''}?`} description="A ordem de serviço e seus agendamentos e serviços serão removidos permanentemente." confirmLabel="Excluir ordem" busy={deleteMutation.isPending} onCancel={() => setOrderToDelete(null)} onConfirm={() => orderToDelete !== null && !deleteMutation.isPending && deleteMutation.mutate(orderToDelete)} />
     {toast && <Toast message={toast} onClose={() => setToast('')} />}
   </>
 }
 
-function ServiceOrderForm({ selected, clients, catalog, loadingReferences, formError, submitting, onCancel, onDelete, onSubmit }: {
+function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, onDelete, onSubmit }: {
   selected: ServiceOrder | null
-  clients: ClientListItem[]
   catalog: ServiceCatalogItem[]
-  loadingReferences: boolean
   formError: string
   submitting: boolean
   onCancel: () => void
@@ -354,7 +366,11 @@ function ServiceOrderForm({ selected, clients, catalog, loadingReferences, formE
   const initialDate = toDateInput(selected?.dtordem || selected?.scheduledDate) || localToday()
   const [tab, setTab] = useState<'general' | 'materials'>('general')
   const [clientId, setClientId] = useState(selected?.idclien ? String(selected.idclien) : '')
+  const [clientSearch, setClientSearch] = useState(selected?.client ? clientDisplay(selected.client) : selected?.clientName ?? '')
+  const [clientPickerOpen, setClientPickerOpen] = useState(false)
+  const [clientError, setClientError] = useState('')
   const [requestDate, setRequestDate] = useState(initialDate)
+  const [orderOrigin, setOrderOrigin] = useState<ServiceOrderOrigin>(selected?.flordem === 'C' ? 'C' : 'A')
   const [requester, setRequester] = useState(selected?.nmsolic ?? '')
   const [locationId, setLocationId] = useState(selected?.idlocal ? String(selected.idlocal) : '')
   const [status, setStatus] = useState<ServiceOrderStatus>(selected?.status || 'ABERTA')
@@ -370,19 +386,63 @@ function ServiceOrderForm({ selected, clients, catalog, loadingReferences, formE
   const [discount, setDiscount] = useState(String(selected?.vldesco ?? 0))
   const [transport, setTransport] = useState(String(selected?.vltrans ?? 0))
   const [rental, setRental] = useState(String(selected?.vlalug ?? 0))
-  const [materialAmount, setMaterialAmount] = useState(String(selected?.vlmater ?? 0))
-  const [materialOrderId, setMaterialOrderId] = useState(selected?.idpedi ? String(selected.idpedi) : '')
+  const [supplierId, setSupplierId] = useState(selected?.materialOrder?.supplierId ? String(selected.materialOrder.supplierId) : '')
+  const [supplierSearch, setSupplierSearch] = useState(selected?.materialOrder?.supplierTradeName || selected?.materialOrder?.supplierName || '')
+  const [materialSearch, setMaterialSearch] = useState('')
+  const [materialToAdd, setMaterialToAdd] = useState('')
+  const [purchaseEntryDate, setPurchaseEntryDate] = useState(toDateInput(selected?.materialOrder?.entryDate) || initialDate)
+  const [purchaseInvoice, setPurchaseInvoice] = useState(selected?.materialOrder?.invoiceNumber ?? '')
+  const [purchaseDiscount, setPurchaseDiscount] = useState(String(selected?.materialOrder?.discountPercentage ?? 0))
+  const [purchaseFreight, setPurchaseFreight] = useState(String(selected?.materialOrder?.freightValue ?? 0))
+  const [purchaseInsurance, setPurchaseInsurance] = useState(String(selected?.materialOrder?.insuranceValue ?? 0))
+  const [purchaseStandard, setPurchaseStandard] = useState(String(selected?.materialOrder?.standardValue ?? 0))
+  const [purchaseGbMargin, setPurchaseGbMargin] = useState(String(selected?.materialOrder?.gbMarginValue ?? 0))
+  const [purchaseRental, setPurchaseRental] = useState(String(selected?.materialOrder?.rentalValue ?? 0))
+  const [purchaseNotes, setPurchaseNotes] = useState(selected?.materialOrder?.notes ?? '')
+  const [materialError, setMaterialError] = useState('')
   const [schedules, setSchedules] = useState<ScheduleDraft[]>(() => selected?.schedules?.length
     ? selected.schedules.map((item, index) => ({ ...item, rowKey: `schedule-${item.scheduleId ?? index}` }))
     : [{ rowKey: 'schedule-new-0', expectedDate: dateTime(initialDate), expectedStart: '', expectedEnd: '', expectedDuration: '00:00', employeeId: null }])
   const [serviceItems, setServiceItems] = useState<ServiceDraft[]>(() => selected?.serviceItems?.map((item, index) => ({ ...item, rowKey: `service-${item.serviceId}-${index}` })) ?? [])
+  const [materialItems, setMaterialItems] = useState<MaterialDraft[]>(() => selected?.materialOrder?.items?.map((item, index) => ({ ...item, rowKey: `material-${item.materialId}-${index}` })) ?? [])
 
-  const clientQuery = useQuery({ queryKey: [...queryKeys.clients, 'detail', clientId], queryFn: () => api.clients.find(Number(clientId)), enabled: Boolean(clientId) })
-  const selectedClient = clients.find((client) => client.id === Number(clientId))
+  const debouncedClientSearch = useDebouncedValue(clientSearch.trim())
+  const clientSearchReady = debouncedClientSearch.length >= 2 || /^\d+$/.test(debouncedClientSearch)
+  const clientOptionsQuery = useQuery({
+    queryKey: [...queryKeys.clients, 'service-order-search', debouncedClientSearch],
+    queryFn: () => api.clients.search(debouncedClientSearch),
+    enabled: clientPickerOpen && clientSearchReady,
+  })
+  const clientQuery = useQuery({ queryKey: [...queryKeys.clients, 'detail', Number(clientId)], queryFn: () => api.clients.find(Number(clientId)), enabled: Boolean(clientId) })
+  const debouncedSupplierSearch = useDebouncedValue(supplierSearch)
+  const debouncedMaterialSearch = useDebouncedValue(materialSearch)
+  const suppliersQuery = useQuery({ queryKey: [...queryKeys.suppliers, 'order-form', debouncedSupplierSearch], queryFn: () => api.suppliers.list({ query: debouncedSupplierSearch || undefined, size: 50 }) })
+  const materialsQuery = useQuery({ queryKey: [...queryKeys.materials, 'order-form', debouncedMaterialSearch], queryFn: () => api.materials.list({ query: debouncedMaterialSearch || undefined, size: 100 }) })
+  const selectedClient = clientId
+    ? clientQuery.data ?? (Number(clientId) === selected?.idclien ? selected?.client : null)
+    : null
+  const clientOptions = clientOptionsQuery.data ?? []
+  const mainAddress = primaryClientAddress(selectedClient)
   const serviceSubtotal = serviceItems.reduce((sum, item) => sum + numberValue(item.totalValue), 0)
+  const materialGross = materialItems.reduce((sum, item) => sum + numberValue(item.quantity) * numberValue(item.unitValue), 0)
+  const materialDiscountValue = materialGross * Math.min(100, numberValue(purchaseDiscount)) / 100
+  const materialFob = Math.max(0, materialGross - materialDiscountValue)
+  const materialCif = materialFob + numberValue(purchaseFreight) + numberValue(purchaseInsurance)
+  const materialAmount = materialCif + numberValue(purchaseStandard) + numberValue(purchaseGbMargin) + numberValue(purchaseRental)
   const discountAmount = serviceSubtotal * numberValue(discount) / 100
-  const total = serviceSubtotal + numberValue(materialAmount) + numberValue(ticketFee) + numberValue(transport) + numberValue(rental) - discountAmount
+  const total = serviceSubtotal + materialAmount + numberValue(ticketFee) + numberValue(transport) + numberValue(rental) - discountAmount
   const totalMinutes = schedules.reduce((sum, item) => sum + (minutesFromTime(item.expectedDuration) || durationMinutes(item.expectedStart, item.expectedEnd)), 0)
+  const supplierOptions = suppliersQuery.data?.content ?? []
+  const materialOptions = materialsQuery.data?.content ?? []
+  const selectedSupplierMissing = Boolean(supplierId) && !supplierOptions.some((supplier) => supplier.id === Number(supplierId))
+
+  function selectClient(client: ClientSearchOption) {
+    setClientId(String(client.id))
+    setClientSearch(clientDisplay(client))
+    setLocationId('')
+    setClientPickerOpen(false)
+    setClientError('')
+  }
 
   function updateSchedule(index: number, patch: Partial<ScheduleDraft>) {
     setSchedules((current) => current.map((item, itemIndex) => {
@@ -416,11 +476,45 @@ function ServiceOrderForm({ selected, clients, catalog, loadingReferences, formE
     }))
   }
 
+  function addMaterial() {
+    const material = materialOptions.find((item) => item.id === Number(materialToAdd))
+    if (!material) {
+      setMaterialError('Pesquise e selecione um material antes de adicionar.')
+      return
+    }
+    if (materialItems.some((item) => item.materialId === material.id)) {
+      setMaterialError('Este material já foi adicionado ao pedido de compra.')
+      return
+    }
+    setMaterialItems((current) => [...current, materialDraft(material)])
+    setMaterialToAdd('')
+    setMaterialSearch('')
+    setMaterialError('')
+  }
+
+  function updateMaterial(index: number, patch: Partial<MaterialDraft>) {
+    setMaterialItems((current) => current.map((item, itemIndex) => {
+      if (itemIndex !== index) return item
+      const next = { ...item, ...patch }
+      next.totalValue = numberValue(next.quantity) * numberValue(next.unitValue)
+      return next
+    }))
+  }
+
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!clientId || !requestDate || !description.trim()) return
+    if (!clientId) {
+      setClientError('Pesquise e selecione um cliente antes de gravar a ordem.')
+      return
+    }
+    if (!requestDate || !description.trim()) return
+    if (materialItems.length > 0 && !supplierId) {
+      setMaterialError('Selecione o fornecedor do pedido de compra.')
+      setTab('materials')
+      return
+    }
     const selectedBase = selected ? (() => {
-      const { id: _id, code: _code, client: _client, clientName: _clientName, schedules: _schedules, serviceItems: _serviceItems, ...rest } = selected
+      const { id: _id, code: _code, client: _client, clientName: _clientName, schedules: _schedules, serviceItems: _serviceItems, materialOrder: _materialOrder, ...rest } = selected
       return rest
     })() : {}
     const normalizedSchedules: ServiceOrderSchedule[] = schedules.map((item, index) => {
@@ -429,10 +523,31 @@ function ServiceOrderForm({ selected, clients, catalog, loadingReferences, formE
       return { ...persisted, serviceOrderId: selected?.id ?? null, scheduleId: item.scheduleId ?? index + 1, expectedDate: dateTime(date), expectedStart: item.expectedStart || null, expectedEnd: item.expectedEnd || null, expectedDuration: item.expectedDuration || asDuration(durationMinutes(item.expectedStart, item.expectedEnd)), employeeId: item.employeeId ? Number(item.employeeId) : null, urgentFlag: urgent ? 'S' : 'N', scheduledTimeFlag: hourMarked ? 'S' : 'N', startedFlag: item.startedFlag || 'N', finishedFlag: item.finishedFlag || 'N', routedFlag: item.routedFlag || 'N', serviceType }
     })
     const normalizedServices: ServiceOrderServiceItem[] = serviceItems.map(({ rowKey: _rowKey, ...item }) => ({ ...item, serviceOrderId: selected?.id ?? null, quantity: Math.max(1, numberValue(item.quantity)), unitValue: numberValue(item.unitValue), totalValue: numberValue(item.quantity) * numberValue(item.unitValue), minimumValue: numberValue(item.minimumValue), minuteValue: numberValue(item.minuteValue) }))
+    const normalizedMaterials: ServiceOrderMaterialItem[] = materialItems.map(({ rowKey: _rowKey, ...item }, index) => ({ ...item, itemId: index + 1, purchaseOrderId: selected?.materialOrder?.id ?? null, quantity: Math.max(1, numberValue(item.quantity)), unitValue: numberValue(item.unitValue), totalValue: Math.max(1, numberValue(item.quantity)) * numberValue(item.unitValue) }))
+    const materialOrder: ServiceOrderMaterialOrder | null = materialItems.length > 0 || selected?.materialOrder ? {
+      ...selected?.materialOrder,
+      id: selected?.materialOrder?.id ?? selected?.idpedi ?? null,
+      serviceOrderId: selected?.id ?? null,
+      supplierId: supplierId ? Number(supplierId) : null,
+      entryDate: purchaseEntryDate ? dateTime(purchaseEntryDate) : dateTime(requestDate),
+      invoiceNumber: purchaseInvoice.trim() || null,
+      discountPercentage: Math.min(100, numberValue(purchaseDiscount)),
+      freightValue: numberValue(purchaseFreight),
+      insuranceValue: numberValue(purchaseInsurance),
+      standardValue: numberValue(purchaseStandard),
+      gbMarginValue: numberValue(purchaseGbMargin),
+      rentalValue: numberValue(purchaseRental),
+      notes: purchaseNotes.trim() || null,
+      grossValue: materialGross,
+      fobValue: materialFob,
+      cifValue: materialCif,
+      netValue: materialAmount,
+      items: normalizedMaterials,
+    } : null
     const firstSchedule = normalizedSchedules[0]
     const payload: ServiceOrderPayload = {
       ...selectedBase,
-      idclien: Number(clientId), dtordem: dateTime(requestDate), flordem: selected?.flordem || 'A', nmsolic: requester.trim() || null,
+      idclien: Number(clientId), dtordem: dateTime(requestDate), flordem: orderOrigin, nmsolic: requester.trim() || null,
       idlocal: locationId ? Number(locationId) : null, idopera: selected?.idopera ?? user?.id ?? null, status,
       flstatu: status === 'FINALIZADA' ? 'F' : status === 'CANCELADA' ? 'C' : 'A', category,
       flcateg: category === 'GARANTIA' ? 'G' : category === 'VISITA_TECNICA' ? 'V' : category === 'CANCELAMENTO' ? 'C' : category === 'DESLOCAMENTO' ? 'D' : 'M',
@@ -442,21 +557,29 @@ function ServiceOrderForm({ selected, clients, catalog, loadingReferences, formE
       dtinicial: firstSchedule ? dateTime(toDateInput(firstSchedule.expectedDate), firstSchedule.expectedStart || '00:00') : null, hrabert: firstSchedule?.expectedStart || null,
       qthorac: asDuration(totalMinutes), dtvenci: dueDate ? dateTime(dueDate) : null, txbolet: numberValue(ticketFee), vldesco: numberValue(discount), vldesc: discountAmount,
       vltrans: numberValue(transport), vlalug: numberValue(rental), fltrans: numberValue(transport) > 0 ? 'S' : 'N', flalug: numberValue(rental) > 0 ? 'S' : 'N',
-      vlmater: numberValue(materialAmount), idpedi: materialOrderId ? Number(materialOrderId) : null, vlhorar: serviceSubtotal, vlcobra: Math.max(0, total), schedules: normalizedSchedules, serviceItems: normalizedServices,
+      vlmater: materialAmount, idpedi: selected?.materialOrder?.id ?? selected?.idpedi ?? null, vlhorar: serviceSubtotal, vlcobra: Math.max(0, total), schedules: normalizedSchedules, serviceItems: normalizedServices, materialOrder,
     }
     onSubmit(payload)
   }
 
   return <ModalForm onSubmit={submit} onCancel={onCancel} submitting={submitting} submitLabel={submitting ? 'Gravando...' : selected ? 'Gravar alterações' : 'Gravar OS'}>
     <FormError message={formError} />
-    <div className="os-form-context"><span><small>Ordem de serviço</small><strong>Avulsa</strong></span><span><small>Operador</small><strong>{user?.name || 'Usuário atual'}</strong></span><span><small>Cliente</small><strong>{selectedClient ? clientDisplay(selectedClient) : 'Selecione o cliente'}</strong></span><Badge tone={statusTone[status]}>{enumLabel(status)}</Badge></div>
+    <div className="os-form-context"><span><small>Ordem de serviço</small><strong>{orderOrigin === 'C' ? 'Contrato' : 'Avulsa'}</strong></span><span><small>Operador</small><strong>{user?.name || 'Usuário atual'}</strong></span><span><small>Cliente</small><strong>{selectedClient ? clientDisplay(selectedClient) : 'Selecione o cliente'}</strong></span><Badge tone={statusTone[status]}>{enumLabel(status)}</Badge></div>
     <div className="os-form-identification">
       <FormField label="Código"><input value={selected?.id ?? 'Automático'} disabled /></FormField>
-      <FormField label="Tipo"><input value="Avulsa" disabled /></FormField>
+      <FormField label="Tipo"><select value={orderOrigin} onChange={(event) => setOrderOrigin(event.target.value as ServiceOrderOrigin)}><option value="A">Avulsa</option><option value="C">Contrato</option></select></FormField>
       <FormField label="Data da requisição"><input type="date" value={requestDate} onChange={(event) => setRequestDate(event.target.value)} required /></FormField>
       <FormField label="Solicitante"><input maxLength={250} value={requester} onChange={(event) => setRequester(event.target.value)} /></FormField>
-      <FormField label="Cliente"><select value={clientId} onChange={(event) => { setClientId(event.target.value); setLocationId('') }} required disabled={loadingReferences}><option value="">Selecione</option>{clients.map((client) => <option key={client.id} value={client.id}>{clientDisplay(client)}{client.name && client.tradeName ? ` — ${client.name}` : ''}</option>)}</select></FormField>
-      <FormField label="Local"><select value={locationId} onChange={(event) => setLocationId(event.target.value)} disabled={!clientId || clientQuery.isLoading}><option value="">Endereço principal</option>{clientQuery.data?.addresses?.map((address) => <option key={address.id} value={address.id}>{address.description || address.street || `Local #${address.id}`}</option>)}</select></FormField>
+      <FormField label="Cliente" >
+        <div className="os-client-picker" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setClientPickerOpen(false) }}>
+          <div className="os-client-picker__control"><Search size={16} /><input value={clientSearch} onFocus={() => setClientPickerOpen(true)} onChange={(event) => { setClientSearch(event.target.value); setClientId(''); setLocationId(''); setClientPickerOpen(true); setClientError('') }} placeholder="Digite para buscar..." autoComplete="off" /></div>
+          {clientPickerOpen && <div className="os-client-picker__results">
+            {!clientSearchReady ? <span>Digite ao menos 2 letras ou o código do cliente.</span> : clientOptionsQuery.isLoading ? <span>Buscando clientes...</span> : clientOptionsQuery.isError ? <span>Não foi possível realizar a busca.</span> : clientOptions.length === 0 ? <span>Nenhum cliente encontrado.</span> : clientOptions.map((client) => <button type="button" key={client.id} onClick={() => selectClient(client)}><strong>{clientDisplay(client)}</strong><small>#{client.id}{client.legalName && client.legalName !== client.tradeName ? ` · ${client.legalName}` : ''}{client.document ? ` · ${client.document}` : ''}</small><em className={client.status === 'ATIVO' ? 'is-active' : 'is-inactive'}>{client.status === 'ATIVO' ? 'Ativo' : 'Inativo'}</em></button>)}
+          </div>}
+          {clientError && <small className="os-client-picker__error">{clientError}</small>}
+        </div>
+      </FormField>
+      <FormField label="Local"><select value={locationId} onChange={(event) => setLocationId(event.target.value)} disabled={!clientId || clientQuery.isLoading}><option value="">{clientQuery.isLoading ? 'Carregando endereço...' : mainAddress || 'Endereço principal não informado'}</option>{selectedClient?.addresses?.map((address) => <option key={address.id} value={address.id}>{additionalClientAddress(address)}</option>)}</select></FormField>
       <FormField label="Situação"><select value={status} onChange={(event) => setStatus(event.target.value as ServiceOrderStatus)}><option value="ABERTA">Aberta</option><option value="FINALIZADA">Finalizada</option><option value="CANCELADA">Cancelada</option></select></FormField>
     </div>
     <div className="os-form-tabs" role="tablist"><button type="button" className={tab === 'general' ? 'active' : ''} onClick={() => setTab('general')}>Dados gerais</button><button type="button" className={tab === 'materials' ? 'active' : ''} onClick={() => setTab('materials')}>Materiais</button></div>
@@ -488,7 +611,9 @@ function ServiceOrderForm({ selected, clients, catalog, loadingReferences, formE
         <div className="os-grid-summary"><span>Tempo total previsto</span><strong>{asDuration(totalMinutes)}</strong></div>
       </section>
       <div className="os-service-workspace">
-        <section className="os-additional-values"><header><strong>Valores adicionais</strong><span>Composição da cobrança</span></header><FormField label="Vencimento"><input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></FormField><FormField label="Taxa do boleto"><input type="number" min="0" step="0.01" value={ticketFee} onChange={(event) => setTicketFee(event.target.value)} /></FormField><FormField label="Desconto %"><input type="number" min="0" max="100" step="0.01" value={discount} onChange={(event) => setDiscount(event.target.value)} /></FormField><FormField label="Transporte"><input type="number" min="0" step="0.01" value={transport} onChange={(event) => setTransport(event.target.value)} /></FormField><FormField label="Aluguel"><input type="number" min="0" step="0.01" value={rental} onChange={(event) => setRental(event.target.value)} /></FormField></section>
+        <section className="os-additional-values"><header><strong>Valores adicionais</strong><span>Composição da cobrança</span></header><FormField label="Vencimento"><input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></FormField><FormField label="Taxa do boleto"><input type="number" min="0" step="0.01" value={ticketFee} onChange={(event) => setTicketFee(event.target.value)} /></FormField><FormField label="Desconto %"><input type="number" min="0" max="100" step="0.01" value={discount} onChange={(event) => setDiscount(event.target.value)} /></FormField><FormField label="Transporte"><input type="number" min="0" step="0.01" value={transport} onChange={(event) => setTransport(event.target.value)} /></FormField>
+        {/* <FormField label="Aluguel"><input type="number" min="0" step="0.01" value={rental} onChange={(event) => setRental(event.target.value)} /></FormField> */}
+        </section>
         <section className="os-grid-section os-services-section">
           <header><div><strong>Relação de serviços cadastrados</strong><span>Itens de tbordemservicoservico</span></div><Button type="button" variant="secondary" icon={<Plus size={15} />} onClick={addService} disabled={!catalog.length}>Adicionar serviço</Button></header>
           {serviceItems.length ? <div className="os-edit-table-wrap"><table className="os-edit-table os-services-table"><thead><tr><th>Grupo</th><th>Serviço</th><th>Qtd.</th><th>Horas</th><th>Vl. mínimo</th><th>Vl. unitário</th><th>Vl. total</th><th /></tr></thead><tbody>{serviceItems.map((item, index) => {
@@ -497,8 +622,45 @@ function ServiceOrderForm({ selected, clients, catalog, loadingReferences, formE
           })}</tbody></table></div> : <div className="os-empty-grid">Nenhum serviço adicionado. Use “Adicionar serviço” para montar a cobrança.</div>}
         </section>
       </div>
-      <div className="os-total-strip"><span><small>Serviços</small><strong>{money(serviceSubtotal)}</strong></span><span><small>Materiais</small><strong>{money(numberValue(materialAmount))}</strong></span><span><small>Desconto</small><strong>- {money(discountAmount)}</strong></span><span className="os-total-strip__primary"><small>Valor a cobrar</small><strong>{money(Math.max(0, total))}</strong></span></div>
-    </> : <section className="os-material-tab"><div><strong>Resumo de materiais</strong><p>O vínculo financeiro do pedido de material fica registrado na capa da ordem. Os itens detalhados permanecem no fluxo de materiais.</p></div><div className="form-grid form-grid--two"><FormField label="Pedido de material (ID)"><input type="number" min="1" value={materialOrderId} onChange={(event) => setMaterialOrderId(event.target.value)} /></FormField><FormField label="Valor total de materiais"><input type="number" min="0" step="0.01" value={materialAmount} onChange={(event) => setMaterialAmount(event.target.value)} /></FormField></div></section>}
+      <div className="os-total-strip"><span><small>Serviços</small><strong>{money(serviceSubtotal)}</strong></span><span><small>Materiais</small><strong>{money(materialAmount)}</strong></span><span><small>Desconto</small><strong>- {money(discountAmount)}</strong></span><span className="os-total-strip__primary"><small>Valor a cobrar</small><strong>{money(Math.max(0, total))}</strong></span></div>
+    </> : <section className="os-material-tab">
+      <div><strong>Pedido de compra</strong><p>Selecione o fornecedor e adicione todos os materiais utilizados no atendimento. O total líquido será levado automaticamente para a ordem de serviço.</p></div>
+      <FormError message={materialError} />
+      {suppliersQuery.isError && <FormError message={`Não foi possível consultar os fornecedores: ${apiErrorMessage(suppliersQuery.error)}`} />}
+      {materialsQuery.isError && <FormError message={`Não foi possível consultar os materiais: ${apiErrorMessage(materialsQuery.error)}`} />}
+
+      <div className="os-purchase-header">
+        <FormField label="Pedido de compra"><input value={selected?.materialOrder?.id ?? selected?.idpedi ?? 'Gerado ao salvar'} disabled /></FormField>
+        <FormField label="Data de entrada"><input type="date" value={purchaseEntryDate} onChange={(event) => setPurchaseEntryDate(event.target.value)} /></FormField>
+        <FormField label="Nota fiscal"><input maxLength={50} value={purchaseInvoice} onChange={(event) => setPurchaseInvoice(event.target.value)} /></FormField>
+        {/* <FormField label="Buscar fornecedor" hint="Nome fantasia, razão social, CPF, CNPJ ou código"><input value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} placeholder="Digite para pesquisar..." /></FormField> */}
+        <FormField label="Fornecedor"><select value={supplierId} onChange={(event) => { setSupplierId(event.target.value); setMaterialError('') }} disabled={suppliersQuery.isLoading}><option value="">Selecione o fornecedor</option>{selectedSupplierMissing && <option value={supplierId}>{selected?.materialOrder?.supplierTradeName || selected?.materialOrder?.supplierName || `Fornecedor #${supplierId}`}</option>}{supplierOptions.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplierDisplay(supplier)}</option>)}</select></FormField>
+      </div>
+
+      <section className="os-grid-section os-material-order-section">
+        <header><div><strong>Relação de materiais</strong><span>Itens de tbordemservicomaterialitem</span></div></header>
+        <div className="os-material-picker">
+          {/* <FormField label="Pesquisar material" hint="Descrição, marca, unidade ou código"><input value={materialSearch} onChange={(event) => { setMaterialSearch(event.target.value); setMaterialToAdd('') }} placeholder="Digite para pesquisar no cadastro..." /></FormField> */}
+          <FormField label="Material"><select value={materialToAdd} onChange={(event) => setMaterialToAdd(event.target.value)} disabled={materialsQuery.isLoading}><option value="">Selecione</option>{materialOptions.map((material) => <option key={material.id} value={material.id} disabled={materialItems.some((item) => item.materialId === material.id)}>{material.description || `Material #${material.id}`} · {material.brand || 'Sem marca'} · {material.unit || 'UN'}</option>)}</select></FormField>
+          <Button type="button" variant="secondary"  style={{maxWidth: 150}} icon={<Plus size={15} />} onClick={addMaterial} disabled={!materialToAdd}>Adicionar material</Button>
+        </div>
+        {materialItems.length ? <div className="os-edit-table-wrap"><table className="os-edit-table os-materials-order-table"><thead><tr><th>Material</th><th>Marca</th><th>Unidade</th><th>Quantidade</th><th>Valor unitário</th><th>Valor total</th><th /></tr></thead><tbody>{materialItems.map((item, index) => <tr key={item.rowKey}>
+          <td><strong>{item.materialDescription || `Material #${item.materialId}`}</strong></td>
+          <td>{item.materialBrand || '—'}</td>
+          <td>{item.materialUnit || 'UN'}</td>
+          <td><input type="number" min="1" step="1" value={item.quantity ?? 1} onChange={(event) => updateMaterial(index, { quantity: Number(event.target.value) })} /></td>
+          <td><input type="number" min="0" step="0.01" value={item.unitValue ?? 0} onChange={(event) => updateMaterial(index, { unitValue: Number(event.target.value) })} /></td>
+          <td><input value={money(numberValue(item.quantity) * numberValue(item.unitValue))} readOnly /></td>
+          <td><button type="button" className="os-remove-row" onClick={() => setMaterialItems((current) => current.filter((_, rowIndex) => rowIndex !== index))} aria-label="Remover material"><X size={16} /></button></td>
+        </tr>)}</tbody></table></div> : <div className="os-empty-grid">Nenhum material adicionado. Pesquise no cadastro e monte o pedido de compra.</div>}
+      </section>
+
+      <div className="os-purchase-footer">
+        <section className="os-purchase-values"><FormField label="Desconto %"><input type="number" min="0" max="100" step="0.01" value={purchaseDiscount} onChange={(event) => setPurchaseDiscount(event.target.value)} /></FormField><FormField label="Frete"><input type="number" min="0" step="0.01" value={purchaseFreight} onChange={(event) => setPurchaseFreight(event.target.value)} /></FormField><FormField label="Seguro"><input type="number" min="0" step="0.01" value={purchaseInsurance} onChange={(event) => setPurchaseInsurance(event.target.value)} /></FormField><FormField label="Sprad"><input type="number" min="0" step="0.01" value={purchaseStandard} onChange={(event) => setPurchaseStandard(event.target.value)} /></FormField><FormField label="Margem GB"><input type="number" min="0" step="0.01" value={purchaseGbMargin} onChange={(event) => setPurchaseGbMargin(event.target.value)} /></FormField><FormField label="Aluguel"><input type="number" min="0" step="0.01" value={purchaseRental} onChange={(event) => setPurchaseRental(event.target.value)} /></FormField></section>
+        <FormField label="Observações"><textarea rows={3} maxLength={250} value={purchaseNotes} onChange={(event) => setPurchaseNotes(event.target.value)} /></FormField>
+      </div>
+      <div className="os-purchase-totals"><span><small>Total bruto</small><strong>{money(materialGross)}</strong></span><span><small>Desconto</small><strong>- {money(materialDiscountValue)}</strong></span><span><small>Total FOB</small><strong>{money(materialFob)}</strong></span><span><small>Total CIF</small><strong>{money(materialCif)}</strong></span><span className="os-purchase-totals__primary"><small>Total líquido</small><strong>{money(materialAmount)}</strong></span></div>
+    </section>}
     {selected && <div className="destructive-row"><span><strong>Excluir ordem</strong><small>Também remove os agendamentos e serviços vinculados.</small></span><Button type="button" variant="danger" icon={<Trash2 size={16} />} onClick={() => onDelete(selected.id)}>Excluir</Button></div>}
   </ModalForm>
 }
@@ -508,11 +670,30 @@ function serviceDraft(service: ServiceCatalogItem): ServiceDraft {
   return { rowKey: `service-new-${service.id}-${Date.now()}`, serviceId: service.id, quantity: 1, hours: '00:30', unitValue, totalValue: unitValue, minimumValue: numberValue(service.minimumValue), minuteValue: numberValue(service.legacyMinuteValue) }
 }
 
+function materialDraft(material: Material): MaterialDraft {
+  const unitValue = numberValue(material.unitValue)
+  return {
+    rowKey: `material-new-${material.id}-${Date.now()}`,
+    materialId: material.id,
+    quantity: 1,
+    unitValue,
+    totalValue: unitValue,
+    materialDescription: material.description,
+    materialUnit: material.unit,
+    materialBrand: material.brand,
+  }
+}
+
+function supplierDisplay(supplier: Supplier) {
+  const name = supplier.tradeName || supplier.legalName || `Fornecedor #${supplier.id}`
+  return `${name}${supplier.tradeName && supplier.legalName ? ` — ${supplier.legalName}` : ''} · #${supplier.id}`
+}
+
 function ServiceOrderDetail({ order, catalog }: { order: ServiceOrder; catalog: ServiceCatalogItem[] }) {
   const tradeName = order.client?.nmfanta
   const legalName = order.clientName || order.client?.nmrazao || order.client?.name
   return <div className="detail-modal-content">
-    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><Wrench /></span><div><span>OS-{order.id} · Avulsa</span><h2>{tradeName || legalName || 'Cliente não identificado'}</h2>{tradeName && legalName && <p>{legalName}</p>}</div></div><div className="detail-status-stack">{order.priority === 'URGENTE' && <Badge tone="red">Urgente</Badge>}<Badge tone={statusTone[order.status]}>{enumLabel(order.status)}</Badge></div></div>
+    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><Wrench /></span><div><span>OS-{order.id} · {order.flordem === 'C' ? 'Contrato' : 'Avulsa'}</span><h2>{tradeName || legalName || 'Cliente não identificado'}</h2>{tradeName && legalName && <p>{legalName}</p>}</div></div><div className="detail-status-stack">{order.priority === 'URGENTE' && <Badge tone="red">Urgente</Badge>}<Badge tone={statusTone[order.status]}>{enumLabel(order.status)}</Badge></div></div>
     <div className="detail-metrics"><span><small>Data da requisição</small><strong>{formatDate(order.dtordem)}</strong></span><span><small>Agendamentos</small><strong>{order.schedules?.length ?? 0}</strong></span><span><small>Tempo previsto</small><strong>{order.qthorac || '00:00'}</strong></span><span><small>Valor a cobrar</small><strong>{money(order.vlcobra)}</strong></span></div>
     <div className="detail-sections-grid">
       <section className="drawer-section"><h3>Atendimento</h3><dl><div><dt>Solicitante</dt><dd>{order.nmsolic || 'Não informado'}</dd></div><div><dt>Categoria</dt><dd>{enumLabel(order.category)}</dd></div><div><dt>Tipo de serviço</dt><dd>{serviceTypes.find((item) => item.value === order.tpservic)?.label || 'Não informado'}</dd></div><div><dt>Local</dt><dd>{order.idlocal ? `Local #${order.idlocal}` : 'Endereço principal'}</dd></div></dl></section>
@@ -520,6 +701,7 @@ function ServiceOrderDetail({ order, catalog }: { order: ServiceOrder; catalog: 
       <section className="drawer-section drawer-section--wide"><h3>Descrição e observações</h3><p className="drawer-section__text">{order.dsdescr || order.description || 'Descrição não informada'}</p>{order.dsobser && <p className="drawer-section__text detail-text-spaced">{order.dsobser}</p>}{order.dscancel && <p className="drawer-section__text detail-text-spaced"><strong>Cancelamento:</strong> {order.dscancel}</p>}</section>
       <section className="drawer-section drawer-section--wide"><h3>Agendamentos</h3>{order.schedules?.length ? <div className="detail-list-grid">{order.schedules.map((item) => <span key={item.scheduleId}><strong>{formatDate(item.expectedDate)} · {item.expectedStart || '--:--'}–{item.expectedEnd || '--:--'}</strong><small>Funcionário: {item.employeeId || 'Aguardando'} · Tempo: {item.expectedDuration || '00:00'}</small></span>)}</div> : <p className="drawer-section__text">Nenhum agendamento vinculado.</p>}</section>
       <section className="drawer-section drawer-section--wide"><h3>Serviços</h3>{order.serviceItems?.length ? <div className="detail-list-grid">{order.serviceItems.map((item) => <span key={item.serviceId}><strong>{catalog.find((service) => service.id === item.serviceId)?.description || `Serviço #${item.serviceId}`}</strong><small>{item.quantity || 0} × {money(item.unitValue)} · Total {money(item.totalValue)}</small></span>)}</div> : <p className="drawer-section__text">Nenhum serviço vinculado.</p>}</section>
+      <section className="drawer-section drawer-section--wide"><h3>Pedido de compra</h3>{order.materialOrder ? <><dl><div><dt>Pedido</dt><dd>#{order.materialOrder.id}</dd></div><div><dt>Fornecedor</dt><dd>{order.materialOrder.supplierTradeName || order.materialOrder.supplierName || `#${order.materialOrder.supplierId}`}</dd></div><div><dt>Data de entrada</dt><dd>{formatDate(order.materialOrder.entryDate)}</dd></div><div><dt>Total líquido</dt><dd>{money(order.materialOrder.netValue)}</dd></div></dl>{order.materialOrder.items?.length ? <div className="detail-list-grid detail-purchase-items">{order.materialOrder.items.map((item) => <span key={`${item.purchaseOrderId}-${item.itemId}`}><strong>{item.materialDescription || `Material #${item.materialId}`}</strong><small>{item.quantity || 0} {item.materialUnit || 'UN'} × {money(item.unitValue)} · Total {money(item.totalValue)}</small></span>)}</div> : <p className="drawer-section__text detail-text-spaced">Nenhum item vinculado ao pedido.</p>}</> : <p className="drawer-section__text">Nenhum pedido de compra vinculado.</p>}</section>
     </div>
   </div>
 }

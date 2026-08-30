@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, ChevronDown, ClipboardList, FileBarChart, FileSignature, FileText, LayoutDashboard, LogOut, Menu, ReceiptText, Search, Settings, UsersRound, X } from 'lucide-react'
+import { Bell, Boxes, ChevronDown, ClipboardList, FileBarChart, FileSignature, FileText, LayoutDashboard, LogOut, Menu, ReceiptText, Search, Settings, UsersRound, X } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { useAuth } from '../auth'
 import { enumLabel, initials } from '../lib/format'
@@ -11,13 +11,14 @@ const nav = [
   { to: '/clientes', label: 'Clientes', icon: UsersRound },
   { to: '/contratos', label: 'Contratos', icon: FileSignature },
   { to: '/ordens-de-servico', label: 'Ordens de serviço', icon: ClipboardList },
+  { to: '/materiais', label: 'Materiais', icon: Boxes },
   { to: '/notas-fiscais', label: 'Notas fiscais', icon: ReceiptText },
   { to: '/extratos', label: 'Extratos', icon: FileText },
   { to: '/relatorios', label: 'Relatórios', icon: FileBarChart },
 ]
 
 const routeNames: Record<string, string> = {
-  '/': 'Visão geral', '/clientes': 'Clientes', '/contratos': 'Contratos', '/ordens-de-servico': 'Ordens de serviço', '/notas-fiscais': 'Notas fiscais', '/extratos': 'Extratos', '/relatorios': 'Relatórios', '/usuarios': 'Usuários', '/parametros-do-sistema': 'Parâmetros do sistema',
+  '/': 'Visão geral', '/clientes': 'Clientes', '/contratos': 'Contratos', '/ordens-de-servico': 'Ordens de serviço', '/materiais': 'Materiais', '/notas-fiscais': 'Notas fiscais', '/extratos': 'Extratos', '/relatorios': 'Relatórios', '/usuarios': 'Usuários', '/parametros-do-sistema': 'Parâmetros do sistema',
 }
 
 export function AppLayout({ children }: { children: ReactNode }) {
@@ -50,6 +51,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     if (value.includes('param')) navigate('/parametros-do-sistema')
     else if (value.includes('contrato')) navigate('/contratos')
     else if (value.includes('cliente')) navigate('/clientes')
+    else if (value.includes('material') || value.includes('produto')) navigate('/materiais')
     else if (value.includes('nota') || value.includes('nf')) navigate('/notas-fiscais')
     else if (value.includes('extrato')) navigate('/extratos')
     else if (value.includes('relat')) navigate('/relatorios')
