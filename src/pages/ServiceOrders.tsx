@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarDays, CheckCircle2, ChevronRight, CircleAlert, Clock3, Columns3, Edit3, List, Plus, Search, Trash2, UserRound, Wrench, X } from 'lucide-react'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Clock3, Columns3, Edit3, List, Plus, Search, Trash2, UserRound, Wrench, X } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useAuth } from '../auth'
@@ -21,10 +21,10 @@ const categories: Array<{ value: ServiceCategory; label: string }> = [
 const serviceTypes = [
   { value: 'E', label: 'Elétricos' },
   { value: 'A', label: 'Ambos' },
-  { value: 'L', label: 'Alvenaria' },
+  // { value: 'L', label: 'Alvenaria' },
   { value: 'H', label: 'Hidráulico' },
-  { value: 'I', label: 'Hidro' },
-  { value: 'O', label: 'Outros' },
+  // { value: 'I', label: 'Hidro' },
+  // { value: 'O', label: 'Outros' },
 ]
 
 const statusTone: Record<ServiceOrderStatus, 'orange' | 'blue' | 'purple' | 'green' | 'neutral' | 'red'> = {
@@ -33,11 +33,51 @@ const statusTone: Record<ServiceOrderStatus, 'orange' | 'blue' | 'purple' | 'gre
 
 type ScheduleDraft = ServiceOrderSchedule & { rowKey: string }
 type ServiceDraft = ServiceOrderServiceItem & { rowKey: string }
+type DateFilterMode = 'none' | 'date' | 'range' | 'month' | 'week'
+
+type DateBounds = {
+  startDate?: string
+  endDate?: string
+}
 
 function localToday() {
   const now = new Date()
   const offset = now.getTimezoneOffset() * 60_000
   return new Date(now.getTime() - offset).toISOString().slice(0, 10)
+}
+
+function dateInputValue(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function shiftDate(value: string, days: number) {
+  const [year, month, day] = value.split('-').map(Number)
+  if (!year || !month || !day) return ''
+  return dateInputValue(new Date(year, month - 1, day + days, 12))
+}
+
+function resolveDateBounds(mode: DateFilterMode, date: string, rangeStart: string, rangeEnd: string, month: string, weekDate: string): DateBounds {
+  if (mode === 'date' && date) return { startDate: date, endDate: date }
+  if (mode === 'range') return { startDate: rangeStart || undefined, endDate: rangeEnd || undefined }
+  if (mode === 'month' && month) {
+    const [year, monthNumber] = month.split('-').map(Number)
+    if (!year || !monthNumber) return {}
+    return {
+      startDate: `${month}-01`,
+      endDate: dateInputValue(new Date(year, monthNumber, 0, 12)),
+    }
+  }
+  if (mode === 'week' && weekDate) {
+    const [year, monthNumber, day] = weekDate.split('-').map(Number)
+    if (!year || !monthNumber || !day) return {}
+    const reference = new Date(year, monthNumber - 1, day, 12)
+    const sunday = shiftDate(weekDate, -reference.getDay())
+    return { startDate: sunday, endDate: shiftDate(sunday, 6) }
+  }
+  return {}
 }
 
 function dateTime(date: string, time = '00:00') {
@@ -77,7 +117,14 @@ export function ServiceOrders() {
   const [view, setView] = useState<'kanban' | 'list'>('kanban')
   const [search, setSearch] = useState('')
   const [priority, setPriority] = useState<'Todas' | 'Urgentes'>('Todas')
+  const [dateFilterMode, setDateFilterMode] = useState<DateFilterMode>('none')
   const [date, setDate] = useState('')
+  const [rangeStart, setRangeStart] = useState('')
+  const [rangeEnd, setRangeEnd] = useState('')
+  const [month, setMonth] = useState('')
+  const [weekDate, setWeekDate] = useState(localToday())
+  const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(20)
   const [modalOpen, setModalOpen] = useState(false)
   const [selected, setSelected] = useState<ServiceOrder | null>(null)
   const [formKey, setFormKey] = useState(0)
@@ -86,9 +133,37 @@ export function ServiceOrders() {
   const [toast, setToast] = useState('')
   const [formError, setFormError] = useState('')
   const debouncedSearch = useDebouncedValue(search)
-  const ordersQueryKey = [...queryKeys.serviceOrders, debouncedSearch, date] as const
+  const dateBounds = useMemo(
+    () => resolveDateBounds(dateFilterMode, date, rangeStart, rangeEnd, month, weekDate),
+    [dateFilterMode, date, month, rangeEnd, rangeStart, weekDate],
+  )
+  const periodError = dateBounds.startDate && dateBounds.endDate && dateBounds.endDate < dateBounds.startDate
+    ? 'A data final deve ser igual ou posterior à data inicial.'
+    : ''
+  const ordersQueryKey = [
+    ...queryKeys.serviceOrders,
+    'list',
+    debouncedSearch,
+    dateBounds.startDate ?? '',
+    dateBounds.endDate ?? '',
+    priority,
+    page,
+    pageSize,
+  ] as const
 
-  const ordersQuery = useQuery({ queryKey: ordersQueryKey, queryFn: () => api.serviceOrders.list({ query: date ? undefined : debouncedSearch || undefined, date: date || undefined }) })
+  const ordersQuery = useQuery({
+    queryKey: ordersQueryKey,
+    queryFn: () => api.serviceOrders.list({
+      query: debouncedSearch || undefined,
+      startDate: dateBounds.startDate,
+      endDate: dateBounds.endDate,
+      urgentOnly: priority === 'Urgentes' || undefined,
+      page,
+      size: pageSize,
+    }),
+    enabled: !periodError,
+    placeholderData: keepPreviousData,
+  })
   const clientsQuery = useQuery({ queryKey: queryKeys.clients, queryFn: () => api.clients.list({ size: 500 }) })
   const catalogQuery = useQuery({ queryKey: queryKeys.serviceCatalog, queryFn: () => api.serviceCatalog.list({ size: 500 }) })
   const detailQuery = useQuery({ queryKey: [...queryKeys.serviceOrders, 'detail', detailId], queryFn: () => api.serviceOrders.find(detailId!), enabled: detailId !== null })
@@ -138,17 +213,41 @@ export function ServiceOrders() {
   })
 
   const orders = ordersQuery.data?.content ?? []
-  const filtered = useMemo(() => orders.filter((order) => {
-    const term = debouncedSearch.toLocaleLowerCase('pt-BR')
-    const matchesLocalSearch = date && term
-      ? [String(order.id), order.clientTradeName, order.clientName, order.description, order.requester].some((value) => value?.toLocaleLowerCase('pt-BR').includes(term))
-      : true
-    return matchesLocalSearch && (priority === 'Todas' || order.priority === 'URGENTE')
-  }), [date, debouncedSearch, orders, priority])
+  const total = ordersQuery.data?.total ?? 0
+  const totalPages = ordersQuery.data?.totalPages ?? 0
+  const firstResult = total === 0 ? 0 : page * pageSize + 1
+  const lastResult = Math.min((page + 1) * pageSize, total)
 
   function showToast(message: string) {
     setToast(message)
     window.setTimeout(() => setToast(''), 3200)
+  }
+
+  function resetPage() {
+    setPage(0)
+  }
+
+  function changeDateFilterMode(mode: DateFilterMode) {
+    const today = localToday()
+    setDateFilterMode(mode)
+    if (mode === 'date' && !date) setDate(today)
+    if (mode === 'range') {
+      if (!rangeStart) setRangeStart(today)
+      if (!rangeEnd) setRangeEnd(today)
+    }
+    if (mode === 'month' && !month) setMonth(today.slice(0, 7))
+    if (mode === 'week' && !weekDate) setWeekDate(today)
+    resetPage()
+  }
+
+  function clearPeriod() {
+    setDateFilterMode('none')
+    setDate('')
+    setRangeStart('')
+    setRangeEnd('')
+    setMonth('')
+    setWeekDate(localToday())
+    resetPage()
   }
 
   function openNew() {
@@ -177,23 +276,32 @@ export function ServiceOrders() {
   return <>
     <PageHeader eyebrow="Operação" title="Ordens de serviço" subtitle="Cadastro operacional alinhado ao fluxo legado da Gente Boa." actions={<Button icon={<Plus size={18} />} onClick={openNew}>Nova OS</Button>} />
     <section className="stats-grid stats-grid--four">
-      <StatCard label="Abertas" value={String(orders.filter((order) => order.status === 'ABERTA').length)} helper={`${orders.filter((order) => order.priority === 'URGENTE').length} urgentes`} icon={<CircleAlert />} tone="orange" />
-      <StatCard label="Urgentes" value={String(orders.filter((order) => order.priority === 'URGENTE').length)} helper="Sinalizadas na agenda" icon={<Clock3 />} tone="orange" />
-      <StatCard label="Finalizadas" value={String(orders.filter((order) => order.status === 'FINALIZADA').length)} helper="Atendimentos concluídos" icon={<CheckCircle2 />} tone="green" />
-      <StatCard label="Canceladas" value={String(orders.filter((order) => order.status === 'CANCELADA').length)} helper={`${ordersQuery.data?.total ?? 0} registros no total`} icon={<Wrench />} tone="blue" />
+      <StatCard label="Abertas nesta página" value={String(orders.filter((order) => order.status === 'ABERTA').length)} helper={`${orders.length} registros exibidos`} icon={<CircleAlert />} tone="orange" />
+      <StatCard label="Urgentes nesta página" value={String(orders.filter((order) => order.priority === 'URGENTE').length)} helper="Sinalizadas na agenda" icon={<Clock3 />} tone="orange" />
+      <StatCard label="Finalizadas nesta página" value={String(orders.filter((order) => order.status === 'FINALIZADA').length)} helper="Atendimentos concluídos" icon={<CheckCircle2 />} tone="green" />
+      <StatCard label="Canceladas nesta página" value={String(orders.filter((order) => order.status === 'CANCELADA').length)} helper={`${total.toLocaleString('pt-BR')} no resultado filtrado`} icon={<Wrench />} tone="blue" />
     </section>
 
     <section className="panel data-panel os-panel">
-      <div className="data-toolbar">
-        <div className="search-box"><Search size={18} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por código, cliente, solicitante ou descrição..." /></div>
-        <div className="segmented-control"><button className={priority === 'Todas' ? 'active' : ''} onClick={() => setPriority('Todas')}>Todas</button><button className={priority === 'Urgentes' ? 'active' : ''} onClick={() => setPriority('Urgentes')}>Urgentes</button></div>
-        <label className="date-filter"><CalendarDays size={16} /><input type="date" value={date} onChange={(event) => setDate(event.target.value)} aria-label="Filtrar por data" /></label>
+      <div className="data-toolbar data-toolbar--orders">
+        <div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); resetPage() }} placeholder="Buscar por código, cliente, solicitante ou descrição..." /></div>
+        <div className="segmented-control"><button className={priority === 'Todas' ? 'active' : ''} onClick={() => { setPriority('Todas'); resetPage() }}>Todas</button><button className={priority === 'Urgentes' ? 'active' : ''} onClick={() => { setPriority('Urgentes'); resetPage() }}>Urgentes</button></div>
+        <label className="toolbar-select toolbar-select--compact os-period-mode"><span>Período</span><select value={dateFilterMode} onChange={(event) => changeDateFilterMode(event.target.value as DateFilterMode)}><option value="none">Todas as datas</option><option value="date">Data específica</option><option value="range">Entre datas</option><option value="month">Mês</option><option value="week">Semana</option></select></label>
+        {dateFilterMode === 'date' && <label className="os-date-field"><span>Data</span><div><CalendarDays size={15} /><input type="date" value={date} onChange={(event) => { setDate(event.target.value); resetPage() }} aria-label="Filtrar por data específica" /></div></label>}
+        {dateFilterMode === 'range' && <div className="os-period-fields">
+          <label className="os-date-field"><span>De</span><div><CalendarDays size={15} /><input type="date" value={rangeStart} max={rangeEnd || undefined} onChange={(event) => { setRangeStart(event.target.value); resetPage() }} /></div></label>
+          <label className="os-date-field"><span>Até</span><div><CalendarDays size={15} /><input type="date" value={rangeEnd} min={rangeStart || undefined} onChange={(event) => { setRangeEnd(event.target.value); resetPage() }} /></div></label>
+        </div>}
+        {dateFilterMode === 'month' && <label className="os-date-field"><span>Mês</span><div><CalendarDays size={15} /><input type="month" value={month} onChange={(event) => { setMonth(event.target.value); resetPage() }} aria-label="Filtrar por mês" /></div></label>}
+        {dateFilterMode === 'week' && <div className="os-week-filter"><label className="os-date-field"><span>Um dia da semana</span><div><CalendarDays size={15} /><input type="date" value={weekDate} onChange={(event) => { setWeekDate(event.target.value); resetPage() }} aria-label="Selecionar semana" /></div></label>{dateBounds.startDate && dateBounds.endDate && <small>Domingo {formatDate(dateBounds.startDate)} a sábado {formatDate(dateBounds.endDate)}</small>}</div>}
         <div className="view-toggle"><button className={view === 'kanban' ? 'active' : ''} onClick={() => setView('kanban')} aria-label="Visualização em colunas"><Columns3 size={17} /></button><button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')} aria-label="Visualização em lista"><List size={17} /></button></div>
       </div>
 
-      {ordersQuery.isLoading ? <LoadingState label="Carregando ordens de serviço..." /> : ordersQuery.isError ? <ErrorState message={apiErrorMessage(ordersQuery.error)} onRetry={() => ordersQuery.refetch()} /> : filtered.length === 0 ? <EmptyState title="Nenhuma ordem encontrada" description="Altere os filtros ou cadastre uma nova OS." /> : view === 'kanban' ? <div className="kanban-board">
+      {periodError && <div className="os-filter-error"><CircleAlert size={16} /><span>{periodError}</span></div>}
+
+      {periodError ? null : ordersQuery.isLoading ? <LoadingState label="Carregando ordens de serviço..." /> : ordersQuery.isError ? <ErrorState message={apiErrorMessage(ordersQuery.error)} onRetry={() => ordersQuery.refetch()} /> : orders.length === 0 ? <EmptyState title="Nenhuma ordem encontrada" description="Altere os filtros ou cadastre uma nova OS." /> : view === 'kanban' ? <div className={`kanban-board ${ordersQuery.isFetching ? 'table-wrap--refreshing' : ''}`}>
         {stages.map((stage) => {
-          const stageOrders = filtered.filter((order) => order.status === stage)
+          const stageOrders = orders.filter((order) => order.status === stage)
           return <section className={`kanban-column kanban-column--${stage.toLowerCase()}`} key={stage}><header><span><i />{enumLabel(stage)}</span><b>{stageOrders.length}</b></header><div className="kanban-column__body">
             {stageOrders.map((order) => <article className="os-card" key={order.id} onClick={() => setDetailId(order.id)}>
               <div className="os-card__top"><span>OS-{order.id}</span>{order.priority === 'URGENTE' && <Badge tone="red">Urgente</Badge>}</div>
@@ -204,8 +312,19 @@ export function ServiceOrders() {
             {stageOrders.length === 0 && <div className="kanban-empty">Nenhuma OS nesta etapa.</div>}
           </div></section>
         })}
-      </div> : <div className="table-wrap"><table className="data-table os-table"><thead><tr><th>OS / Cliente</th><th>Atendimento</th><th>Data</th><th>Categoria</th><th>Valor</th><th>Status</th><th /></tr></thead><tbody>{filtered.map((order) => <tr key={order.id} onClick={() => setDetailId(order.id)}><td><strong>OS-{order.id}</strong><small className="table-secondary">{order.clientTradeName || order.clientName || 'Cliente não identificado'}</small></td><td><strong className="table-primary">{order.description || 'Não informado'}</strong><small className="table-secondary">{order.requester || 'Sem solicitante'}</small></td><td>{formatDate(order.orderedAt)}</td><td>{enumLabel(order.category)}</td><td>{money(order.totalValue)}</td><td><Badge tone={statusTone[order.status]}>{enumLabel(order.status)}</Badge></td><td><button className="row-action" aria-label={`Visualizar OS-${order.id}`}><ChevronRight size={18} /></button></td></tr>)}</tbody></table></div>}
-      <footer className="table-footer"><span>Mostrando <strong>{filtered.length}</strong> de {ordersQuery.data?.total ?? 0} ordens</span><button className="table-link" onClick={() => setDate('')}>Limpar data</button></footer>
+      </div> : <div className={`table-wrap ${ordersQuery.isFetching ? 'table-wrap--refreshing' : ''}`}><table className="data-table os-table"><thead><tr><th>OS / Cliente</th><th>Atendimento</th><th>Data</th><th>Categoria</th><th>Valor</th><th>Status</th><th /></tr></thead><tbody>{orders.map((order) => <tr key={order.id} onClick={() => setDetailId(order.id)}><td><strong>OS-{order.id}</strong><small className="table-secondary">{order.clientTradeName || order.clientName || 'Cliente não identificado'}</small></td><td><strong className="table-primary">{order.description || 'Não informado'}</strong><small className="table-secondary">{order.requester || 'Sem solicitante'}</small></td><td>{formatDate(order.orderedAt)}</td><td>{enumLabel(order.category)}</td><td>{money(order.totalValue)}</td><td><Badge tone={statusTone[order.status]}>{enumLabel(order.status)}</Badge></td><td><button className="row-action" aria-label={`Visualizar OS-${order.id}`}><ChevronRight size={18} /></button></td></tr>)}</tbody></table></div>}
+      <footer className="table-footer table-footer--pagination">
+        <span>Mostrando <strong>{firstResult}–{lastResult}</strong> de <strong>{total.toLocaleString('pt-BR')}</strong> ordens</span>
+        <div className="os-pagination-area">
+          {dateFilterMode !== 'none' && <button className="table-link" onClick={clearPeriod}>Limpar período</button>}
+          <div className="pagination-controls">
+            <label>Por página <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); resetPage() }}><option value={10}>10</option><option value={20}>20</option><option value={50}>50</option><option value={100}>100</option></select></label>
+            <button disabled={page === 0 || ordersQuery.isFetching} onClick={() => setPage((value) => Math.max(0, value - 1))} aria-label="Página anterior"><ChevronLeft size={16} /></button>
+            <span>Página <strong>{totalPages ? page + 1 : 0}</strong> de <strong>{totalPages}</strong></span>
+            <button disabled={page + 1 >= totalPages || ordersQuery.isFetching} onClick={() => setPage((value) => value + 1)} aria-label="Próxima página"><ChevronRight size={16} /></button>
+          </div>
+        </div>
+      </footer>
     </section>
 
     <DetailModal open={detailId !== null} onClose={() => setDetailId(null)} title={detail ? `Ordem de serviço OS-${detail.id}` : 'Detalhes da ordem de serviço'} description="Dados do atendimento, agenda, serviços e valores registrados." size="xlarge" actions={detail ? <><Button variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending} onClick={() => setOrderToDelete(detail.id)}>Excluir</Button>{!['FINALIZADA', 'CANCELADA'].includes(detail.status) && <Button variant="secondary" icon={<CheckCircle2 size={16} />} disabled={advanceMutation.isPending} onClick={() => advance(detail)}>Finalizar OS</Button>}<Button icon={<Edit3 size={16} />} onClick={() => openEdit(detail)}>Editar OS</Button></> : undefined}>

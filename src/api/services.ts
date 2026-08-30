@@ -58,6 +58,16 @@ export type ServiceCatalogListParams = {
   size?: number
 }
 
+export type ServiceOrderListParams = {
+  query?: string
+  date?: string
+  startDate?: string
+  endDate?: string
+  urgentOnly?: boolean
+  page?: number
+  size?: number
+}
+
 function resource<T, TPayload, TList = T>(path: string) {
   return {
     async list(params: ListParams = {}) {
@@ -181,7 +191,7 @@ export const api = {
     },
   },
   serviceOrders: {
-    async list(params: ListParams = {}) {
+    async list(params: ServiceOrderListParams = {}) {
       const { data } = await http.get<PagedResponse<ServiceOrderListItem>>('/service-orders', { params: { page: 0, size: 100, ...params } })
       return data
     },

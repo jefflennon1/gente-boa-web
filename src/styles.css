@@ -432,6 +432,19 @@ h1, h2, h3, p { margin-top: 0; }
 .form-error { margin-bottom: 16px; padding: 11px 13px; display: flex; align-items: center; gap: 9px; border: 1px solid #f3c9cd; border-radius: 10px; color: #a92f3b; background: #fff5f6; font-size: 10px; font-weight: 700; }
 .date-filter { height: 38px; padding: 0 10px; display: flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); background: white; }
 .date-filter input { border: 0; outline: 0; color: var(--navy); background: transparent; font: inherit; font-size: 10px; }
+.data-toolbar--orders { flex-wrap: wrap; }
+.data-toolbar--orders .search-box { flex: 1 1 310px; }
+.os-period-mode { min-width: 142px; }
+.os-period-fields { display: flex; align-items: flex-end; gap: 7px; }
+.os-date-field { min-width: 142px; display: grid; gap: 4px; }
+.os-date-field > span { padding-left: 2px; color: var(--muted); font-size: 7px; font-weight: 750; text-transform: uppercase; letter-spacing: .45px; }
+.os-date-field > div { height: 36px; padding: 0 9px; border: 1px solid var(--line); border-radius: 9px; display: flex; align-items: center; gap: 6px; color: var(--muted); background: white; }
+.os-date-field input { min-width: 0; width: 116px; border: 0; outline: 0; color: var(--navy); background: transparent; font: inherit; font-size: 9px; }
+.os-date-field > div:focus-within { border-color: #a8abd6; box-shadow: 0 0 0 3px rgba(46,49,145,.07); }
+.os-week-filter { display: grid; gap: 3px; }
+.os-week-filter > small { color: var(--muted); font-size: 7.5px; white-space: nowrap; }
+.os-filter-error { min-height: 38px; padding: 8px 14px; border-bottom: 1px solid #f1cfd2; display: flex; align-items: center; gap: 7px; color: #ae3944; background: #fff6f7; font-size: 9px; font-weight: 700; }
+.os-pagination-area { display: flex; align-items: center; gap: 13px; }
 .destructive-row { margin-top: 18px; padding: 13px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid #f1d8db; border-radius: 11px; background: #fffafb; }
 .destructive-row > span { display: grid; gap: 3px; }.destructive-row strong { color: var(--navy); font-size: 10px; }.destructive-row small { color: var(--muted); font-size: 8.5px; }
 .positive-value { color: #168457; }.negative-value { color: #bd3e49; }
@@ -554,6 +567,10 @@ h1, h2, h3, p { margin-top: 0; }
   .preview-document { overflow-x: auto; }.preview-document > section { grid-template-columns: 1fr; }.report-preview__kpis { grid-template-columns: 1fr; }
   .toast { right: 15px; bottom: 15px; left: 15px; min-width: 0; }
   .toolbar-select, .toolbar-select--compact { min-width: calc(50% - 5px); flex: 1; }
+  .os-period-fields { width: 100%; }
+  .os-date-field, .os-week-filter { flex: 1; }
+  .os-date-field input { width: 100%; }
+  .os-pagination-area { width: 100%; align-items: flex-start; flex-direction: column; }
   .table-footer--pagination { align-items: flex-start; flex-direction: column; }
   .pagination-controls { width: 100%; justify-content: space-between; flex-wrap: wrap; }
   .system-parameters-form__header { align-items: flex-start; flex-wrap: wrap; }.system-parameters-status { margin-left: 56px; }.system-parameters-form__body { padding: 18px 14px; }.system-parameters-form__footer { align-items: stretch; flex-direction: column; }.system-parameters-form__footer .button { width: 100%; }
