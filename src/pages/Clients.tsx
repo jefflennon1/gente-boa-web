@@ -7,10 +7,9 @@ import { useAuth } from '../auth'
 import { useRouter } from '../router'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money } from '../lib/format'
-import type { Client, ClientAddress, ClientAddressPayload, ClientKind, ClientListSortBy, ClientPayload, ClientStatus, SortDirection } from '../types'
+import type { Client, ClientAddress, ClientAddressPayload, ClientKind, ClientListSortBy, ClientPayload, SortDirection } from '../types'
 import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
-type StatusFilter = 'TODOS' | 'ATIVO' | 'INATIVO'
 const referralDescriptionsQueryKey = [...queryKeys.clients, 'referral-descriptions'] as const
 
 function referralDisplayName(description: string) {
@@ -76,9 +75,8 @@ function clientAddressRowFrom(address: ClientAddress): ClientAddressRow {
 }
 
 const sortOptions: { value: '' | ClientListSortBy; label: string }[] = [
-  { value: '', label: 'Ativos primeiro' },
+  { value: '', label: 'Razão social (padrão)' },
   { value: 'NAME', label: 'Razão social' },
-  { value: 'STATUS', label: 'Situação cadastral' },
   { value: 'SERVICE_ORDER_COUNT', label: 'Quantidade de OS' },
   { value: 'TOTAL_VALUE', label: 'Valor das OS' },
 ]
@@ -135,7 +133,6 @@ export function Clients() {
   const { user: currentUser } = useAuth()
   const { navigate } = useRouter()
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('TODOS')
   const [sortBy, setSortBy] = useState<'' | ClientListSortBy>('')
   const [direction, setDirection] = useState<SortDirection>('ASC')
   const [page, setPage] = useState(0)
@@ -157,10 +154,9 @@ export function Clients() {
   const debouncedSearch = useDebouncedValue(search)
 
   const clientsQuery = useQuery({
-    queryKey: [...queryKeys.clients, 'list', debouncedSearch, statusFilter, sortBy, direction, page, pageSize],
+    queryKey: [...queryKeys.clients, 'list', debouncedSearch, sortBy, direction, page, pageSize],
     queryFn: () => api.clients.list({
       query: debouncedSearch || undefined,
-      status: statusFilter === 'TODOS' ? undefined : statusFilter,
       sortBy: sortBy || undefined,
       direction: sortBy ? direction : undefined,
       page,
@@ -235,7 +231,6 @@ export function Clients() {
         const searchValue = savedClient.name?.trim() || savedClient.document?.trim() || ''
         queryClient.setQueryData([...queryKeys.clients, 'detail', savedClient.id], savedClient)
         setSearch(searchValue)
-        setStatusFilter('TODOS')
         setSortBy('')
         setDirection('ASC')
         setPage(0)
@@ -291,7 +286,6 @@ export function Clients() {
   const referralSelectValue = canonicalCurrentReferral ?? normalizedCurrentReferral
   const total = clientsQuery.data?.total ?? 0
   const totalPages = clientsQuery.data?.totalPages ?? 0
-  const activeOnPage = clients.filter((client) => client.status === 'ATIVO').length
   const ordersOnPage = clients.reduce((sum, client) => sum + client.serviceOrderCount, 0)
   const valueOnPage = clients.reduce((sum, client) => sum + client.totalValue, 0)
   const contractsOnPage = clients.filter((client) => client.contract).length
@@ -408,8 +402,6 @@ export function Clients() {
     const cnpj = textValue(data, 'nrcnpj')
     const cpf = textValue(data, 'nrcpf')
     const document = kind === 'PESSOA_JURIDICA' ? cnpj : cpf
-    const status = String(data.get('status')) as ClientStatus
-
     if (!document) {
       setFormError(`Informe o ${kind === 'PESSOA_JURIDICA' ? 'CNPJ' : 'CPF'} do cliente.`)
       return
@@ -473,7 +465,6 @@ export function Clients() {
       flenvioboleto: textValue(data, 'flenvioboleto'),
       flenvioextrato: textValue(data, 'flenvioextrato'),
       dsobser: textValue(data, 'dsobser'),
-      flstatu: status === 'INATIVO' ? 'N' : 'L',
       idtabel: selected?.idtabel ?? null,
       dtliber: selected?.dtliber ?? null,
       idliber: selected?.idliber ?? null,
@@ -484,10 +475,10 @@ export function Clients() {
 
   return (
     <>
-      <PageHeader eyebrow="Relacionamento" title="Clientes" subtitle="Listagem paginada com situação, volume de serviços e valor acumulado." actions={<Button icon={<Plus size={18} />} onClick={openNew}>Novo cliente</Button>} />
+      <PageHeader eyebrow="Relacionamento" title="Clientes" subtitle="Listagem paginada com contratos, volume de serviços e valor acumulado." actions={<Button icon={<Plus size={18} />} onClick={openNew}>Novo cliente</Button>} />
 
       <section className="stats-grid stats-grid--four">
-        <StatCard label="Ativos nesta página" value={String(activeOnPage)} helper={`${clients.length} clientes exibidos`} icon={<UsersRound />} tone="blue" />
+        <StatCard label="Clientes nesta página" value={String(clients.length)} helper={`${total.toLocaleString('pt-BR')} cadastros encontrados`} icon={<UsersRound />} tone="blue" />
         <StatCard label="Contratos nesta página" value={String(contractsOnPage)} helper="Cadastros com tabela vinculada" icon={<UserRoundCheck />} tone="purple" />
         <StatCard label="Ordens de serviço" value={String(ordersOnPage)} helper="Total dos clientes exibidos" icon={<Wrench />} tone="orange" />
         <StatCard label="Valor das OS" value={money(valueOnPage)} helper="Soma na página atual" icon={<CircleDollarSign />} tone="green" />
@@ -496,7 +487,6 @@ export function Clients() {
       <section className="panel data-panel">
         <div className="data-toolbar data-toolbar--clients">
           <div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); resetPage() }} placeholder="Buscar por código, nome, nome fantasia, CPF ou CNPJ..." /></div>
-          <div className="segmented-control" aria-label="Filtrar situação">{(['TODOS', 'ATIVO', 'INATIVO'] as const).map((item) => <button key={item} className={statusFilter === item ? 'active' : ''} onClick={() => { setStatusFilter(item); resetPage() }}>{item === 'TODOS' ? 'Todos' : item === 'ATIVO' ? 'Ativos' : 'Inativos'}</button>)}</div>
           <label className="toolbar-select"><span>Ordenar por</span><select value={sortBy} onChange={(event) => { setSortBy(event.target.value as '' | ClientListSortBy); resetPage() }}>{sortOptions.map((option) => <option key={option.value || 'default'} value={option.value}>{option.label}</option>)}</select></label>
           <label className="toolbar-select toolbar-select--compact"><span>Direção</span><select value={direction} disabled={!sortBy} onChange={(event) => { setDirection(event.target.value as SortDirection); resetPage() }}><option value="ASC">Crescente</option><option value="DESC">Decrescente</option></select></label>
         </div>
@@ -540,7 +530,6 @@ export function Clients() {
             <FormField label="Código"><input readOnly value={selected?.id ?? 'Gerado ao salvar'} /></FormField>
             <FormField label="Usuário responsável"><input readOnly value={selected?.dsusuario || currentUser?.name || 'Usuário autenticado'} /></FormField>
             <FormField label="Tipo de pessoa"><select name="kind" defaultValue={selected?.kind || 'PESSOA_JURIDICA'}><option value="PESSOA_JURIDICA">Pessoa jurídica</option><option value="PESSOA_FISICA">Pessoa física</option></select></FormField>
-            <FormField label="Situação"><select name="status" defaultValue={selected?.status || 'ATIVO'}><option value="ATIVO">Ativo</option><option value="INATIVO">Inativo</option></select></FormField>
             <FormField label="Razão social / Nome"><input name="nmrazao" required maxLength={100} defaultValue={selected?.nmrazao ?? selected?.name ?? ''} /></FormField>
             <FormField label="Fantasia / Apelido"><input name="nmfanta" maxLength={100} defaultValue={selected?.nmfanta ?? ''} /></FormField>
             <FormField label="CNPJ" hint="Obrigatório para pessoa jurídica"><input name="nrcnpj" maxLength={20} defaultValue={selected?.nrcnpj ?? (selected?.kind === 'PESSOA_JURIDICA' ? selected.document ?? '' : '')} /></FormField>

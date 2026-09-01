@@ -69,6 +69,16 @@ function dateTimeFromDate(value: string) {
   return value ? `${value}T00:00:00` : null
 }
 
+function minimumCancellationDate(value: string, months: number) {
+  const [year, month, day] = value.slice(0, 10).split('-').map(Number)
+  if (![year, month, day].every(Number.isFinite)) return ''
+  const targetIndex = year * 12 + month - 1 + Math.max(1, months)
+  const targetYear = Math.floor(targetIndex / 12)
+  const targetMonth = targetIndex % 12
+  const lastDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate()
+  return `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`
+}
+
 function renewalInNextDays(value?: string | null, days = 60) {
   if (!value) return false
   const renewal = new Date(value).getTime()
@@ -131,7 +141,7 @@ export function Contracts() {
 
   const clientsQuery = useQuery({
     queryKey: [...queryKeys.clients, 'contract-selector'],
-    queryFn: () => api.clients.list({ status: 'ATIVO', sortBy: 'NAME', direction: 'ASC', page: 0, size: 100 }),
+    queryFn: () => api.clients.list({ sortBy: 'NAME', direction: 'ASC', page: 0, size: 100 }),
   })
 
   const filteredClientQuery = useQuery({
@@ -148,7 +158,7 @@ export function Contracts() {
   const systemParametersQuery = useQuery({
     queryKey: queryKeys.systemParameters,
     queryFn: api.systemParameters.get,
-    enabled: modalOpen,
+    enabled: modalOpen || Boolean(contractToCancel),
   })
 
   const detailQuery = useQuery({
@@ -321,6 +331,14 @@ export function Contracts() {
   const serviceOptions = servicesQuery.data?.content ?? []
   const filteredClientOption = clientOptions.find((client) => client.id === clientFilter)
   const filteredClientName = filteredClientQuery.data?.nmfanta || filteredClientOption?.tradeName || filteredClientQuery.data?.name || filteredClientOption?.name || (clientFilter ? `Cliente #${clientFilter}` : '')
+  const minimumContractMonths = systemParametersQuery.data?.minimumContractMonths ?? 3
+  const configuredDueDays = Array.from(new Set([
+    systemParametersQuery.data?.primaryDueDay ?? 10,
+    systemParametersQuery.data?.secondaryDueDay ?? 20,
+  ])).sort((left, right) => left - right)
+  const firstCancellationDate = contractToCancel?.contractDate
+    ? minimumCancellationDate(contractToCancel.contractDate, minimumContractMonths)
+    : ''
 
   function showToast(message: string) {
     setToast(message)
@@ -445,6 +463,10 @@ export function Contracts() {
       setCancelError('Informe a data e o motivo do cancelamento.')
       return
     }
+    if (firstCancellationDate && date.slice(0, 10) < firstCancellationDate) {
+      setCancelError(`O prazo mínimo é de ${minimumContractMonths} meses. A primeira data permitida é ${formatDate(firstCancellationDate)}.`)
+      return
+    }
     cancelMutation.mutate({ id: contractToCancel.id, cancellationDate: date, reason })
   }
 
@@ -506,14 +528,15 @@ export function Contracts() {
             {systemParametersQuery.isError && <FormError message={`Não foi possível carregar os parâmetros do sistema: ${apiErrorMessage(systemParametersQuery.error)}`} />}
             {systemParametersQuery.isLoading ? <aside className="contract-system-parameters contract-system-parameters--loading"><Settings2 size={18} /><span>Carregando referências de tbparametro...</span></aside> : systemParametersQuery.data ? <aside className="contract-system-parameters">
               
-              <div><span><small>Valor do orçamento</small><strong>{systemParametersQuery.data.vlorcam == null ? 'Não informado' : money(systemParametersQuery.data.vlorcam)}</strong></span><span><small>ISS</small><strong>{systemParametersQuery.data.vliss == null ? 'Não informado' : `${systemParametersQuery.data.vliss.toLocaleString('pt-BR')}%`}</strong></span><span><small>Alíquota</small><strong>{systemParametersQuery.data.vlaliq == null ? 'Não informado' : `${systemParametersQuery.data.vlaliq.toLocaleString('pt-BR')}%`}</strong></span></div>
+              <div><span><small>Valor do orçamento</small><strong>{systemParametersQuery.data.vlorcam == null ? 'Não informado' : money(systemParametersQuery.data.vlorcam)}</strong></span><span><small>ISS</small><strong>{systemParametersQuery.data.vliss == null ? 'Não informado' : `${systemParametersQuery.data.vliss.toLocaleString('pt-BR')}%`}</strong></span><span><small>Alíquota</small><strong>{systemParametersQuery.data.vlaliq == null ? 'Não informado' : `${systemParametersQuery.data.vlaliq.toLocaleString('pt-BR')}%`}</strong></span><span><small>Prazo mínimo</small><strong>{minimumContractMonths} meses</strong></span><span><small>Garantia</small><strong>{systemParametersQuery.data.serviceWarrantyDays ?? 90} dias</strong></span><span><small>Vencimentos</small><strong>Dias {configuredDueDays.join(' ou ')}</strong></span></div>
+              <footer><strong>Regra operacional:</strong> {systemParametersQuery.data.contractRules || 'Horas excedentes são cobradas na próxima mensalidade e horas não utilizadas não acumulam.'}</footer>
               </aside> : <aside className="contract-system-parameters contract-system-parameters--empty"><Settings2 size={18} /><span><strong>Parâmetros não cadastrados</strong><small>Cadastre as referências globais em Parâmetros do sistema.</small></span></aside>}
             <div className="form-section-title"><span>1</span><div><strong>Dados do contrato</strong><small>Cliente, vigência e vencimento</small></div></div>
             <div className="form-grid form-grid--four">
               <FormField label="Cliente"><select name="clientId" required defaultValue={selected?.clientId ?? clientFilter ?? ''}><option value="" disabled>Selecione o cliente</option>{selected && !clientOptions.some((client) => client.id === selected.clientId) && <option value={selected.clientId}>{selected.clientTradeName || selected.clientName || `Cliente #${selected.clientId}`}{selected.clientTradeName && selected.clientName ? ` · ${selected.clientName}` : ''}</option>}{!selected && clientFilter !== null && !clientOptions.some((client) => client.id === clientFilter) && <option value={clientFilter}>{filteredClientName}</option>}{clientOptions.map((client) => <option key={client.id} value={client.id}>{client.tradeName || client.name || `Cliente #${client.id}`}{client.tradeName && client.name ? ` · ${client.name}` : ''} · {client.document || 'sem documento'}</option>)}</select></FormField>
               <FormField label="Data do contrato"><input name="contractDate" type="date" required defaultValue={toDateInput(selected?.contractDate)} /></FormField>
               <FormField label="Data de renovação"><input name="renewalDate" type="date" defaultValue={selected?.renewalDate?.slice(0, 10) ?? ''} /></FormField>
-              <FormField label="Dia do vencimento"><input name="dueDay" type="number" min="1" max="31" defaultValue={selected?.dueDay ?? 10} /></FormField>
+              <FormField label="Dia do vencimento"><select name="dueDay" defaultValue={selected?.dueDay ?? configuredDueDays[0]}>{selected?.dueDay && !configuredDueDays.includes(selected.dueDay) && <option value={selected.dueDay}>Dia {selected.dueDay} (legado)</option>}{configuredDueDays.map((day) => <option key={day} value={day}>Dia {day}</option>)}</select></FormField>
               <FormField label="Taxa de adesão" hint="O banco aceita somente valor inteiro"><input name="adhesionFee" type="number" min="0" step="1" defaultValue={selected?.adhesionFee ?? 0} /></FormField>
               <FormField label="Possui carência"><select name="gracePeriod" defaultValue={String(selected?.gracePeriod ?? false)}><option value="false">Não</option><option value="true">Sim</option></select></FormField>
               <FormField label="Código do índice"><input name="adjustmentIndexId" type="number" min="0" defaultValue={selected?.adjustmentIndexId ?? ''} /></FormField>
@@ -598,11 +621,11 @@ export function Contracts() {
         </ModalForm>
       </Modal>
 
-      <Modal open={Boolean(contractToCancel)} onClose={() => !cancelMutation.isPending && setContractToCancel(null)} title={`Cancelar contrato #${contractToCancel?.id ?? ''}`} description="O contrato permanece no histórico e deixa de ser considerado ativo.">
+      <Modal open={Boolean(contractToCancel)} onClose={() => !cancelMutation.isPending && setContractToCancel(null)} title={`Cancelar contrato #${contractToCancel?.id ?? ''}`} description={`O contrato possui prazo mínimo de ${minimumContractMonths} meses e permanece no histórico após o cancelamento.`}>
         <ModalForm onSubmit={submitCancellation} onCancel={() => setContractToCancel(null)} submitting={cancelMutation.isPending} submitLabel={cancelMutation.isPending ? 'Cancelando...' : 'Confirmar cancelamento'}>
           <FormError message={cancelError} />
           <div className="form-grid form-grid--two">
-            <FormField label="Data do cancelamento"><input name="cancellationDate" type="date" required defaultValue={new Date().toISOString().slice(0, 10)} /></FormField>
+            <FormField label="Data do cancelamento" hint={firstCancellationDate ? `Permitido a partir de ${formatDate(firstCancellationDate)}` : undefined}><input name="cancellationDate" type="date" min={firstCancellationDate || undefined} required defaultValue={firstCancellationDate && new Date().toISOString().slice(0, 10) < firstCancellationDate ? firstCancellationDate : new Date().toISOString().slice(0, 10)} /></FormField>
             <FormField label="Motivo"><textarea name="reason" rows={4} required placeholder="Informe por que o contrato está sendo encerrado" /></FormField>
           </div>
         </ModalForm>
