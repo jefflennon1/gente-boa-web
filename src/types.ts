@@ -395,6 +395,7 @@ export interface ServiceOrderSchedule {
   employeePosition?: string | null
   employeePhone?: string | null
   roleId?: number | null
+  serviceId?: number | null
   actualDate?: ISODateTime | null
   actualStart?: string | null
   actualEnd?: string | null

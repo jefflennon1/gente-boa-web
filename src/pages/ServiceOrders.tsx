@@ -110,6 +110,10 @@ function asDuration(minutes: number) {
   return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`
 }
 
+function currencyValue(value: number) {
+  return Math.round((Math.max(0, value) + Number.EPSILON) * 100) / 100
+}
+
 function clientDisplay(client: Client | ClientSearchOption) {
   if ('tradeName' in client) return client.tradeName || client.legalName || `Cliente #${client.id}`
   return client.nmfanta || client.name || client.nmrazao || `Cliente #${client.id}`
@@ -417,9 +421,11 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   const [purchaseRental, setPurchaseRental] = useState(String(selected?.materialOrder?.rentalValue ?? 0))
   const [purchaseNotes, setPurchaseNotes] = useState(selected?.materialOrder?.notes ?? '')
   const [materialError, setMaterialError] = useState('')
+  const [scheduleError, setScheduleError] = useState('')
+  const initialSingleServiceId = selected?.serviceItems?.length === 1 ? selected.serviceItems[0].serviceId : null
   const [schedules, setSchedules] = useState<ScheduleDraft[]>(() => selected?.schedules?.length
-    ? selected.schedules.map((item, index) => ({ ...item, rowKey: `schedule-${item.scheduleId ?? index}` }))
-    : [{ rowKey: 'schedule-new-0', expectedDate: dateTime(initialDate), expectedStart: '', expectedEnd: '', expectedDuration: '00:00', employeeId: null }])
+    ? selected.schedules.map((item, index) => ({ ...item, serviceId: item.serviceId ?? initialSingleServiceId, rowKey: `schedule-${item.scheduleId ?? index}` }))
+    : [{ rowKey: 'schedule-new-0', expectedDate: dateTime(initialDate), expectedStart: '', expectedEnd: '', expectedDuration: '00:00', employeeId: null, serviceId: initialSingleServiceId }])
   const [serviceItems, setServiceItems] = useState<ServiceDraft[]>(() => selected?.serviceItems?.map((item, index) => ({ ...item, rowKey: `service-${item.serviceId}-${index}` })) ?? [])
   const [materialItems, setMaterialItems] = useState<MaterialDraft[]>(() => selected?.materialOrder?.items?.map((item, index) => ({ ...item, rowKey: `material-${item.materialId}-${index}` })) ?? [])
 
@@ -452,7 +458,35 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       : selected?.clientName || (clientId ? `Cliente #${clientId}` : 'Selecionar cliente')
   const clientOptions = clientOptionsQuery.data ?? []
   const mainAddress = primaryClientAddress(selectedClient)
-  const serviceSubtotal = serviceItems.reduce((sum, item) => sum + numberValue(item.totalValue), 0)
+  const minimumMinutes = orderOrigin === 'C'
+    ? systemParametersQuery.data?.contractMinimumMinutes ?? 20
+    : systemParametersQuery.data?.oneOffMinimumMinutes ?? 30
+  const officialMinutesByService = useMemo(() => {
+    const totals = new Map<number, number>()
+    schedules.forEach((schedule) => {
+      if (!schedule.serviceId) return
+      const realized = minutesFromTime(schedule.actualDuration) || durationMinutes(schedule.actualStart, schedule.actualEnd)
+      if (realized > 0) totals.set(schedule.serviceId, (totals.get(schedule.serviceId) ?? 0) + Math.max(realized, minimumMinutes))
+    })
+    return totals
+  }, [minimumMinutes, schedules])
+  const scheduledServiceIds = useMemo(() => new Set(schedules.map((schedule) => schedule.serviceId).filter((id): id is number => Boolean(id))), [schedules])
+  const pricedServiceItems = useMemo(() => serviceItems.map((item) => {
+    const serviceMinutes = officialMinutesByService.get(item.serviceId) ?? 0
+    const minuteValue = numberValue(item.minuteValue)
+    const quantity = Math.max(1, numberValue(item.quantity))
+    const unitValue = minuteValue > 0 && serviceMinutes > 0
+      ? Math.max(numberValue(item.minimumValue), serviceMinutes * minuteValue)
+      : numberValue(item.unitValue)
+    return {
+      ...item,
+      quantity,
+      hours: scheduledServiceIds.has(item.serviceId) ? asDuration(serviceMinutes) : item.hours,
+      unitValue: currencyValue(unitValue),
+      totalValue: currencyValue(quantity * unitValue),
+    }
+  }), [officialMinutesByService, scheduledServiceIds, serviceItems])
+  const serviceSubtotal = pricedServiceItems.reduce((sum, item) => sum + numberValue(item.totalValue), 0)
   const materialGross = materialItems.reduce((sum, item) => sum + numberValue(item.quantity) * numberValue(item.unitValue), 0)
   const materialDiscountValue = materialGross * Math.min(100, numberValue(purchaseDiscount)) / 100
   const materialFob = Math.max(0, materialGross - materialDiscountValue)
@@ -462,14 +496,9 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   const total = serviceSubtotal + materialAmount + numberValue(ticketFee) + numberValue(transport) + numberValue(rental) - discountAmount
   const totalMinutes = schedules.reduce((sum, item) => sum + (minutesFromTime(item.expectedDuration) || durationMinutes(item.expectedStart, item.expectedEnd)), 0)
   const actualMinutes = schedules.reduce((sum, item) => sum + (minutesFromTime(item.actualDuration) || durationMinutes(item.actualStart, item.actualEnd)), 0)
-  const minimumMinutes = orderOrigin === 'C'
-    ? systemParametersQuery.data?.contractMinimumMinutes ?? 20
-    : systemParametersQuery.data?.oneOffMinimumMinutes ?? 30
   const billableMinutes = schedules.reduce((sum, item) => {
     const realized = minutesFromTime(item.actualDuration) || durationMinutes(item.actualStart, item.actualEnd)
-    const expected = minutesFromTime(item.expectedDuration) || durationMinutes(item.expectedStart, item.expectedEnd)
-    const accountingBase = realized || expected
-    return accountingBase > 0 ? sum + Math.max(accountingBase, minimumMinutes) : sum
+    return realized > 0 ? sum + Math.max(realized, minimumMinutes) : sum
   }, 0)
   const operationalRule = orderOrigin === 'C'
     ? systemParametersQuery.data?.contractRules || `Cada atendimento desconta no mínimo ${minimumMinutes} minutos das horas contratadas.`
@@ -494,6 +523,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   }
 
   function updateSchedule(index: number, patch: Partial<ScheduleDraft>) {
+    setScheduleError('')
     setSchedules((current) => current.map((item, itemIndex) => {
       if (itemIndex !== index) return item
       const next = { ...item, ...patch }
@@ -532,17 +562,41 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   }
 
   function addSchedule() {
-    setSchedules((current) => [...current, { rowKey: `schedule-new-${Date.now()}`, expectedDate: dateTime(requestDate), expectedStart: '', expectedEnd: '', expectedDuration: '00:00', employeeId: null }])
+    const onlyServiceId = serviceItems.length === 1 ? serviceItems[0].serviceId : null
+    setSchedules((current) => [...current, { rowKey: `schedule-new-${Date.now()}`, expectedDate: dateTime(requestDate), expectedStart: '', expectedEnd: '', expectedDuration: '00:00', employeeId: null, serviceId: onlyServiceId }])
+    setScheduleError('')
   }
 
   function addService() {
     const firstAvailable = catalog.find((item) => !serviceItems.some((row) => row.serviceId === item.id))
-    if (firstAvailable) setServiceItems((current) => [...current, serviceDraft(firstAvailable)])
+    if (!firstAvailable) return
+    setServiceItems((current) => [...current, serviceDraft(firstAvailable)])
+    if (serviceItems.length === 0) {
+      setSchedules((current) => current.map((schedule) => schedule.serviceId ? schedule : { ...schedule, serviceId: firstAvailable.id }))
+    }
+    setScheduleError('')
   }
 
   function changeService(index: number, serviceId: number) {
     const service = catalog.find((item) => item.id === serviceId)
-    if (service) setServiceItems((current) => current.map((item, itemIndex) => itemIndex === index ? { ...serviceDraft(service), rowKey: item.rowKey } : item))
+    if (!service) return
+    const previousServiceId = serviceItems[index]?.serviceId
+    setServiceItems((current) => current.map((item, itemIndex) => itemIndex === index ? { ...serviceDraft(service), rowKey: item.rowKey } : item))
+    if (previousServiceId) {
+      setSchedules((current) => current.map((schedule) => schedule.serviceId === previousServiceId ? { ...schedule, serviceId } : schedule))
+    }
+    setScheduleError('')
+  }
+
+  function removeService(index: number) {
+    const removedServiceId = serviceItems[index]?.serviceId
+    const remaining = serviceItems.filter((_, itemIndex) => itemIndex !== index)
+    const fallbackServiceId = remaining.length === 1 ? remaining[0].serviceId : null
+    setServiceItems(remaining)
+    setSchedules((current) => current.map((schedule) => schedule.serviceId === removedServiceId
+      ? { ...schedule, serviceId: fallbackServiceId }
+      : schedule))
+    setScheduleError('')
   }
 
   function updateService(index: number, patch: Partial<ServiceDraft>) {
@@ -591,6 +645,23 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       setTab('materials')
       return
     }
+    if (serviceItems.length > 0 && schedules.some((schedule) => !schedule.serviceId)) {
+      setScheduleError('Selecione o serviço correspondente em todos os agendamentos.')
+      setTab('general')
+      return
+    }
+    const timedServiceIds = new Set(serviceItems.filter((item) => numberValue(item.minuteValue) > 0).map((item) => item.serviceId))
+    if (status === 'FINALIZADA') {
+      const incompleteAppointment = schedules.some((schedule) => schedule.serviceId && timedServiceIds.has(schedule.serviceId)
+        && (minutesFromTime(schedule.actualDuration) || durationMinutes(schedule.actualStart, schedule.actualEnd)) === 0)
+      const serviceWithoutAppointment = [...timedServiceIds].some((serviceId) => !officialMinutesByService.has(serviceId))
+      if (incompleteAppointment || serviceWithoutAppointment) {
+        setScheduleError('Informe o horário realizado de todos os atendimentos cobrados antes de finalizar a ordem.')
+        setTab('general')
+        return
+      }
+    }
+    setScheduleError('')
     const selectedBase = selected ? (() => {
       const { id: _id, code: _code, client: _client, clientName: _clientName, schedules: _schedules, serviceItems: _serviceItems, materialOrder: _materialOrder, ...rest } = selected
       return rest
@@ -600,7 +671,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       const date = toDateInput(item.expectedDate) || requestDate
       return { ...persisted, serviceOrderId: selected?.id ?? null, scheduleId: item.scheduleId ?? index + 1, expectedDate: dateTime(date), expectedStart: item.expectedStart || null, expectedEnd: item.expectedEnd || null, expectedDuration: item.expectedDuration || asDuration(durationMinutes(item.expectedStart, item.expectedEnd)), actualDuration: item.actualDuration || asDuration(durationMinutes(item.actualStart, item.actualEnd)), employeeId: item.employeeId ? Number(item.employeeId) : null, urgentFlag: urgent ? 'S' : 'N', scheduledTimeFlag: hourMarked ? 'S' : 'N', startedFlag: item.startedFlag || 'N', finishedFlag: item.finishedFlag || 'N', routedFlag: item.routedFlag || 'N', serviceType }
     })
-    const normalizedServices: ServiceOrderServiceItem[] = serviceItems.map(({ rowKey: _rowKey, ...item }) => ({ ...item, serviceOrderId: selected?.id ?? null, quantity: Math.max(1, numberValue(item.quantity)), unitValue: numberValue(item.unitValue), totalValue: numberValue(item.quantity) * numberValue(item.unitValue), minimumValue: numberValue(item.minimumValue), minuteValue: numberValue(item.minuteValue) }))
+    const normalizedServices: ServiceOrderServiceItem[] = pricedServiceItems.map(({ rowKey: _rowKey, ...item }) => ({ ...item, serviceOrderId: selected?.id ?? null, quantity: Math.max(1, numberValue(item.quantity)), unitValue: currencyValue(numberValue(item.unitValue)), totalValue: currencyValue(numberValue(item.totalValue)), minimumValue: numberValue(item.minimumValue), minuteValue: numberValue(item.minuteValue) }))
     const normalizedMaterials: ServiceOrderMaterialItem[] = materialItems.map(({ rowKey: _rowKey, ...item }, index) => ({ ...item, itemId: index + 1, purchaseOrderId: selected?.materialOrder?.id ?? null, quantity: Math.max(1, numberValue(item.quantity)), unitValue: numberValue(item.unitValue), totalValue: Math.max(1, numberValue(item.quantity)) * numberValue(item.unitValue) }))
     const materialOrder: ServiceOrderMaterialOrder | null = materialItems.length > 0 || selected?.materialOrder ? {
       ...selected?.materialOrder,
@@ -633,7 +704,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       tpservic: serviceType, service: serviceType, priority: urgent ? 'URGENTE' : 'NORMAL', scheduledDate: firstSchedule ? toDateInput(firstSchedule.expectedDate) : requestDate,
       scheduledTime: firstSchedule?.expectedStart || null, technician: firstSchedule?.employeeId ? String(firstSchedule.employeeId) : null, location: locationId || null,
       dtinicial: firstSchedule ? dateTime(toDateInput(firstSchedule.expectedDate), firstSchedule.expectedStart || '00:00') : null, hrabert: firstSchedule?.expectedStart || null,
-      qthorat: asDuration(actualMinutes), qthorac: status === 'FINALIZADA' ? asDuration(billableMinutes) : asDuration(totalMinutes), dtvenci: dueDate ? dateTime(dueDate) : null, txbolet: numberValue(ticketFee), vldesco: numberValue(discount), vldesc: discountAmount,
+      qthorat: asDuration(actualMinutes), qthorac: asDuration(billableMinutes), dtvenci: dueDate ? dateTime(dueDate) : null, txbolet: numberValue(ticketFee), vldesco: numberValue(discount), vldesc: discountAmount,
       vltrans: numberValue(transport), vlalug: numberValue(rental), fltrans: numberValue(transport) > 0 ? 'S' : 'N', flalug: numberValue(rental) > 0 ? 'S' : 'N',
       vlmater: materialAmount, idpedi: selected?.materialOrder?.id ?? selected?.idpedi ?? null, vlhorar: serviceSubtotal, vlcobra: Math.max(0, total), schedules: normalizedSchedules, serviceItems: normalizedServices, materialOrder,
     }
@@ -672,18 +743,24 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       </div>
       <section className="os-grid-section">
         <header><div><strong>Agendamento de serviços</strong><span>Previsão e profissional responsável por cada visita</span></div><Button type="button" variant="secondary" icon={<Plus size={15} />} onClick={addSchedule}>Adicionar agenda</Button></header>
-        <div className="os-edit-table-wrap"><table className="os-edit-table os-schedule-table"><thead><tr><th>Data</th><th>Inicial</th><th>Final</th><th>Previsto</th><th>Funcionário</th><th>Dt. realizado</th><th>Hr. inicial</th><th>Hr. final</th><th>Realizado</th><th /></tr></thead><tbody>{schedules.map((item, index) => <tr key={item.rowKey}>
-          <td><input type="date" value={toDateInput(item.expectedDate)} onChange={(event) => updateSchedule(index, { expectedDate: dateTime(event.target.value) })} required /></td>
-          <td><input type="time" value={item.expectedStart || ''} onChange={(event) => updateSchedule(index, { expectedStart: event.target.value })} /></td>
-          <td><input type="time" value={item.expectedEnd || ''} onChange={(event) => updateSchedule(index, { expectedEnd: event.target.value })} /></td>
-          <td><input value={item.expectedDuration || '00:00'} readOnly /></td>
-          <td><div className="os-employee-cell"><button type="button" className="os-employee-picker-trigger" onClick={() => openEmployeePicker(index)} title="Buscar funcionário"><Search size={14} /><span><strong>{scheduleEmployeeDisplay(item)}</strong>{item.employeeId && <small>{[item.employeePosition, item.employeePhone, `#${item.employeeId}`].filter(Boolean).join(' · ')}</small>}</span></button>{item.employeeId && <button type="button" className="os-employee-clear" onClick={() => clearEmployee(index)} aria-label={`Remover ${scheduleEmployeeDisplay(item)} do agendamento`}><X size={13} /></button>}</div></td>
-          <td><input type="date" value={toDateInput(item.actualDate)} onChange={(event) => updateSchedule(index, { actualDate: event.target.value ? dateTime(event.target.value) : null })} /></td>
-          <td><input type="time" value={item.actualStart || ''} onChange={(event) => updateSchedule(index, { actualStart: event.target.value })} /></td>
-          <td><input type="time" value={item.actualEnd || ''} onChange={(event) => updateSchedule(index, { actualEnd: event.target.value })} /></td>
-          <td><input value={item.actualDuration || '00:00'} readOnly /></td>
-          <td><button type="button" className="os-remove-row" disabled={schedules.length === 1} onClick={() => setSchedules((current) => current.filter((_, rowIndex) => rowIndex !== index))} aria-label="Remover agendamento"><X size={16} /></button></td>
-        </tr>)}</tbody></table></div>
+        <FormError message={scheduleError} />
+        <div className="os-edit-table-wrap"><table className="os-edit-table os-schedule-table"><thead><tr><th>Data</th><th>Inicial</th><th>Final</th><th>Previsto</th><th>Funcionário</th><th>Serviço executado</th><th>Dt. realizado</th><th>Hr. inicial</th><th>Hr. final</th><th>Realizado</th><th /></tr></thead><tbody>{schedules.map((item, index) => {
+          const linkedService = serviceItems.find((service) => service.serviceId === item.serviceId)
+          const actualRequired = status === 'FINALIZADA' && numberValue(linkedService?.minuteValue) > 0
+          return <tr key={item.rowKey}>
+            <td><input type="date" value={toDateInput(item.expectedDate)} onChange={(event) => updateSchedule(index, { expectedDate: dateTime(event.target.value) })} required /></td>
+            <td><input type="time" value={item.expectedStart || ''} onChange={(event) => updateSchedule(index, { expectedStart: event.target.value })} /></td>
+            <td><input type="time" value={item.expectedEnd || ''} onChange={(event) => updateSchedule(index, { expectedEnd: event.target.value })} /></td>
+            <td><input value={item.expectedDuration || '00:00'} readOnly /></td>
+            <td><div className="os-employee-cell"><button type="button" className="os-employee-picker-trigger" onClick={() => openEmployeePicker(index)} title="Buscar funcionário"><Search size={14} /><span><strong>{scheduleEmployeeDisplay(item)}</strong>{item.employeeId && <small>{[item.employeePosition, item.employeePhone, `#${item.employeeId}`].filter(Boolean).join(' · ')}</small>}</span></button>{item.employeeId && <button type="button" className="os-employee-clear" onClick={() => clearEmployee(index)} aria-label={`Remover ${scheduleEmployeeDisplay(item)} do agendamento`}><X size={13} /></button>}</div></td>
+            <td><select value={item.serviceId ?? ''} onChange={(event) => updateSchedule(index, { serviceId: event.target.value ? Number(event.target.value) : null })} disabled={!serviceItems.length} required={serviceItems.length > 0}><option value="">{serviceItems.length ? 'Selecione' : 'Adicione um serviço'}</option>{serviceItems.map((service) => <option key={service.serviceId} value={service.serviceId}>{catalog.find((option) => option.id === service.serviceId)?.description || `Serviço #${service.serviceId}`}</option>)}</select></td>
+            <td><input type="date" value={toDateInput(item.actualDate)} onChange={(event) => updateSchedule(index, { actualDate: event.target.value ? dateTime(event.target.value) : null })} required={actualRequired} /></td>
+            <td><input type="time" value={item.actualStart || ''} onChange={(event) => updateSchedule(index, { actualStart: event.target.value })} required={actualRequired} /></td>
+            <td><input type="time" value={item.actualEnd || ''} onChange={(event) => updateSchedule(index, { actualEnd: event.target.value })} required={actualRequired} /></td>
+            <td><input value={item.actualDuration || '00:00'} readOnly /></td>
+            <td><button type="button" className="os-remove-row" disabled={schedules.length === 1} onClick={() => { setSchedules((current) => current.filter((_, rowIndex) => rowIndex !== index)); setScheduleError('') }} aria-label="Remover agendamento"><X size={16} /></button></td>
+          </tr>
+        })}</tbody></table></div>
         <div className="os-grid-summary os-time-summary"><span><small>Tempo previsto</small><strong>{asDuration(totalMinutes)}</strong></span><span><small>Tempo realizado</small><strong>{asDuration(actualMinutes)}</strong></span><span className="os-time-summary__billable"><small>{orderOrigin === 'C' ? 'Tempo a descontar' : 'Tempo a cobrar'}</small><strong>{asDuration(billableMinutes)}</strong></span></div>
       </section>
       <div className="os-service-workspace">
@@ -692,9 +769,10 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
         </section>
         <section className="os-grid-section os-services-section">
           <header><div><strong>Relação de serviços cadastrados</strong><span>Itens de tbordemservicoservico</span></div><Button type="button" variant="secondary" icon={<Plus size={15} />} onClick={addService} disabled={!catalog.length}>Adicionar serviço</Button></header>
-          {serviceItems.length ? <div className="os-edit-table-wrap"><table className="os-edit-table os-services-table"><thead><tr><th>Grupo</th><th>Serviço</th><th>Qtd.</th><th>Horas</th><th>Vl. mínimo</th><th>Vl. unitário</th><th>Vl. total</th><th /></tr></thead><tbody>{serviceItems.map((item, index) => {
+          {pricedServiceItems.length ? <div className="os-edit-table-wrap"><table className="os-edit-table os-services-table"><thead><tr><th>Grupo</th><th>Serviço</th><th>Qtd.</th><th>Horas oficiais</th><th>Vl. mínimo</th><th>Vl. unitário</th><th>Vl. total</th><th /></tr></thead><tbody>{pricedServiceItems.map((item, index) => {
             const catalogItem = catalog.find((service) => service.id === item.serviceId)
-            return <tr key={item.rowKey}><td><input value={catalogItem?.groupId ?? '—'} readOnly /></td><td><select value={item.serviceId} onChange={(event) => changeService(index, Number(event.target.value))}>{catalog.map((service) => <option key={service.id} value={service.id} disabled={serviceItems.some((row, rowIndex) => rowIndex !== index && row.serviceId === service.id)}>{service.description || `Serviço #${service.id}`}</option>)}</select></td><td><input type="number" min="1" value={item.quantity ?? 1} onChange={(event) => updateService(index, { quantity: Number(event.target.value) })} /></td><td><input type="time" value={item.hours || ''} onChange={(event) => updateService(index, { hours: event.target.value })} /></td><td><input type="number" min="0" step="0.01" value={item.minimumValue ?? 0} onChange={(event) => updateService(index, { minimumValue: Number(event.target.value) })} /></td><td><input type="number" min="0" step="0.01" value={item.unitValue ?? 0} onChange={(event) => updateService(index, { unitValue: Number(event.target.value) })} /></td><td><input value={money(item.totalValue)} readOnly /></td><td><button type="button" className="os-remove-row" onClick={() => setServiceItems((current) => current.filter((_, rowIndex) => rowIndex !== index))} aria-label="Remover serviço"><X size={16} /></button></td></tr>
+            const calculatedByTime = numberValue(item.minuteValue) > 0
+            return <tr key={item.rowKey}><td><input value={catalogItem?.groupId ?? '—'} readOnly /></td><td><select value={item.serviceId} onChange={(event) => changeService(index, Number(event.target.value))}>{catalog.map((service) => <option key={service.id} value={service.id} disabled={serviceItems.some((row, rowIndex) => rowIndex !== index && row.serviceId === service.id)}>{service.description || `Serviço #${service.id}`}</option>)}</select></td><td><input type="number" min="1" value={item.quantity ?? 1} onChange={(event) => updateService(index, { quantity: Number(event.target.value) })} /></td><td><input type="time" value={item.hours || '00:00'} readOnly title="Somatório do tempo oficial contabilizado nos atendimentos vinculados" /></td><td><input type="number" min="0" step="0.01" value={item.minimumValue ?? 0} onChange={(event) => updateService(index, { minimumValue: Number(event.target.value) })} /></td><td><input type="number" min="0" step="0.01" value={item.unitValue ?? 0} onChange={(event) => updateService(index, { unitValue: Number(event.target.value) })} readOnly={calculatedByTime} title={calculatedByTime ? `${item.hours || '00:00'} × ${money(item.minuteValue)} por minuto, respeitando o valor mínimo` : 'Valor unitário do serviço'} /></td><td><input value={money(item.totalValue)} readOnly /></td><td><button type="button" className="os-remove-row" onClick={() => removeService(index)} aria-label="Remover serviço"><X size={16} /></button></td></tr>
           })}</tbody></table></div> : <div className="os-empty-grid">Nenhum serviço adicionado. Use “Adicionar serviço” para montar a cobrança.</div>}
         </section>
       </div>
@@ -769,7 +847,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
 
 function serviceDraft(service: ServiceCatalogItem): ServiceDraft {
   const unitValue = numberValue(service.defaultPrice ?? service.defaultValue)
-  return { rowKey: `service-new-${service.id}-${Date.now()}`, serviceId: service.id, quantity: 1, hours: '00:30', unitValue, totalValue: unitValue, minimumValue: numberValue(service.minimumValue), minuteValue: numberValue(service.legacyMinuteValue) }
+  return { rowKey: `service-new-${service.id}-${Date.now()}`, serviceId: service.id, quantity: 1, hours: '00:00', unitValue, totalValue: unitValue, minimumValue: numberValue(service.minimumValue), minuteValue: numberValue(service.legacyMinuteValue) }
 }
 
 function materialDraft(material: Material): MaterialDraft {
@@ -802,8 +880,11 @@ function ServiceOrderDetail({ order, catalog }: { order: ServiceOrder; catalog: 
       <section className="drawer-section"><h3>Valores</h3><dl><div><dt>Serviços</dt><dd>{money(order.vlhorar)}</dd></div><div><dt>Materiais</dt><dd>{money(order.vlmater)}</dd></div><div><dt>Transporte / aluguel</dt><dd>{money(numberValue(order.vltrans) + numberValue(order.vlalug))}</dd></div><div><dt>Desconto</dt><dd>{order.vldesco ?? 0}%</dd></div></dl></section>
       {order.flordem === 'C' && <section className="drawer-section drawer-section--wide"><h3>Consumo mensal do contrato</h3><dl><div><dt>Horas contratadas</dt><dd>{order.sdcontr || '00:00'}</dd></div><div><dt>Utilizado antes desta OS</dt><dd>{order.sdanter || '00:00'}</dd></div><div><dt>Utilizado no mês</dt><dd>{order.sdutili || '00:00'}</dd></div><div><dt>Saldo do mês</dt><dd>{order.sdfinal || '00:00'}</dd></div><div><dt>Excedente</dt><dd>{order.sdexced || '00:00'}</dd></div></dl></section>}
       <section className="drawer-section drawer-section--wide"><h3>Descrição e observações</h3><p className="drawer-section__text">{order.dsdescr || order.description || 'Descrição não informada'}</p>{order.dsobser && <p className="drawer-section__text detail-text-spaced">{order.dsobser}</p>}{order.dscancel && <p className="drawer-section__text detail-text-spaced"><strong>Cancelamento:</strong> {order.dscancel}</p>}</section>
-      <section className="drawer-section drawer-section--wide"><h3>Agendamentos</h3>{order.schedules?.length ? <div className="detail-list-grid">{order.schedules.map((item) => <span key={item.scheduleId}><strong>{formatDate(item.expectedDate)} · {item.expectedStart || '--:--'}–{item.expectedEnd || '--:--'}</strong><small>Funcionário: {item.employeeName || item.employeeNickname || (item.employeeId ? `#${item.employeeId}` : 'Aguardando')}{item.employeePosition ? ` · ${item.employeePosition}` : ''}{item.employeePhone ? ` · ${item.employeePhone}` : ''} · Previsto: {item.expectedDuration || '00:00'} · Realizado: {item.actualDuration || '00:00'}</small></span>)}</div> : <p className="drawer-section__text">Nenhum agendamento vinculado.</p>}</section>
-      <section className="drawer-section drawer-section--wide"><h3>Serviços</h3>{order.serviceItems?.length ? <div className="detail-list-grid">{order.serviceItems.map((item) => <span key={item.serviceId}><strong>{catalog.find((service) => service.id === item.serviceId)?.description || `Serviço #${item.serviceId}`}</strong><small>{item.quantity || 0} × {money(item.unitValue)} · Total {money(item.totalValue)}</small></span>)}</div> : <p className="drawer-section__text">Nenhum serviço vinculado.</p>}</section>
+      <section className="drawer-section drawer-section--wide"><h3>Agendamentos</h3>{order.schedules?.length ? <div className="detail-list-grid">{order.schedules.map((item) => {
+        const serviceName = catalog.find((service) => service.id === item.serviceId)?.description
+        return <span key={item.scheduleId}><strong>Previsto: {formatDate(item.expectedDate)} · {item.expectedStart || '--:--'}–{item.expectedEnd || '--:--'}</strong><small>Funcionário: {item.employeeName || item.employeeNickname || (item.employeeId ? `#${item.employeeId}` : 'Aguardando')}{item.employeePosition ? ` · ${item.employeePosition}` : ''}{item.employeePhone ? ` · ${item.employeePhone}` : ''} · Serviço: {serviceName || (item.serviceId ? `#${item.serviceId}` : 'não vinculado')} · Realizado: {item.actualDate ? formatDate(item.actualDate) : 'sem data'} · {item.actualStart || '--:--'}–{item.actualEnd || '--:--'} ({item.actualDuration || '00:00'})</small></span>
+      })}</div> : <p className="drawer-section__text">Nenhum agendamento vinculado.</p>}</section>
+      <section className="drawer-section drawer-section--wide"><h3>Serviços</h3>{order.serviceItems?.length ? <div className="detail-list-grid">{order.serviceItems.map((item) => <span key={item.serviceId}><strong>{catalog.find((service) => service.id === item.serviceId)?.description || `Serviço #${item.serviceId}`}</strong><small>Horas oficiais: {item.hours || '00:00'} · {item.quantity || 0} × {money(item.unitValue)} · Total {money(item.totalValue)}</small></span>)}</div> : <p className="drawer-section__text">Nenhum serviço vinculado.</p>}</section>
       <section className="drawer-section drawer-section--wide"><h3>Pedido de compra</h3>{order.materialOrder ? <><dl><div><dt>Pedido</dt><dd>#{order.materialOrder.id}</dd></div><div><dt>Fornecedor</dt><dd>{order.materialOrder.supplierTradeName || order.materialOrder.supplierName || `#${order.materialOrder.supplierId}`}</dd></div><div><dt>Data de entrada</dt><dd>{formatDate(order.materialOrder.entryDate)}</dd></div><div><dt>Total líquido</dt><dd>{money(order.materialOrder.netValue)}</dd></div></dl>{order.materialOrder.items?.length ? <div className="detail-list-grid detail-purchase-items">{order.materialOrder.items.map((item) => <span key={`${item.purchaseOrderId}-${item.itemId}`}><strong>{item.materialDescription || `Material #${item.materialId}`}</strong><small>{item.quantity || 0} {item.materialUnit || 'UN'} × {money(item.unitValue)} · Total {money(item.totalValue)}</small></span>)}</div> : <p className="drawer-section__text detail-text-spaced">Nenhum item vinculado ao pedido.</p>}</> : <p className="drawer-section__text">Nenhum pedido de compra vinculado.</p>}</section>
     </div>
   </div>
