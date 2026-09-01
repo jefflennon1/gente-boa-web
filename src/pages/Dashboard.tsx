@@ -78,7 +78,7 @@ export function Dashboard() {
         <article className="panel schedule-panel">
           <div className="panel__header"><div><span className="eyebrow">Agenda operacional</span><h2>Próximos atendimentos</h2></div><button className="panel-link" onClick={() => navigate('/ordens-de-servico')}>Ver agenda <ArrowRight size={15} /></button></div>
           <div className="schedule-list">{activity.length ? activity.map((item) => <button key={item.id} className="schedule-row" onClick={() => navigate('/ordens-de-servico')}><span className={`schedule-time ${item.priority === 'URGENTE' ? 'schedule-time--urgent' : ''}`}>{formatDate(item.orderedAt)}</span><span className="schedule-main"><strong>{item.clientTradeName || item.clientName || `Cliente #${item.clientId}`}</strong><small>{item.description || 'Descrição não informada'}</small></span><span className="schedule-tech">{enumLabel(item.status)}</span></button>) : <div className="kanban-empty">Nenhum atendimento pendente.</div>}</div>
-          <div className="schedule-footer"><ClipboardCheck size={16} /><span><strong>{ordersQuery.data?.total ?? 0}</strong> ordens cadastradas na API</span></div>
+          <div className="schedule-footer"><ClipboardCheck size={16} /><span><strong>{ordersQuery.data?.total ?? 0}</strong> ordens cadastradas</span></div>
         </article>
       </section>
 
