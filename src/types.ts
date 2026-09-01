@@ -2,7 +2,6 @@ export type ISODate = string
 export type ISODateTime = string
 
 export type ClientKind = 'PESSOA_FISICA' | 'PESSOA_JURIDICA'
-export type ClientStatus = 'ATIVO' | 'ATENCAO' | 'INATIVO'
 export type Priority = 'NORMAL' | 'URGENTE'
 export type ServiceCategory = 'MAO_DE_OBRA' | 'GARANTIA' | 'VISITA_TECNICA' | 'CANCELAMENTO' | 'DESLOCAMENTO'
 export type ServiceSearchType = 'ELETRICOS' | 'AMBOS' | 'ALVENARIA' | 'HIDRAULICO' | 'HIDRO' | 'OUTROS'
@@ -12,7 +11,7 @@ export type InvoiceStatus = 'PRONTA' | 'REVISAR' | 'EMITIDA' | 'CANCELADA'
 export type PaymentDocumentStatus = 'PENDENTE' | 'PRONTO' | 'REGISTRADO' | 'EMITIDO' | 'ENVIADO' | 'REVISAR'
 export type UserRole = 'ADMINISTRADOR' | 'OPERACAO' | 'FINANCEIRO'
 export type UserStatus = 'ATIVO' | 'INATIVO'
-export type ClientListSortBy = 'STATUS' | 'NAME' | 'SERVICE_ORDER_COUNT' | 'TOTAL_VALUE'
+export type ClientListSortBy = 'NAME' | 'SERVICE_ORDER_COUNT' | 'TOTAL_VALUE'
 export type ContractStatus = 'ATIVO' | 'CANCELADO'
 export type ContractListSortBy = 'CLIENT' | 'CONTRACT_DATE' | 'RENEWAL_DATE' | 'DUE_DAY' | 'ADHESION_FEE'
 export type SortDirection = 'ASC' | 'DESC'
@@ -54,6 +53,17 @@ export interface SystemParameters {
   vlorcam: number | null
   vliss: number | null
   vlaliq: number | null
+  contractMinimumMinutes: number | null
+  oneOffMinimumMinutes: number | null
+  minimumContractMonths: number | null
+  serviceWarrantyDays: number | null
+  annualAdjustmentMonth: number | null
+  primaryDueDay: number | null
+  secondaryDueDay: number | null
+  contractRules: string | null
+  oneOffRules: string | null
+  minimumTermEmailSubject: string | null
+  minimumTermEmailBody: string | null
 }
 
 export type SystemParametersPayload = SystemParameters
@@ -68,7 +78,6 @@ export interface Client {
   city: string | null
   address: string | null
   contract: boolean
-  status: ClientStatus
   dsindic?: string | null
   idindic?: number | null
   dtcadas?: ISODateTime | null
@@ -100,7 +109,6 @@ export interface Client {
   vlinss?: number | null
   idfunci?: number | null
   idtabel?: number | null
-  flstatu?: string | null
   dtanive?: string | null
   dtliber?: ISODateTime | null
   idliber?: number | null
@@ -128,7 +136,6 @@ export interface ClientListItem {
   phone: string | null
   city: string | null
   contract: boolean
-  status: Exclude<ClientStatus, 'ATENCAO'>
   serviceOrderCount: number
   totalValue: number
 }
@@ -138,13 +145,16 @@ export interface ClientSearchOption {
   legalName: string | null
   tradeName: string | null
   document: string | null
-  status: Exclude<ClientStatus, 'ATENCAO'>
+  street: string | null
+  complement: string | null
+  district: string | null
+  city: string | null
+  state: string | null
+  zipCode: string | null
 }
 
 export interface ClientStatisticsResponse {
   total: number
-  active: number
-  inactive: number
 }
 
 export interface ClientReferral {
@@ -183,7 +193,7 @@ export interface ClientAddressPayload {
   reference?: string | null
 }
 
-export type ClientPayload = Partial<Omit<Client, 'id' | 'name' | 'document' | 'kind' | 'email' | 'phone' | 'city' | 'address' | 'contract' | 'status' | 'addresses'>> & {
+export type ClientPayload = Partial<Omit<Client, 'id' | 'name' | 'document' | 'kind' | 'email' | 'phone' | 'city' | 'address' | 'contract' | 'addresses'>> & {
   addresses?: ClientAddressPayload[] | null
 }
 
@@ -209,6 +219,33 @@ export interface Material {
 }
 
 export type MaterialPayload = Omit<Material, 'id'>
+
+export interface Employee {
+  id: number
+  name: string
+  nickname: string | null
+  hiredAt: ISODateTime | null
+  position: string | null
+  address: string | null
+  complement: string | null
+  district: string | null
+  city: string | null
+  state: string | null
+  phone: string | null
+  secondaryPhone: string | null
+  cpf: string | null
+  rg: string | null
+  commissionPercentage: number | null
+  birthDate: ISODateTime | null
+  notes: string | null
+  terminatedAt: ISODateTime | null
+  driverLicense: string | null
+  tertiaryPhone: string | null
+  zipCode: string | null
+  email: string | null
+}
+
+export type EmployeePayload = Omit<Employee, 'id'>
 
 export interface Supplier {
   id: number
@@ -353,6 +390,10 @@ export interface ServiceOrderSchedule {
   expectedEnd?: string | null
   expectedDuration?: string | null
   employeeId?: number | null
+  employeeName?: string | null
+  employeeNickname?: string | null
+  employeePosition?: string | null
+  employeePhone?: string | null
   roleId?: number | null
   actualDate?: ISODateTime | null
   actualStart?: string | null
@@ -573,5 +614,6 @@ export interface ApiProblem {
   title?: string
   status?: number
   detail?: string
+  message?: string
   fields?: Record<string, string>
 }

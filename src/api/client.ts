@@ -36,11 +36,13 @@ export function apiErrorMessage(error: unknown, fallback = 'Não foi possível c
     if (!error.response) {
       return `Não foi possível conectar à API em ${API_BASE_URL}. Verifique se o backend está ativo.`
     }
-    const fields = error.response.data?.fields
+    const problem = error.response.data as ApiProblem | string | undefined
+    if (typeof problem === 'string') return problem.trim() || fallback
+    const fields = problem?.fields
     if (fields && Object.keys(fields).length) return Object.values(fields).join(' ')
     if (error.response.status === 401) return 'Usuário ou senha inválidos.'
     if (error.response.status === 403) return 'Seu usuário não possui permissão para esta ação.'
-    return error.response.data?.detail || fallback
+    return problem?.detail || problem?.message || fallback
   }
   return error instanceof Error ? error.message : fallback
 }

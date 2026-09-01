@@ -89,10 +89,10 @@ export function ModalForm({ children, onSubmit, onCancel, submitLabel = 'Salvar'
   )
 }
 
-export function Toast({ message, onClose }: { message: string; onClose: () => void }) {
+export function Toast({ message, onClose, variant = 'success' }: { message: string; onClose: () => void; variant?: 'success' | 'error' }) {
   return (
-    <div className="toast" role="status">
-      <CheckCircle2 size={20} />
+    <div className={`toast toast--${variant}`} role={variant === 'error' ? 'alert' : 'status'}>
+      {variant === 'error' ? <AlertTriangle size={20} /> : <CheckCircle2 size={20} />}
       <span>{message}</span>
       <button onClick={onClose} aria-label="Fechar"><X size={16} /></button>
     </div>

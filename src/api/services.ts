@@ -17,6 +17,8 @@ import type {
   CreateUserPayload,
   Invoice,
   InvoicePayload,
+  Employee,
+  EmployeePayload,
   Material,
   MaterialPayload,
   PagedResponse,
@@ -38,7 +40,6 @@ import { http } from './client'
 export type ListParams = {
   query?: string
   date?: string
-  status?: 'ATIVO' | 'INATIVO'
   sortBy?: ClientListSortBy
   direction?: SortDirection
   page?: number
@@ -199,6 +200,13 @@ export const api = {
     },
   },
   materials: resource<Material, MaterialPayload>('/materials'),
+  employees: {
+    ...resource<Employee, EmployeePayload>('/employees'),
+    async search(query = '') {
+      const { data } = await http.get<Employee[]>('/employees/search', { params: { query: query || undefined } })
+      return data
+    },
+  },
   suppliers: {
     async list(params: Pick<ListParams, 'query' | 'page' | 'size'> = {}) {
       const { data } = await http.get<PagedResponse<Supplier>>('/suppliers', { params: { page: 0, size: 20, ...params } })
@@ -242,6 +250,7 @@ export const queryKeys = {
   contracts: ['contracts'] as const,
   serviceCatalog: ['service-catalog'] as const,
   materials: ['materials'] as const,
+  employees: ['employees'] as const,
   suppliers: ['suppliers'] as const,
   serviceOrders: ['service-orders'] as const,
   invoices: ['invoices'] as const,

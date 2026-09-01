@@ -63,7 +63,7 @@ export function Dashboard() {
         <StatCard label="Receita emitida no mês" value={money(revenue)} helper={`${invoices.filter((invoice) => invoice.status === 'EMITIDA').length} notas emitidas no retorno`} icon={<TrendingUp />} tone="green" />
         <StatCard label="A faturar" value={money(receivable)} helper={`${readyInvoices.length} notas prontas`} icon={<CircleDollarSign />} tone="blue" />
         <StatCard label="Ordens hoje" value={String(todayOrders.length)} helper={`${todayOrders.filter((order) => order.status === 'ABERTA').length} abertas`} icon={<ClipboardCheck />} tone="orange" />
-        <StatCard label="Clientes ativos" value={String(clientStatisticsQuery.data?.active ?? 0)} helper={`${clientStatisticsQuery.data?.total ?? 0} clientes cadastrados · ${clientStatisticsQuery.data?.inactive ?? 0} inativos`} icon={<UsersRound />} tone="purple" />
+        <StatCard label="Clientes cadastrados" value={String(clientStatisticsQuery.data?.total ?? 0)} helper="Cadastros disponíveis para a operação" icon={<UsersRound />} tone="purple" />
       </section>
 
       {readyInvoices.length > 0 && <button className="attention-banner" onClick={() => navigate('/notas-fiscais')}><span className="attention-banner__icon"><FileCheck2 size={21} /></span><span><strong>{readyInvoices.length} {readyInvoices.length === 1 ? 'nota está pronta' : 'notas estão prontas'} para emissão</strong><small>Revise os dados fiscais antes de concluir.</small></span><b>Revisar faturamento <ArrowRight size={17} /></b></button>}
