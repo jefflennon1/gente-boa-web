@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Boxes, ChevronDown, ClipboardList, FileBarChart, FileSignature, FileText, LayoutDashboard, LogOut, Menu, ReceiptText, Search, Settings, UserRoundCog, UsersRound, X } from 'lucide-react'
+import { Bell, Boxes, ChevronDown, ClipboardList, FileBarChart, FileSignature, FileText, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, ReceiptText, Search, Settings, UserRoundCog, UsersRound, X } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { useAuth } from '../auth'
 import { enumLabel, initials } from '../lib/format'
@@ -24,6 +24,7 @@ const routeNames: Record<string, string> = {
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.localStorage.getItem('gente-boa-sidebar-collapsed') === 'true')
   const [profileOpen, setProfileOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -37,6 +38,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const notificationCount = urgentOrders.length + pendingInvoices.length
 
   useEffect(() => { setMenuOpen(false); setProfileOpen(false) }, [pathname])
+  useEffect(() => { window.localStorage.setItem('gente-boa-sidebar-collapsed', String(sidebarCollapsed)) }, [sidebarCollapsed])
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); searchRef.current?.focus() }
@@ -64,12 +66,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="app-shell">
       {menuOpen && <button className="sidebar-scrim" aria-label="Fechar menu" onClick={() => setMenuOpen(false)} />}
-      <aside className={`sidebar ${menuOpen ? 'sidebar--open' : ''}`}>
-        <div className="sidebar__brand"><div className="brand-mark"><img src="/images/logo.jpg" alt="Gente Boa" /></div><div><strong>Gente Boa</strong><span>Gestão</span></div><button className="sidebar__close" onClick={() => setMenuOpen(false)} aria-label="Fechar menu"><X size={20} /></button></div>
+      <aside className={`sidebar ${menuOpen ? 'sidebar--open' : ''} ${sidebarCollapsed ? 'sidebar--collapsed' : ''}`}>
+        <button className="sidebar__collapse" type="button" onClick={() => setSidebarCollapsed((value) => !value)} aria-label={sidebarCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'} aria-expanded={!sidebarCollapsed} title={sidebarCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}>{sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button>
+        <div className="sidebar__brand"><div className="brand-mark"><img src="/images/logo.jpg" alt="Gente Boa" /></div><div className="sidebar__brand-copy"><strong>Gente Boa</strong><span>Gestão</span></div><button className="sidebar__close" onClick={() => setMenuOpen(false)} aria-label="Fechar menu"><X size={20} /></button></div>
         <div className="sidebar__section-label">Menu principal</div>
         <nav className="sidebar__nav">{nav.map(({ to, label, icon: Icon, end }) => {
           const badge = to === '/ordens-de-servico' ? urgentOrders.length : to === '/notas-fiscais' ? pendingInvoices.length : 0
-          return <NavLink key={to} to={to} end={end} className={({ isActive }) => isActive ? 'nav-link nav-link--active' : 'nav-link'}><Icon size={19} /><span>{label}</span>{badge > 0 && <small>{badge}</small>}</NavLink>
+          return <NavLink key={to} to={to} end={end} aria-label={label} title={sidebarCollapsed ? label : undefined} className={({ isActive }) => isActive ? 'nav-link nav-link--active' : 'nav-link'}><Icon size={19} /><span>{label}</span>{badge > 0 && <small>{badge}</small>}</NavLink>
         })}</nav>
         {/* <div className="sidebar__bottom">
           {user?.role === 'ADMINISTRADOR' && <><NavLink to="/parametros-do-sistema" className={({ isActive }) => isActive ? 'nav-link nav-link--active' : 'nav-link'}><Settings size={19} /><span>Parâmetros do sistema</span></NavLink><NavLink to="/usuarios" className={({ isActive }) => isActive ? 'nav-link nav-link--active' : 'nav-link'}><UsersRound size={19} /><span>Usuários e acessos</span></NavLink></>}
@@ -77,7 +80,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </div> */}
       </aside>
 
-      <div className="app-main">
+      <div className={`app-main ${sidebarCollapsed ? 'app-main--sidebar-collapsed' : ''}`}>
         <header className="topbar">
           <div className="topbar__left"><button className="mobile-menu" onClick={() => setMenuOpen(true)} aria-label="Abrir menu"><Menu size={22} /></button><div className="breadcrumb"><span>Gente Boa</span><b>/</b><strong>{routeNames[pathname] || 'Gestão'}</strong></div></div>
           <form className="global-search" onSubmit={submitSearch}><Search size={18} /><input ref={searchRef} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Ir para cliente, contrato, OS ou nota..." aria-label="Navegação rápida" /><kbd>Ctrl K</kbd></form>

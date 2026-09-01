@@ -56,7 +56,10 @@ h1, h2, h3, p { margin-top: 0; }
     linear-gradient(180deg, #171c49 0%, #121737 100%);
   border-right: 1px solid rgba(255,255,255,.07);
   padding: 22px 15px 18px;
+  transition: width .22s ease, padding .22s ease, transform .22s ease;
 }
+.sidebar__collapse { width: 28px; height: 28px; position: absolute; top: 38px; right: -14px; z-index: 2; display: grid; place-items: center; border: 1px solid rgba(46,49,145,.2); border-radius: 9px; color: var(--brand); background: #fff; box-shadow: 0 5px 16px rgba(20,25,61,.16); cursor: pointer; transition: color .18s ease, transform .18s ease; }
+.sidebar__collapse:hover { color: var(--orange); transform: scale(1.05); }
 .sidebar__brand { height: 58px; display: flex; align-items: center; gap: 12px; padding: 0 10px; margin-bottom: 25px; }
 .brand-mark { width: 42px; height: 42px; flex: 0 0 auto; border-radius: 12px; display: grid; place-items: center; overflow: hidden; padding: 0px; background: #fff; box-shadow: 0 8px 22px rgba(244,129,32,.26); }
 .brand-mark img { width: 100%; height: 100%; object-fit: contain; }
@@ -79,7 +82,7 @@ h1, h2, h3, p { margin-top: 0; }
 .sidebar__support small { color: #9298bd; font-size: 10.5px; }
 .sidebar-scrim { display: none; }
 
-.app-main { min-height: 100vh; margin-left: 254px; }
+.app-main { min-height: 100vh; margin-left: 254px; transition: margin-left .22s ease; }
 .topbar { height: 72px; position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 22px; padding: 0 34px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.92); backdrop-filter: blur(18px); }
 .topbar__left { display: flex; align-items: center; min-width: 240px; }
 .mobile-menu { display: none; border: 0; background: transparent; cursor: pointer; }
@@ -561,9 +564,22 @@ h1, h2, h3, p { margin-top: 0; }
   .contract-service-fields .form-field:first-child { grid-column: span 2; }
 }
 
+@media (min-width: 981px) {
+  .sidebar--collapsed { width: 82px; padding-right: 11px; padding-left: 11px; }
+  .sidebar--collapsed .sidebar__brand { justify-content: center; padding-right: 0; padding-left: 0; }
+  .sidebar--collapsed .sidebar__brand-copy, .sidebar--collapsed .sidebar__section-label { display: none; }
+  .sidebar--collapsed .sidebar__nav { margin-top: 10px; }
+  .sidebar--collapsed .nav-link { justify-content: center; gap: 0; padding-right: 0; padding-left: 0; }
+  .sidebar--collapsed .nav-link > span { display: none; }
+  .sidebar--collapsed .nav-link small { min-width: 17px; height: 17px; position: absolute; top: 3px; right: 3px; margin-left: 0; padding: 0 4px; font-size: 8px; }
+  .sidebar--collapsed .nav-link--active::before { left: -11px; }
+  .app-main--sidebar-collapsed { margin-left: 82px; }
+}
+
 @media (max-width: 980px) {
-  .sidebar { transform: translateX(-100%); transition: transform .22s ease; }
+  .sidebar { transform: translateX(-100%); }
   .sidebar--open { transform: none; }
+  .sidebar__collapse { display: none; }
   .sidebar__close { display: grid; }
   .sidebar-scrim { display: block; position: fixed; inset: 0; z-index: 29; border: 0; background: rgba(16,19,46,.5); }
   .app-main { margin-left: 0; }
