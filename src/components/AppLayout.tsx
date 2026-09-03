@@ -19,7 +19,7 @@ const nav = [
 ]
 
 const routeNames: Record<string, string> = {
-  '/': 'Visão geral', '/clientes': 'Clientes', '/contratos': 'Contratos', '/ordens-de-servico': 'Ordens de serviço', '/materiais': 'Materiais', '/funcionarios': 'Funcionários', '/notas-fiscais': 'Notas fiscais', '/extratos': 'Extratos', '/relatorios': 'Relatórios', '/usuarios': 'Usuários', '/parametros-do-sistema': 'Parâmetros do sistema',
+  '/': 'Visão geral', '/clientes': 'Clientes', '/contratos': 'Contratos', '/ordens-de-servico': 'Ordens de serviço', '/materiais': 'Materiais', '/funcionarios': 'Funcionários', '/notas-fiscais': 'Notas fiscais', '/extratos': 'Extratos', '/relatorios': 'Relatórios', '/usuarios': 'Usuários', '/parametros-do-sistema': 'Parâmetros do sistema', '/envio-de-emails': 'Envio de e-mails',
 }
 
 export function AppLayout({ children }: { children: ReactNode }) {
@@ -51,7 +51,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
     event.preventDefault()
     const value = search.trim().toLowerCase()
     if (!value) return
-    if (value.includes('param')) navigate('/parametros-do-sistema')
+    if (value.includes('email') || value.includes('e-mail')) navigate('/envio-de-emails')
+    else if (value.includes('param')) navigate('/parametros-do-sistema')
     else if (value.includes('contrato')) navigate('/contratos')
     else if (value.includes('cliente')) navigate('/clientes')
     else if (value.includes('material') || value.includes('produto')) navigate('/materiais')

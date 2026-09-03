@@ -16,6 +16,7 @@ const pages = {
   '/relatorios': lazy(() => import('./pages/Reports').then((module) => ({ default: module.Reports }))),
   '/usuarios': lazy(() => import('./pages/Users').then((module) => ({ default: module.Users }))),
   '/parametros-do-sistema': lazy(() => import('./pages/SystemParameters').then((module) => ({ default: module.SystemParametersPage }))),
+  '/envio-de-emails': lazy(() => import('./pages/ClientEmails').then((module) => ({ default: module.ClientEmailsPage }))),
 }
 
 export default function App() {
@@ -26,7 +27,7 @@ export default function App() {
   useEffect(() => {
     if (!isAuthenticated && pathname !== '/login') navigate('/login', { replace: true })
     else if (isAuthenticated && pathname === '/login') navigate('/', { replace: true })
-    else if (isAuthenticated && ['/usuarios', '/parametros-do-sistema'].includes(pathname) && user?.role !== 'ADMINISTRADOR') navigate('/', { replace: true })
+    else if (isAuthenticated && ['/usuarios', '/parametros-do-sistema', '/envio-de-emails'].includes(pathname) && user?.role !== 'ADMINISTRADOR') navigate('/', { replace: true })
     else if (isAuthenticated && !Page) navigate('/', { replace: true })
   }, [Page, isAuthenticated, navigate, pathname, user?.role])
 

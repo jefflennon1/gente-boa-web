@@ -5,6 +5,7 @@ import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import type { SystemParametersPayload } from '../types'
 import { Button, ConfirmDialog, ErrorState, FormError, FormField, LoadingState, PageHeader, Toast } from '../components/ui'
+import { useRouter } from '../router'
 
 function textValue(data: FormData, field: string) {
   return String(data.get(field) ?? '').trim()
@@ -25,6 +26,7 @@ function toDateTimeInput(value?: string | null) {
 }
 
 export function SystemParametersPage() {
+  const { navigate } = useRouter()
   const queryClient = useQueryClient()
   const [toast, setToast] = useState('')
   const [formError, setFormError] = useState('')
@@ -102,7 +104,7 @@ export function SystemParametersPage() {
         eyebrow="Configurações"
         title="Parâmetros do sistema"
         subtitle="Configurações globais usadas pelos cadastros de clientes e contratos. Acesso restrito a administradores."
-        
+        actions={<Button type="button" icon={<Mail size={17} />} onClick={() => navigate('/envio-de-emails')}>Enviar e-mails</Button>}
       />
 
       {parametersQuery.isLoading ? <section className="panel"><LoadingState label="Carregando parâmetros do sistema..." /></section> : parametersQuery.isError ? <section className="panel"><ErrorState message={apiErrorMessage(parametersQuery.error)} onRetry={() => parametersQuery.refetch()} /></section> : (

@@ -68,6 +68,26 @@ export interface SystemParameters {
 
 export type SystemParametersPayload = SystemParameters
 
+export interface ClientEmailDraft {
+  clientId: number
+  clientName: string
+  legalName: string | null
+  tradeName: string | null
+  recipient: string
+  subject: string
+  body: string
+  contractId: number | null
+  contractDate: ISODate | null
+  minimumTermDate: ISODate | null
+  minimumTermCompleted: boolean
+}
+
+export interface ClientEmailPayload {
+  clientId: number
+  subject: string
+  body: string
+}
+
 export interface Client {
   id: number
   name: string | null

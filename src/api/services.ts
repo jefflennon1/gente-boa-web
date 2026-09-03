@@ -15,6 +15,8 @@ import type {
   ContractListSortBy,
   ContractPayload,
   CreateUserPayload,
+  ClientEmailDraft,
+  ClientEmailPayload,
   Invoice,
   InvoicePayload,
   Employee,
@@ -150,6 +152,16 @@ export const api = {
       await http.delete('/system-parameters')
     },
   },
+  emails: {
+    async draft(clientId: number) {
+      const { data } = await http.get<ClientEmailDraft>(`/emails/clients/${clientId}/draft`)
+      return data
+    },
+    async send(payload: ClientEmailPayload) {
+      const { data } = await http.post<{ message: string }>('/emails/send', payload)
+      return data
+    },
+  },
   contracts: {
     async list(params: ContractListParams = {}) {
       const { data } = await http.get<PagedResponse<ContractListItem>>('/contracts', { params: { page: 0, size: 20, ...params } })
@@ -246,6 +258,7 @@ export const api = {
 export const queryKeys = {
   addresses: ['addresses'] as const,
   systemParameters: ['system-parameters'] as const,
+  emails: ['emails'] as const,
   clients: ['clients'] as const,
   contracts: ['contracts'] as const,
   serviceCatalog: ['service-catalog'] as const,
