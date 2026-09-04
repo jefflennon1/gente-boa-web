@@ -5,7 +5,7 @@ import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { money } from '../lib/format'
-import type { Material, MaterialPayload } from '../types'
+import type { Material, MaterialPayload, Supplier, SupplierPayload } from '../types'
 import { Button, ConfirmDialog, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 export function Materials() {
@@ -14,9 +14,13 @@ export function Materials() {
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(20)
   const [modalOpen, setModalOpen] = useState(false)
+  const [supplierModalOpen, setSupplierModalOpen] = useState(false)
   const [selected, setSelected] = useState<Material | null>(null)
+  const [supplierId, setSupplierId] = useState('')
+  const [createdSupplier, setCreatedSupplier] = useState<Supplier | null>(null)
   const [materialToDelete, setMaterialToDelete] = useState<Material | null>(null)
   const [formError, setFormError] = useState('')
+  const [supplierFormError, setSupplierFormError] = useState('')
   const [toast, setToast] = useState('')
   const debouncedSearch = useDebouncedValue(search)
 
@@ -24,6 +28,12 @@ export function Materials() {
     queryKey: [...queryKeys.materials, 'list', debouncedSearch, page, pageSize],
     queryFn: () => api.materials.list({ query: debouncedSearch || undefined, page, size: pageSize }),
     placeholderData: keepPreviousData,
+  })
+
+  const suppliersQuery = useQuery({
+    queryKey: [...queryKeys.suppliers, 'material-form'],
+    queryFn: () => api.suppliers.list({ page: 0, size: 100 }),
+    enabled: modalOpen || supplierModalOpen,
   })
 
   const saveMutation = useMutation({
@@ -52,6 +62,19 @@ export function Materials() {
     },
   })
 
+  const saveSupplierMutation = useMutation({
+    mutationFn: (payload: SupplierPayload) => api.suppliers.create(payload),
+    onSuccess: async (supplier) => {
+      setCreatedSupplier(supplier)
+      setSupplierId(String(supplier.id))
+      setSupplierModalOpen(false)
+      setSupplierFormError('')
+      await queryClient.invalidateQueries({ queryKey: queryKeys.suppliers })
+      showToast('Fornecedor cadastrado e selecionado.')
+    },
+    onError: (error) => setSupplierFormError(apiErrorMessage(error)),
+  })
+
   const materials = materialsQuery.data?.content ?? []
   const total = materialsQuery.data?.total ?? 0
   const totalPages = materialsQuery.data?.totalPages ?? 0
@@ -60,6 +83,11 @@ export function Materials() {
   const currentStock = materials.reduce((sum, material) => sum + Number(material.currentStock ?? 0), 0)
   const belowMinimum = materials.filter((material) => Number(material.currentStock ?? 0) < Number(material.minimumStock ?? 0)).length
   const inventoryValue = materials.reduce((sum, material) => sum + Number(material.currentStock ?? 0) * Number(material.unitValue ?? 0), 0)
+  const supplierOptions = suppliersQuery.data?.content ?? []
+  const visibleSupplierOptions = createdSupplier && !supplierOptions.some((supplier) => supplier.id === createdSupplier.id)
+    ? [createdSupplier, ...supplierOptions]
+    : supplierOptions
+  const selectedSupplierMissing = Boolean(supplierId) && !visibleSupplierOptions.some((supplier) => supplier.id === Number(supplierId))
 
   function showToast(message: string) {
     setToast(message)
@@ -68,14 +96,23 @@ export function Materials() {
 
   function openNew() {
     setSelected(null)
+    setSupplierId('')
+    setCreatedSupplier(null)
     setFormError('')
     setModalOpen(true)
   }
 
   function openEdit(material: Material) {
     setSelected(material)
+    setSupplierId(material.supplierId ? String(material.supplierId) : '')
+    setCreatedSupplier(null)
     setFormError('')
     setModalOpen(true)
+  }
+
+  function openNewSupplier() {
+    setSupplierFormError('')
+    setSupplierModalOpen(true)
   }
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -92,8 +129,32 @@ export function Materials() {
       currentStock: numberOrNull('currentStock'),
       unitValue: numberOrNull('unitValue'),
       brand: String(data.get('brand') ?? '').trim() || null,
+      supplierId: supplierId ? Number(supplierId) : null,
     }
     saveMutation.mutate({ id: selected?.id, payload })
+  }
+
+  function submitSupplier(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const data = new FormData(event.currentTarget)
+    const textOrNull = (name: string) => String(data.get(name) ?? '').trim() || null
+    saveSupplierMutation.mutate({
+      tradeName: String(data.get('tradeName') ?? '').trim(),
+      legalName: textOrNull('legalName'),
+      type: textOrNull('type'),
+      cnpj: textOrNull('cnpj'),
+      cpf: textOrNull('cpf'),
+      address: textOrNull('address'),
+      complement: textOrNull('complement'),
+      district: textOrNull('district'),
+      city: textOrNull('city'),
+      state: textOrNull('state')?.toUpperCase() ?? null,
+      zipCode: textOrNull('zipCode'),
+      phone: textOrNull('phone'),
+      contactName: textOrNull('contactName'),
+      contactPhone: textOrNull('contactPhone'),
+      contactEmail: textOrNull('contactEmail'),
+    })
   }
 
   return <>
@@ -112,10 +173,11 @@ export function Materials() {
       </div>
 
       {materialsQuery.isLoading ? <LoadingState label="Carregando materiais..." /> : materialsQuery.isError ? <ErrorState message={apiErrorMessage(materialsQuery.error)} onRetry={() => materialsQuery.refetch()} /> : materials.length === 0 ? <EmptyState title="Nenhum material encontrado" description="Altere a busca ou cadastre um novo material." /> : <div className={`table-wrap ${materialsQuery.isFetching ? 'table-wrap--refreshing' : ''}`}>
-        <table className="data-table materials-table"><thead><tr><th>Código</th><th>Material</th><th>Marca</th><th>Unidade</th><th>Estoque mínimo</th><th>Estoque atual</th><th>Valor unitário</th><th /></tr></thead><tbody>{materials.map((material) => <tr key={material.id} onClick={() => openEdit(material)}>
+        <table className="data-table materials-table"><thead><tr><th>Código</th><th>Material</th><th>Marca</th><th>Fornecedor</th><th>Unidade</th><th>Estoque mínimo</th><th>Estoque atual</th><th>Valor unitário</th><th /></tr></thead><tbody>{materials.map((material) => <tr key={material.id} onClick={() => openEdit(material)}>
           <td><strong>#{material.id}</strong></td>
           <td><strong className="table-primary">{material.description || 'Sem descrição'}</strong></td>
           <td>{material.brand || 'Não informada'}</td>
+          <td>{material.supplierTradeName || material.supplierLegalName || 'Não informado'}</td>
           <td>{material.unit || '—'}</td>
           <td>{Number(material.minimumStock ?? 0).toLocaleString('pt-BR')}</td>
           <td><strong className={Number(material.currentStock ?? 0) < Number(material.minimumStock ?? 0) ? 'negative-value' : 'positive-value'}>{Number(material.currentStock ?? 0).toLocaleString('pt-BR')}</strong></td>
@@ -146,12 +208,52 @@ export function Materials() {
           <FormField label="Estoque mínimo"><input name="minimumStock" type="number" min="0" step="1" defaultValue={selected?.minimumStock ?? 0} /></FormField>
           <FormField label="Estoque atual"><input name="currentStock" type="number" min="0" step="1" defaultValue={selected?.currentStock ?? 0} /></FormField>
           <FormField label="Valor unitário"><input name="unitValue" type="number" min="0" step="0.01" defaultValue={selected?.unitValue ?? 0} /></FormField>
+          <div className="form-field">
+            <span>Fornecedor</span>
+            <div className="material-supplier-control">
+              <select name="supplierId" value={supplierId} onChange={(event) => setSupplierId(event.target.value)} disabled={suppliersQuery.isLoading}>
+                <option value="">Selecione o fornecedor</option>
+                {selectedSupplierMissing && <option value={supplierId}>{selected?.supplierTradeName || selected?.supplierLegalName || `Fornecedor #${supplierId}`}</option>}
+                {visibleSupplierOptions.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplierDisplay(supplier)}</option>)}
+              </select>
+              <button type="button" className="material-supplier-add" onClick={openNewSupplier} title="Cadastrar novo fornecedor" aria-label="Cadastrar novo fornecedor"><Plus size={18} /></button>
+            </div>
+            {suppliersQuery.isError && <small className="form-field__error">{apiErrorMessage(suppliersQuery.error)}</small>}
+          </div>
         </div>
         {selected && <div className="destructive-row"><span><strong>Excluir material</strong><small>Materiais usados em pedidos de compra não poderão ser excluídos.</small></span><Button type="button" variant="danger" icon={<Trash2 size={16} />} onClick={() => setMaterialToDelete(selected)}>Excluir</Button></div>}
+      </ModalForm>
+    </Modal>
+
+    <Modal open={supplierModalOpen} onClose={() => !saveSupplierMutation.isPending && setSupplierModalOpen(false)} title="Novo fornecedor" description="Cadastre o fornecedor e selecione-o automaticamente no material." size="large">
+      <ModalForm onSubmit={submitSupplier} onCancel={() => setSupplierModalOpen(false)} submitting={saveSupplierMutation.isPending} submitLabel={saveSupplierMutation.isPending ? 'Salvando...' : 'Cadastrar fornecedor'}>
+        <FormError message={supplierFormError} />
+        <div className="form-grid form-grid--two">
+          <FormField label="Nome fantasia"><input name="tradeName" required maxLength={100} autoFocus /></FormField>
+          <FormField label="Razão social"><input name="legalName" maxLength={100} /></FormField>
+          <FormField label="Tipo de fornecedor"><input name="type" maxLength={50} placeholder="Empresa, autônomo..." /></FormField>
+          <FormField label="Telefone"><input name="phone" maxLength={18} /></FormField>
+          <FormField label="CNPJ"><input name="cnpj" maxLength={18} inputMode="numeric" /></FormField>
+          <FormField label="CPF"><input name="cpf" maxLength={18} inputMode="numeric" /></FormField>
+          <FormField label="Endereço"><input name="address" maxLength={200} /></FormField>
+          <FormField label="Complemento"><input name="complement" maxLength={100} /></FormField>
+          <FormField label="Bairro"><input name="district" maxLength={100} /></FormField>
+          <FormField label="Cidade"><input name="city" maxLength={100} /></FormField>
+          <FormField label="Estado"><input name="state" maxLength={2} placeholder="CE" /></FormField>
+          <FormField label="CEP"><input name="zipCode" maxLength={25} inputMode="numeric" /></FormField>
+          <FormField label="Contato"><input name="contactName" maxLength={50} /></FormField>
+          <FormField label="Telefone do contato"><input name="contactPhone" maxLength={18} /></FormField>
+          <FormField label="E-mail do contato"><input name="contactEmail" type="email" maxLength={50} /></FormField>
+        </div>
       </ModalForm>
     </Modal>
 
     <ConfirmDialog open={materialToDelete !== null} title={`Excluir material #${materialToDelete?.id ?? ''}?`} description="Esta ação remove o material do cadastro. Pedidos de compra existentes serão preservados e impedem a exclusão." confirmLabel="Excluir material" busy={deleteMutation.isPending} onCancel={() => setMaterialToDelete(null)} onConfirm={() => materialToDelete && deleteMutation.mutate(materialToDelete.id)} />
     {toast && <Toast message={toast} onClose={() => setToast('')} />}
   </>
+}
+
+function supplierDisplay(supplier: Supplier) {
+  const name = supplier.tradeName || supplier.legalName || `Fornecedor #${supplier.id}`
+  return `${name}${supplier.tradeName && supplier.legalName ? ` — ${supplier.legalName}` : ''} · #${supplier.id}`
 }

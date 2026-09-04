@@ -1,16 +1,14 @@
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight, Mail, Search, Send, Settings2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Mail, Search, Send } from 'lucide-react'
 import { useState } from 'react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { Badge, Button, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, PageHeader, Toast } from '../components/ui'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { formatDate } from '../lib/format'
-import { useRouter } from '../router'
 import type { ClientEmailPayload } from '../types'
 
 export function ClientEmailsPage() {
-  const { navigate } = useRouter()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(20)
@@ -80,9 +78,8 @@ export function ClientEmailsPage() {
   return <>
     <PageHeader
       eyebrow="Comunicação"
-      title="Envio de e-mails"
+      title="Notificações"
       subtitle="Selecione um cliente e revise a mensagem antes do envio."
-      actions={<Button variant="secondary" icon={<Settings2 size={17} />} onClick={() => navigate('/parametros-do-sistema')}>Parâmetros do sistema</Button>}
     />
 
     <section className="panel data-panel client-emails-panel">

@@ -236,9 +236,12 @@ export interface Material {
   currentStock: number | null
   unitValue: number | null
   brand: string | null
+  supplierId: number | null
+  supplierTradeName: string | null
+  supplierLegalName: string | null
 }
 
-export type MaterialPayload = Omit<Material, 'id'>
+export type MaterialPayload = Omit<Material, 'id' | 'supplierTradeName' | 'supplierLegalName'>
 
 export interface Employee {
   id: number
@@ -269,17 +272,26 @@ export type EmployeePayload = Omit<Employee, 'id'>
 
 export interface Supplier {
   id: number
+  type?: string | null
+  registeredAt?: ISODateTime | null
   tradeName: string | null
   legalName: string | null
   document: string | null
+  cnpj?: string | null
+  cpf?: string | null
   address: string | null
+  complement?: string | null
+  district?: string | null
   city: string | null
   state: string | null
+  zipCode?: string | null
   phone: string | null
   contactName: string | null
   contactPhone: string | null
   contactEmail: string | null
 }
+
+export type SupplierPayload = Omit<Supplier, 'id' | 'registeredAt' | 'document'>
 
 export interface ServiceOrderMaterialItem {
   itemId?: number | null

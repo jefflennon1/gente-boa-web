@@ -35,6 +35,7 @@ import type {
   SystemParameters,
   SystemParametersPayload,
   Supplier,
+  SupplierPayload,
   UpdateUserPayload,
 } from '../types'
 import { http } from './client'
@@ -222,6 +223,10 @@ export const api = {
   suppliers: {
     async list(params: Pick<ListParams, 'query' | 'page' | 'size'> = {}) {
       const { data } = await http.get<PagedResponse<Supplier>>('/suppliers', { params: { page: 0, size: 20, ...params } })
+      return data
+    },
+    async create(payload: SupplierPayload) {
+      const { data } = await http.post<Supplier>('/suppliers', payload)
       return data
     },
   },
