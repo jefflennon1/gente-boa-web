@@ -7,7 +7,18 @@ export type ServiceCategory = 'MAO_DE_OBRA' | 'GARANTIA' | 'VISITA_TECNICA' | 'C
 export type ServiceSearchType = 'ELETRICOS' | 'AMBOS' | 'ALVENARIA' | 'HIDRAULICO' | 'HIDRO' | 'OUTROS'
 export type ServiceOrderStatus = 'ABERTA' | 'ENCAMINHADA' | 'AGENDADA' | 'EM_ATENDIMENTO' | 'FINALIZADA' | 'CANCELADA'
 export type ServiceOrderOrigin = 'A' | 'C'
-export type InvoiceStatus = 'PRONTA' | 'REVISAR' | 'EMITIDA' | 'CANCELADA'
+export type InvoiceStatus =
+  | 'RASCUNHO'
+  | 'PRONTA'
+  | 'REVISAR'
+  | 'ENVIANDO'
+  | 'EMITIDA'
+  | 'REJEITADA'
+  | 'CONSULTA_PENDENTE'
+  | 'CANCELAMENTO_SOLICITADO'
+  | 'CANCELADA'
+  | 'SUBSTITUIDA'
+export type NfseEnvironment = 'RESTRITO' | 'PRODUCAO'
 export type PaymentDocumentStatus = 'PENDENTE' | 'PRONTO' | 'REGISTRADO' | 'EMITIDO' | 'ENVIADO' | 'REVISAR'
 export type UserRole = 'ADMINISTRADOR' | 'OPERACAO' | 'FINANCEIRO'
 export type UserStatus = 'ATIVO' | 'INATIVO'
@@ -171,6 +182,8 @@ export interface ClientSearchOption {
   city: string | null
   state: string | null
   zipCode: string | null
+  hasContract: boolean
+  contractId: number | null
 }
 
 export interface ClientStatisticsResponse {
@@ -374,6 +387,11 @@ export interface Contract {
   services: ContractServiceItem[]
 }
 
+export interface ClientContractContext {
+  hasContract: boolean
+  contract: Contract | null
+}
+
 export interface ContractListItem {
   id: number
   clientId: number
@@ -496,6 +514,7 @@ export interface ServiceOrder {
   flstatu?: string | null
   flcateg?: string | null
   tpservic?: string | null
+  procurarpor?: string | null
   flordem?: ServiceOrderOrigin | null
   nrbloco?: string | null
   dtvenci?: ISODateTime | null
@@ -545,14 +564,53 @@ export type ServiceOrderPayload = Partial<Omit<ServiceOrder, 'id' | 'code' | 'cl
 export interface Invoice {
   id: number
   number: string | null
+  clientId: number | null
   clientName: string | null
+  clientTradeName: string | null
   document: string | null
   competence: string | null
-  amount: number | null
-  tax: number | null
+  amount: number
+  tax: number
   issRetained: boolean
   status: InvoiceStatus
   issuedAt: ISODate | null
+  nature: string | null
+  address: string | null
+  notes: string | null
+  laborAmount: number
+  materialAmount: number
+  environment: NfseEnvironment | null
+  layoutVersion: string | null
+  dpsSeries: string | null
+  dpsNumber: number | null
+  dpsId: string | null
+  accessKey: string | null
+  serviceCityCode: string | null
+  customerCityCode: string | null
+  nationalServiceCode: string | null
+  municipalServiceCode: string | null
+  nbsCode: string | null
+  serviceDescription: string | null
+  unconditionalDiscount: number
+  deductionValue: number
+  errorCode: string | null
+  errorMessage: string | null
+  attempts: number
+  integrationManaged: boolean
+  xmlAvailable: boolean
+  danfseAvailable: boolean
+  sentAt: ISODateTime | null
+  nationalIssuedAt: ISODateTime | null
+  cancelledAt: ISODateTime | null
+  replacedAccessKey: string | null
+  replacementReasonCode: string | null
+  replacementReason: string | null
+  ibsCbsApplicable: boolean
+  ibsCbsFinalConsumer: string | null
+  ibsCbsOperationIndicator: string | null
+  ibsCbsDestinationIndicator: string | null
+  ibsCbsCst: string | null
+  ibsCbsTaxClassification: string | null
   client?: Client | null
   nrnotaf?: string | null
   dsmespr?: string | null
@@ -570,12 +628,70 @@ export interface Invoice {
   vlmater?: number | null
 }
 
-export type InvoicePayload = Partial<Omit<Invoice, 'id'>> & {
-  clientName: string
-  document: string
-  competence: string
-  amount: number
-  issuedAt: ISODate
+export interface InvoicePayload {
+  clientId?: number | null
+  serviceOrderId?: number | null
+  contractId?: number | null
+  competence?: string
+  amount?: number
+  tax?: number | null
+  unconditionalDiscount?: number
+  deductionValue?: number
+  issRate?: number
+  issRetained?: boolean
+  serviceCityCode?: string
+  customerCityCode?: string
+  nationalServiceCode?: string
+  municipalServiceCode?: string
+  nbsCode?: string
+  serviceDescription?: string
+  nature?: string
+  notes?: string
+  laborAmount?: number
+  materialAmount?: number
+  status?: InvoiceStatus
+  replacedAccessKey?: string
+  replacementReasonCode?: string
+  replacementReason?: string
+  ibsCbsApplicable?: boolean
+  ibsCbsFinalConsumer?: string
+  ibsCbsOperationIndicator?: string
+  ibsCbsDestinationIndicator?: string
+  ibsCbsCst?: string
+  ibsCbsTaxClassification?: string
+  // Compatibilidade temporaria com a tela fiscal legada.
+  clientName?: string
+  document?: string
+  issuedAt?: ISODate
+  number?: string | null
+  nrnotaf?: string | null
+  nmrazao?: string | null
+  nrcnpj?: string | null
+  dsmespr?: string | null
+  dtemiss?: ISODateTime | null
+  vltotal?: number | null
+  vlissqn?: number | null
+  vlaliqu?: number | null
+  vlmao?: number | null
+  vlmater?: number | null
+  dsnatur?: string | null
+  dsender?: string | null
+  dsobser?: string | null
+}
+
+export interface NfseIntegrationStatus {
+  enabled: boolean
+  configured: boolean
+  ready: boolean
+  environment: NfseEnvironment
+  layoutVersion: string
+  danfseConfigured: boolean
+  missingConfiguration: string[]
+}
+
+export interface NfseCancelPayload {
+  reasonCode: '1' | '2' | '9'
+  reason: string
 }
 
 export interface Statement {

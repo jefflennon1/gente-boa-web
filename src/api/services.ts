@@ -2,6 +2,7 @@ import type {
   AppUser,
   AuthResponse,
   Client,
+  ClientContractContext,
   CepAddressResponse,
   ClientListItem,
   ClientSearchOption,
@@ -19,6 +20,8 @@ import type {
   ClientEmailPayload,
   Invoice,
   InvoicePayload,
+  NfseCancelPayload,
+  NfseIntegrationStatus,
   Employee,
   EmployeePayload,
   Material,
@@ -125,8 +128,8 @@ export const api = {
       const { data } = await http.post<ClientReferral>('/clients/referral-descriptions', { description })
       return data
     },
-    async search(query: string) {
-      const { data } = await http.get<ClientSearchOption[]>('/clients/search', { params: { query } })
+    async search(query: string, at?: string) {
+      const { data } = await http.get<ClientSearchOption[]>('/clients/search', { params: { query, at } })
       return data
     },
   },
@@ -185,6 +188,10 @@ export const api = {
       const { data } = await http.get<PagedResponse<Contract> | Contract[]>(`/clients/${clientId}/contracts`, { params: { page: 0, size: 20, ...params } })
       if (!Array.isArray(data)) return data
       return { content: data, total: data.length, page: 0, size: data.length, totalPages: data.length ? 1 : 0 }
+    },
+    async activeByClient(clientId: number, at: string) {
+      const { data } = await http.get<ClientContractContext>(`/clients/${clientId}/active-contract`, { params: { at } })
+      return data
     },
     async create(payload: ContractPayload) {
       const { data } = await http.post<Contract>('/contracts', payload)
@@ -255,7 +262,59 @@ export const api = {
       await http.delete(`/service-orders/${id}`)
     },
   },
-  invoices: resource<Invoice, InvoicePayload>('/invoices'),
+  invoices: {
+    async list(params: Pick<ListParams, 'query' | 'page' | 'size'> = {}) {
+      const { data } = await http.get<PagedResponse<Invoice>>('/invoices', { params: { page: 0, size: 100, ...params } })
+      return data
+    },
+    async find(id: number) {
+      const { data } = await http.get<Invoice>(`/invoices/${id}`)
+      return data
+    },
+    async create(payload: InvoicePayload) {
+      const { data } = await http.post<Invoice>('/invoices', payload)
+      return data
+    },
+    async update(id: number, payload: InvoicePayload) {
+      const { data } = await http.put<Invoice>(`/invoices/${id}`, payload)
+      return data
+    },
+    async remove(id: number) {
+      await http.delete(`/invoices/${id}`)
+    },
+    async integrationStatus() {
+      const { data } = await http.get<NfseIntegrationStatus>('/invoices/integration-status')
+      return data
+    },
+    async issue(id: number) {
+      const { data } = await http.post<Invoice>(`/invoices/${id}/issue`)
+      return data
+    },
+    async issueBatch(invoiceIds: number[]) {
+      const { data } = await http.post<Invoice[]>('/invoices/issue-batch', { invoiceIds })
+      return data
+    },
+    async reconcile(id: number) {
+      const { data } = await http.post<Invoice>(`/invoices/${id}/reconcile`)
+      return data
+    },
+    async cancel(id: number, payload: NfseCancelPayload) {
+      const { data } = await http.post<Invoice>(`/invoices/${id}/cancel`, payload)
+      return data
+    },
+    async xml(id: number) {
+      const { data } = await http.get<Blob>(`/invoices/${id}/xml`, { responseType: 'blob' })
+      return data
+    },
+    async danfse(id: number) {
+      const { data } = await http.get<Blob>(`/invoices/${id}/danfse`, { responseType: 'blob' })
+      return data
+    },
+    async pdf(id: number) {
+      const { data } = await http.get<Blob>(`/invoices/${id}/pdf`, { responseType: 'blob' })
+      return data
+    },
+  },
   statements: resource<Statement, StatementPayload>('/statements'),
   users: resource<AppUser, CreateUserPayload | UpdateUserPayload>('/users'),
 }

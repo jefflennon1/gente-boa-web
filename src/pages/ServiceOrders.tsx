@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Building2, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Clock3, Columns3, Edit3, List, MapPin, Plus, Search, Trash2, UserRound, Wrench, X } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
@@ -20,9 +20,9 @@ const categories: Array<{ value: ServiceCategory; label: string }> = [
 ]
 const serviceTypes = [
   { value: 'E', label: 'Elétricos' },
+  { value: 'H', label: 'Hidráulico' },
   { value: 'A', label: 'Ambos' },
   // { value: 'L', label: 'Alvenaria' },
-  { value: 'H', label: 'Hidráulico' },
   // { value: 'I', label: 'Hidro' },
   // { value: 'O', label: 'Outros' },
 ]
@@ -397,6 +397,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   const [status, setStatus] = useState<ServiceOrderStatus>(selected?.status || 'ABERTA')
   const [category, setCategory] = useState<ServiceCategory>(selected?.category || 'MAO_DE_OBRA')
   const [serviceType, setServiceType] = useState(selected?.tpservic || 'E')
+  const [searchTarget, setSearchTarget] = useState(selected?.procurarpor ?? '')
   const [description, setDescription] = useState(selected?.dsdescr ?? selected?.description ?? '')
   const [notes, setNotes] = useState(selected?.dsobser ?? '')
   const [cancellationReason, setCancellationReason] = useState(selected?.dscancel ?? '')
@@ -433,11 +434,16 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   const debouncedEmployeeSearch = useDebouncedValue(employeeSearch.trim())
   const clientSearchReady = debouncedClientSearch.length >= 2 || /^\d+$/.test(debouncedClientSearch)
   const clientOptionsQuery = useQuery({
-    queryKey: [...queryKeys.clients, 'service-order-search', debouncedClientSearch],
-    queryFn: () => api.clients.search(debouncedClientSearch),
+    queryKey: [...queryKeys.clients, 'service-order-search', debouncedClientSearch, requestDate],
+    queryFn: () => api.clients.search(debouncedClientSearch, requestDate),
     enabled: clientPickerOpen && clientSearchReady,
   })
   const clientQuery = useQuery({ queryKey: [...queryKeys.clients, 'detail', Number(clientId)], queryFn: () => api.clients.find(Number(clientId)), enabled: Boolean(clientId) })
+  const contractContextQuery = useQuery({
+    queryKey: [...queryKeys.contracts, 'active-for-client', Number(clientId), requestDate],
+    queryFn: () => api.contracts.activeByClient(Number(clientId), requestDate),
+    enabled: Boolean(clientId && requestDate),
+  })
   const employeesQuery = useQuery({
     queryKey: [...queryKeys.employees, 'service-order-search', debouncedEmployeeSearch],
     queryFn: () => api.employees.search(debouncedEmployeeSearch),
@@ -457,6 +463,11 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       ? clientDisplay(selectedClientOption)
       : selected?.clientName || (clientId ? `Cliente #${clientId}` : 'Selecionar cliente')
   const clientOptions = clientOptionsQuery.data ?? []
+  const activeContract = contractContextQuery.data?.contract ?? null
+  const shouldInferOrderOrigin = Boolean(clientId) && (!selected || selectedClientOption !== null || Number(clientId) !== selected.idclien)
+  const activeContractServices = activeContract?.services
+    ?.map((service) => service.serviceDescription || service.serviceName || `Serviço #${service.serviceId}`)
+    .join(', ') ?? ''
   const mainAddress = primaryClientAddress(selectedClient)
   const minimumMinutes = orderOrigin === 'C'
     ? systemParametersQuery.data?.contractMinimumMinutes ?? 20
@@ -507,6 +518,11 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   const materialOptions = materialsQuery.data?.content ?? []
   const selectedSupplierMissing = Boolean(supplierId) && !supplierOptions.some((supplier) => supplier.id === Number(supplierId))
 
+  useEffect(() => {
+    if (!shouldInferOrderOrigin || !contractContextQuery.isSuccess) return
+    setOrderOrigin(contractContextQuery.data.hasContract ? 'C' : 'A')
+  }, [contractContextQuery.data, contractContextQuery.isSuccess, shouldInferOrderOrigin])
+
   function selectClient(client: ClientSearchOption) {
     setClientId(String(client.id))
     setSelectedClientOption(client)
@@ -514,6 +530,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     setLocationId('')
     setClientPickerOpen(false)
     setClientError('')
+    setOrderOrigin('A')
   }
 
   function openClientPicker() {
@@ -640,6 +657,14 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       return
     }
     if (!requestDate || !description.trim()) return
+    if (shouldInferOrderOrigin && contractContextQuery.isFetching) {
+      setClientError('Aguarde a verificação do contrato do cliente antes de gravar a ordem.')
+      return
+    }
+    if (shouldInferOrderOrigin && contractContextQuery.isError) {
+      setClientError(`Não foi possível verificar o contrato do cliente. ${apiErrorMessage(contractContextQuery.error)}`)
+      return
+    }
     if (materialItems.length > 0 && !supplierId) {
       setMaterialError('Selecione o fornecedor do pedido de compra.')
       setTab('materials')
@@ -701,7 +726,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       flstatu: status === 'FINALIZADA' ? 'F' : status === 'CANCELADA' ? 'C' : 'A', category,
       flcateg: category === 'GARANTIA' ? 'G' : category === 'VISITA_TECNICA' ? 'V' : category === 'CANCELAMENTO' ? 'C' : category === 'DESLOCAMENTO' ? 'D' : 'M',
       dsdescr: description.trim(), description: description.trim(), dsobser: notes.trim() || null, dscancel: cancellationReason.trim() || null,
-      tpservic: serviceType, service: serviceType, priority: urgent ? 'URGENTE' : 'NORMAL', scheduledDate: firstSchedule ? toDateInput(firstSchedule.expectedDate) : requestDate,
+      tpservic: serviceType, procurarpor: searchTarget.trim() || null, service: serviceType, priority: urgent ? 'URGENTE' : 'NORMAL', scheduledDate: firstSchedule ? toDateInput(firstSchedule.expectedDate) : requestDate,
       scheduledTime: firstSchedule?.expectedStart || null, technician: firstSchedule?.employeeId ? String(firstSchedule.employeeId) : null, location: locationId || null,
       dtinicial: firstSchedule ? dateTime(toDateInput(firstSchedule.expectedDate), firstSchedule.expectedStart || '00:00') : null, hrabert: firstSchedule?.expectedStart || null,
       qthorat: asDuration(actualMinutes), qthorac: asDuration(billableMinutes), dtvenci: dueDate ? dateTime(dueDate) : null, txbolet: numberValue(ticketFee), vldesco: numberValue(discount), vldesc: discountAmount,
@@ -728,6 +753,23 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       <FormField label="Local"><select value={locationId} onChange={(event) => setLocationId(event.target.value)} disabled={!clientId || clientQuery.isLoading}><option value="">{clientQuery.isLoading ? 'Carregando endereço...' : mainAddress || 'Endereço principal não informado'}</option>{selectedClient?.addresses?.map((address) => <option key={address.id} value={address.id}>{additionalClientAddress(address)}</option>)}</select></FormField>
       <FormField label="Situação"><select value={status} onChange={(event) => setStatus(event.target.value as ServiceOrderStatus)}><option value="ABERTA">Aberta</option><option value="FINALIZADA">Finalizada</option><option value="CANCELADA">Cancelada</option></select></FormField>
     </div>
+    {clientId && <aside className={`os-accounting-rule ${activeContract ? 'os-accounting-rule--contract' : 'os-accounting-rule--one-off'}`}>
+      <Building2 size={18} />
+      <span>
+        {contractContextQuery.isLoading || contractContextQuery.isFetching
+          ? <><strong>Verificando contrato do cliente...</strong><small>O tipo da ordem será preenchido automaticamente.</small></>
+          : contractContextQuery.isError
+            ? <><strong>Não foi possível carregar o contrato</strong><small>{apiErrorMessage(contractContextQuery.error)}</small></>
+            : activeContract
+              ? <><strong>Contrato #{activeContract.id} encontrado</strong><small>{[
+                activeContract.contractDate ? `Início ${formatDate(activeContract.contractDate)}` : null,
+                activeContract.renewalDate ? `Renovação ${formatDate(activeContract.renewalDate)}` : null,
+                activeContract.dueDay ? `Vencimento dia ${activeContract.dueDay}` : null,
+                `${activeContract.services?.length ?? 0} serviço(s) contratado(s)`,
+              ].filter(Boolean).join(' · ')}</small>{activeContractServices && <small>Serviços: {activeContractServices}</small>}</>
+              : <><strong>Cliente sem contrato vigente</strong><small>{shouldInferOrderOrigin ? 'A ordem foi definida previamente como avulsa para a data selecionada.' : `O tipo já gravado na OS foi preservado como ${orderOrigin === 'C' ? 'contrato' : 'avulsa'}.`}</small></>}
+      </span>
+    </aside>}
     <div className="os-form-tabs" role="tablist"><button type="button" className={tab === 'general' ? 'active' : ''} onClick={() => setTab('general')}>Dados gerais</button><button type="button" className={tab === 'materials' ? 'active' : ''} onClick={() => setTab('materials')}>Materiais</button></div>
 
     {tab === 'general' ? <>
@@ -737,7 +779,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       </section>
       <div className="os-description-grid">
         <FormField label="Descrição"><textarea rows={3} value={description} onChange={(event) => setDescription(event.target.value)} required /></FormField>
-        <section className="os-service-type"><strong>Procurar por / tipo de serviço</strong><div>{serviceTypes.map((item) => <label key={item.value}><input type="radio" name="service-type" checked={serviceType === item.value} onChange={() => setServiceType(item.value)} /><span>{item.label}</span></label>)}</div></section>
+        <div className="os-service-classification"><FormField label="Procurar por"><input maxLength={150} value={searchTarget} onChange={(event) => setSearchTarget(event.target.value)} placeholder="Informe o que deve ser procurado no atendimento" /></FormField><section className="os-service-type"><strong>Tipo de serviço</strong><div>{serviceTypes.map((item) => <label key={item.value}><input type="radio" name="service-type" checked={serviceType === item.value} onChange={() => setServiceType(item.value)} /><span>{item.label}</span></label>)}</div></section></div>
         <FormField label="Observação"><textarea rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} /></FormField>
         <FormField label="Motivo do cancelamento"><textarea rows={3} value={cancellationReason} onChange={(event) => setCancellationReason(event.target.value)} disabled={category !== 'CANCELAMENTO' && status !== 'CANCELADA'} /></FormField>
       </div>
@@ -825,6 +867,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
           <span className="employee-picker-modal__avatar client-picker-modal__avatar"><Building2 size={19} /></span>
           <span className="employee-picker-modal__identity"><strong>{clientDisplay(client)}</strong><small>{client.legalName && client.legalName !== client.tradeName ? client.legalName : 'Razão social não informada'}</small></span>
           <span className="client-picker-modal__address"><MapPin size={16} /><span><strong>Endereço principal</strong><small>{clientSearchAddress(client) || 'Endereço não informado'}</small></span></span>
+          <span className={`client-picker-modal__contract ${client.hasContract ? 'client-picker-modal__contract--active' : ''}`}><strong>{client.hasContract ? 'Com contrato' : 'Sem contrato'}</strong><small>{client.contractId ? `Contrato #${client.contractId}` : 'Nenhum contrato vigente'}</small></span>
           <span className="employee-picker-modal__meta"><strong>Código #{client.id}</strong><small>{client.document || 'CPF/CNPJ não informado'}</small></span>
         </button>)}
       </div>
@@ -876,7 +919,7 @@ function ServiceOrderDetail({ order, catalog }: { order: ServiceOrder; catalog: 
     <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><Wrench /></span><div><span>OS-{order.id} · {order.flordem === 'C' ? 'Contrato' : 'Avulsa'}</span><h2>{tradeName || legalName || 'Cliente não identificado'}</h2>{tradeName && legalName && <p>{legalName}</p>}</div></div><div className="detail-status-stack">{order.priority === 'URGENTE' && <Badge tone="red">Urgente</Badge>}<Badge tone={statusTone[order.status]}>{enumLabel(order.status)}</Badge></div></div>
     <div className="detail-metrics"><span><small>Data da requisição</small><strong>{formatDate(order.dtordem)}</strong></span><span><small>Agendamentos</small><strong>{order.schedules?.length ?? 0}</strong></span><span><small>Tempo realizado</small><strong>{order.qthorat || '00:00'}</strong></span><span><small>{order.flordem === 'C' ? 'Tempo descontado' : 'Tempo cobrado'}</small><strong>{order.qthorac || '00:00'}</strong></span><span><small>Valor a cobrar</small><strong>{money(order.vlcobra)}</strong></span></div>
     <div className="detail-sections-grid">
-      <section className="drawer-section"><h3>Atendimento</h3><dl><div><dt>Solicitante</dt><dd>{order.nmsolic || 'Não informado'}</dd></div><div><dt>Categoria</dt><dd>{enumLabel(order.category)}</dd></div><div><dt>Tipo de serviço</dt><dd>{serviceTypes.find((item) => item.value === order.tpservic)?.label || 'Não informado'}</dd></div><div><dt>Local</dt><dd>{order.idlocal ? `Local #${order.idlocal}` : 'Endereço principal'}</dd></div></dl></section>
+      <section className="drawer-section"><h3>Atendimento</h3><dl><div><dt>Solicitante</dt><dd>{order.nmsolic || 'Não informado'}</dd></div><div><dt>Categoria</dt><dd>{enumLabel(order.category)}</dd></div><div><dt>Tipo de serviço</dt><dd>{serviceTypes.find((item) => item.value === order.tpservic)?.label || 'Não informado'}</dd></div><div><dt>Procurar por</dt><dd>{order.procurarpor || 'Não informado'}</dd></div><div><dt>Local</dt><dd>{order.idlocal ? `Local #${order.idlocal}` : 'Endereço principal'}</dd></div></dl></section>
       <section className="drawer-section"><h3>Valores</h3><dl><div><dt>Serviços</dt><dd>{money(order.vlhorar)}</dd></div><div><dt>Materiais</dt><dd>{money(order.vlmater)}</dd></div><div><dt>Transporte / aluguel</dt><dd>{money(numberValue(order.vltrans) + numberValue(order.vlalug))}</dd></div><div><dt>Desconto</dt><dd>{order.vldesco ?? 0}%</dd></div></dl></section>
       {order.flordem === 'C' && <section className="drawer-section drawer-section--wide"><h3>Consumo mensal do contrato</h3><dl><div><dt>Horas contratadas</dt><dd>{order.sdcontr || '00:00'}</dd></div><div><dt>Utilizado antes desta OS</dt><dd>{order.sdanter || '00:00'}</dd></div><div><dt>Utilizado no mês</dt><dd>{order.sdutili || '00:00'}</dd></div><div><dt>Saldo do mês</dt><dd>{order.sdfinal || '00:00'}</dd></div><div><dt>Excedente</dt><dd>{order.sdexced || '00:00'}</dd></div></dl></section>}
       <section className="drawer-section drawer-section--wide"><h3>Descrição e observações</h3><p className="drawer-section__text">{order.dsdescr || order.description || 'Descrição não informada'}</p>{order.dsobser && <p className="drawer-section__text detail-text-spaced">{order.dsobser}</p>}{order.dscancel && <p className="drawer-section__text detail-text-spaced"><strong>Cancelamento:</strong> {order.dscancel}</p>}</section>

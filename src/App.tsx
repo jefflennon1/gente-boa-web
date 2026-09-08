@@ -11,7 +11,7 @@ const pages = {
   '/ordens-de-servico': lazy(() => import('./pages/ServiceOrders').then((module) => ({ default: module.ServiceOrders }))),
   '/materiais': lazy(() => import('./pages/Materials').then((module) => ({ default: module.Materials }))),
   '/funcionarios': lazy(() => import('./pages/Employees').then((module) => ({ default: module.Employees }))),
-  '/notas-fiscais': lazy(() => import('./pages/Invoices').then((module) => ({ default: module.Invoices }))),
+  '/notas-fiscais': lazy(() => import('./pages/NationalInvoices').then((module) => ({ default: module.NationalInvoices }))),
   '/extratos': lazy(() => import('./pages/Statements').then((module) => ({ default: module.Statements }))),
   '/relatorios': lazy(() => import('./pages/Reports').then((module) => ({ default: module.Reports }))),
   '/usuarios': lazy(() => import('./pages/Users').then((module) => ({ default: module.Users }))),

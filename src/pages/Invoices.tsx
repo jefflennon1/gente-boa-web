@@ -26,7 +26,6 @@ function invoicePayload(invoice: Invoice, overrides: Partial<InvoicePayload> = {
   const amount = overrides.amount ?? Number(invoice.amount ?? 0)
   const tax = overrides.tax ?? invoice.tax
   return {
-    ...invoice,
     ...overrides,
     number,
     nrnotaf: number,
