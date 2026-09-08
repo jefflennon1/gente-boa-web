@@ -24,6 +24,7 @@ export function Employees() {
   const [pageSize, setPageSize] = useState(20)
   const [modalOpen, setModalOpen] = useState(false)
   const [selected, setSelected] = useState<Employee | null>(null)
+  const [formActive, setFormActive] = useState(true)
   const [employeeToDelete, setEmployeeToDelete] = useState<Employee | null>(null)
   const [formError, setFormError] = useState('')
   const [toast, setToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null)
@@ -64,6 +65,15 @@ export function Employees() {
     },
   })
 
+  const availabilityMutation = useMutation({
+    mutationFn: ({ id, active }: { id: number; active: boolean }) => api.employees.updateAvailability(id, active),
+    onSuccess: async (employee) => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.employees })
+      showToast(employee.active ? 'Funcionário ativado.' : 'Funcionário desativado.')
+    },
+    onError: (error) => showToast(apiErrorMessage(error, 'Não foi possível alterar a disponibilidade do funcionário.'), 'error'),
+  })
+
   const employees = employeesQuery.data?.content ?? []
   const total = employeesQuery.data?.total ?? 0
   const totalPages = employeesQuery.data?.totalPages ?? 0
@@ -77,12 +87,14 @@ export function Employees() {
 
   function openNew() {
     setSelected(null)
+    setFormActive(true)
     setFormError('')
     setModalOpen(true)
   }
 
   function openEdit(employee: Employee) {
     setSelected(employee)
+    setFormActive(employee.active)
     setFormError('')
     setModalOpen(true)
   }
@@ -113,6 +125,7 @@ export function Employees() {
       tertiaryPhone: emptyToNull(data.get('tertiaryPhone')),
       zipCode: emptyToNull(data.get('zipCode')),
       email: emptyToNull(data.get('email')),
+      active: data.get('active') === 'on',
     }
     saveMutation.mutate({ id: selected?.id, payload })
   }
@@ -133,13 +146,14 @@ export function Employees() {
       </div>
 
       {employeesQuery.isLoading ? <LoadingState label="Carregando funcionários..." /> : employeesQuery.isError ? <ErrorState message={apiErrorMessage(employeesQuery.error)} onRetry={() => employeesQuery.refetch()} /> : employees.length === 0 ? <EmptyState title="Nenhum funcionário encontrado" description="Altere a busca ou cadastre um novo funcionário." /> : <div className={`table-wrap ${employeesQuery.isFetching ? 'table-wrap--refreshing' : ''}`}>
-        <table className="data-table employees-table"><thead><tr><th>Código</th><th>Funcionário</th><th>Cargo</th><th>Telefone</th><th>E-mail</th><th>Contratação</th><th /></tr></thead><tbody>{employees.map((employee) => <tr key={employee.id} onClick={() => openEdit(employee)}>
+        <table className="data-table employees-table"><thead><tr><th>Código</th><th>Funcionário</th><th>Cargo</th><th>Telefone</th><th>E-mail</th><th>Contratação</th><th>Disponibilidade</th><th /></tr></thead><tbody>{employees.map((employee) => <tr key={employee.id} onClick={() => openEdit(employee)}>
           <td><strong>#{employee.id}</strong></td>
           <td><strong className="table-primary">{employee.name || 'Sem nome'}</strong>{employee.nickname && <small className="table-secondary">{employee.nickname}</small>}</td>
           <td>{employee.position || 'Não informado'}</td>
           <td>{employee.phone || employee.secondaryPhone || employee.tertiaryPhone || 'Não informado'}</td>
           <td>{employee.email || 'Não informado'}</td>
           <td>{formatDate(employee.hiredAt)}</td>
+          <td><button type="button" role="switch" aria-checked={employee.active} className={`employee-availability-toggle ${employee.active ? 'employee-availability-toggle--active' : ''}`} disabled={availabilityMutation.isPending && availabilityMutation.variables?.id === employee.id} onClick={(event) => { event.stopPropagation(); availabilityMutation.mutate({ id: employee.id, active: !employee.active }) }}><span aria-hidden="true"><i /></span><strong>{employee.active ? 'Ativo' : 'Inativo'}</strong></button></td>
           <td><div className="row-actions"><button className="row-action" onClick={(event) => { event.stopPropagation(); openEdit(employee) }} aria-label={`Editar ${employee.name}`} title="Editar funcionário"><Edit3 size={16} /></button><button className="row-action row-action--danger" onClick={(event) => { event.stopPropagation(); setDeleteError(''); setEmployeeToDelete(employee) }} aria-label={`Excluir ${employee.name}`} title="Excluir funcionário"><Trash2 size={16} /></button></div></td>
         </tr>)}</tbody></table>
       </div>}
@@ -167,6 +181,7 @@ export function Employees() {
           <FormField label="Comissão %"><input name="commissionPercentage" type="number" min="0" step="0.01" defaultValue={selected?.commissionPercentage ?? ''} /></FormField>
           <FormField label="Data de contratação"><input name="hiredAt" type="datetime-local" defaultValue={dateTimeInput(selected?.hiredAt)} /></FormField>
           <FormField label="Data de desligamento"><input name="terminatedAt" type="datetime-local" defaultValue={dateTimeInput(selected?.terminatedAt)} /></FormField>
+          <FormField label="Disponibilidade"><label className="employee-availability-field"><input name="active" type="checkbox" checked={formActive} onChange={(event) => setFormActive(event.target.checked)} /><span aria-hidden="true"><i /></span><strong>{formActive ? 'Funcionário ativo' : 'Funcionário inativo'}</strong></label><small>Funcionários inativos não aparecem na seleção das ordens de serviço.</small></FormField>
         </div>
 
         <div className="form-section-title"><span>2</span><div><strong>Contato e documentos</strong><small>Informações para comunicação e identificação.</small></div></div>

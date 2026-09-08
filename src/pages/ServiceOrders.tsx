@@ -364,22 +364,24 @@ export function ServiceOrders() {
     </DetailModal>
 
     <Modal open={modalOpen} onClose={() => !saveMutation.isPending && setModalOpen(false)} title={selected ? `Editar OS-${selected.id}` : 'Nova ordem de serviço'} description="Preenchimento baseado na tela operacional do sistema Delphi." size="xlarge">
-      <ServiceOrderForm key={formKey} selected={selected} catalog={catalogQuery.data?.content ?? []} formError={formError} submitting={saveMutation.isPending} onCancel={() => setModalOpen(false)} onDelete={(id) => setOrderToDelete(id)} onSubmit={(payload) => saveMutation.mutate({ id: selected?.id, payload })} />
+      <ServiceOrderForm key={formKey} selected={selected} catalog={catalogQuery.data?.content ?? []} formError={formError} submitting={saveMutation.isPending} onCancel={() => setModalOpen(false)} onDelete={(id) => setOrderToDelete(id)} onNotify={showToast} onSubmit={(payload) => saveMutation.mutate({ id: selected?.id, payload })} />
     </Modal>
     <ConfirmDialog open={orderToDelete !== null} title={`Excluir OS-${orderToDelete ?? ''}?`} description="A ordem de serviço e seus agendamentos e serviços serão removidos permanentemente." confirmLabel="Excluir ordem" busy={deleteMutation.isPending} onCancel={() => setOrderToDelete(null)} onConfirm={() => orderToDelete !== null && !deleteMutation.isPending && deleteMutation.mutate(orderToDelete)} />
     {toast && <Toast message={toast} onClose={() => setToast('')} />}
   </>
 }
 
-function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, onDelete, onSubmit }: {
+function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, onDelete, onNotify, onSubmit }: {
   selected: ServiceOrder | null
   catalog: ServiceCatalogItem[]
   formError: string
   submitting: boolean
   onCancel: () => void
   onDelete: (id: number) => void
+  onNotify: (message: string) => void
   onSubmit: (payload: ServiceOrderPayload) => void
 }) {
+  const queryClient = useQueryClient()
   const { user } = useAuth()
   const initialDate = toDateInput(selected?.dtordem || selected?.scheduledDate) || localToday()
   const [tab, setTab] = useState<'general' | 'materials'>('general')
@@ -448,6 +450,16 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     queryKey: [...queryKeys.employees, 'service-order-search', debouncedEmployeeSearch],
     queryFn: () => api.employees.search(debouncedEmployeeSearch),
     enabled: employeePickerIndex !== null,
+  })
+  const employeeAvailabilityMutation = useMutation({
+    mutationFn: ({ employee, active }: { employee: Employee; active: boolean }) => api.employees.updateAvailability(employee.id, active),
+    onSuccess: (employee) => {
+      queryClient.setQueriesData<Employee[]>({ queryKey: [...queryKeys.employees, 'service-order-search'] }, (current) => current?.map((item) => item.id === employee.id ? employee : item))
+      onNotify(employee.active
+        ? `${employeeDisplay(employee)} foi reativado.`
+        : `${employeeDisplay(employee)} foi desativado. Ao reabrir esta busca, ele não aparecerá mais.`)
+    },
+    onError: (error) => onNotify(apiErrorMessage(error, 'Não foi possível alterar a disponibilidade do funcionário.')),
   })
   const systemParametersQuery = useQuery({ queryKey: queryKeys.systemParameters, queryFn: api.systemParameters.get })
   const debouncedSupplierSearch = useDebouncedValue(supplierSearch)
@@ -550,6 +562,12 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     }))
   }
 
+  function closeEmployeePicker() {
+    setEmployeePickerIndex(null)
+    setEmployeeSearch('')
+    void queryClient.invalidateQueries({ queryKey: queryKeys.employees, refetchType: 'all' })
+  }
+
   function openEmployeePicker(index: number) {
     setEmployeePickerIndex(index)
     setEmployeeSearch('')
@@ -564,8 +582,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       employeePosition: employee.position,
       employeePhone: employee.phone || employee.secondaryPhone || employee.tertiaryPhone,
     })
-    setEmployeePickerIndex(null)
-    setEmployeeSearch('')
+    closeEmployeePicker()
   }
 
   function clearEmployee(index: number) {
@@ -873,15 +890,18 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       </div>
     </div>
   </Modal>
-  <Modal open={employeePickerIndex !== null} onClose={() => setEmployeePickerIndex(null)} title="Selecionar funcionário" description="Pesquise por código, nome, apelido ou cargo e escolha o profissional responsável." size="large">
+  <Modal open={employeePickerIndex !== null} onClose={closeEmployeePicker} title="Selecionar funcionário" description="Pesquise por código, nome, apelido ou cargo e escolha o profissional responsável." size="large">
     <div className="modal__body employee-picker-modal">
       <div className="search-box employee-picker-modal__search"><Search size={18} /><input autoFocus value={employeeSearch} onChange={(event) => setEmployeeSearch(event.target.value)} placeholder="Digite o nome, apelido, cargo ou código..." /></div>
       <div className="employee-picker-modal__results">
-        {employeesQuery.isLoading ? <LoadingState label="Buscando funcionários..." /> : employeesQuery.isError ? <ErrorState message={apiErrorMessage(employeesQuery.error)} onRetry={() => employeesQuery.refetch()} /> : (employeesQuery.data?.length ?? 0) === 0 ? <EmptyState title="Nenhum funcionário encontrado" description="Tente outro nome, apelido, cargo ou código." /> : employeesQuery.data?.map((employee) => <button type="button" key={employee.id} onClick={() => selectEmployee(employee)}>
-          <span className="employee-picker-modal__avatar"><UserRound size={19} /></span>
-          <span className="employee-picker-modal__identity"><strong>{employeeDisplay(employee)}</strong><small>{employee.nickname && employee.nickname !== employee.name ? `${employee.nickname} · ` : ''}Código #{employee.id}</small></span>
-          <span className="employee-picker-modal__meta"><strong>{employee.position || 'Cargo não informado'}</strong><small>{employee.phone || employee.secondaryPhone || employee.tertiaryPhone || 'Telefone não informado'}</small></span>
-        </button>)}
+        {employeesQuery.isLoading ? <LoadingState label="Buscando funcionários..." /> : employeesQuery.isError ? <ErrorState message={apiErrorMessage(employeesQuery.error)} onRetry={() => employeesQuery.refetch()} /> : (employeesQuery.data?.length ?? 0) === 0 ? <EmptyState title="Nenhum funcionário encontrado" description="Tente outro nome, apelido, cargo ou código." /> : employeesQuery.data?.map((employee) => <article className={`employee-picker-modal__option ${employee.active ? '' : 'employee-picker-modal__option--inactive'}`} key={employee.id}>
+          <button type="button" className="employee-picker-modal__select" disabled={!employee.active} onClick={() => selectEmployee(employee)}>
+            <span className="employee-picker-modal__avatar"><UserRound size={19} /></span>
+            <span className="employee-picker-modal__identity"><strong>{employeeDisplay(employee)}</strong><small>{employee.nickname && employee.nickname !== employee.name ? `${employee.nickname} · ` : ''}Código #{employee.id}</small></span>
+            <span className="employee-picker-modal__meta"><strong>{employee.position || 'Cargo não informado'}</strong><small>{employee.phone || employee.secondaryPhone || employee.tertiaryPhone || 'Telefone não informado'}</small></span>
+          </button>
+          <button type="button" role="switch" aria-checked={employee.active} aria-label={`${employee.active ? 'Desativar' : 'Reativar'} ${employeeDisplay(employee)}`} title={employee.active ? 'Desativar funcionário' : 'Reativar funcionário'} className={`employee-availability-toggle ${employee.active ? 'employee-availability-toggle--active' : ''} employee-picker-modal__availability`} disabled={employeeAvailabilityMutation.isPending && employeeAvailabilityMutation.variables?.employee.id === employee.id} onClick={() => employeeAvailabilityMutation.mutate({ employee, active: !employee.active })}><span aria-hidden="true"><i /></span><strong>{employee.active ? 'Ativo' : 'Inativo'}</strong></button>
+        </article>)}
       </div>
     </div>
   </Modal>

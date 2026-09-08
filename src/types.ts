@@ -279,6 +279,7 @@ export interface Employee {
   tertiaryPhone: string | null
   zipCode: string | null
   email: string | null
+  active: boolean
 }
 
 export type EmployeePayload = Omit<Employee, 'id'>

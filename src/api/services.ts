@@ -226,6 +226,10 @@ export const api = {
       const { data } = await http.get<Employee[]>('/employees/search', { params: { query: query || undefined } })
       return data
     },
+    async updateAvailability(id: number, active: boolean) {
+      const { data } = await http.patch<Employee>(`/employees/${id}/availability`, { active })
+      return data
+    },
   },
   suppliers: {
     async list(params: Pick<ListParams, 'query' | 'page' | 'size'> = {}) {
