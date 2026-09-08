@@ -1,4 +1,4 @@
-name: gente-boa-web-prod
+name: gente-boa-web-homolog
 services:
   web:
     build:
