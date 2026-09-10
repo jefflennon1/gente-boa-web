@@ -476,7 +476,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       : selected?.clientName || (clientId ? `Cliente #${clientId}` : 'Selecionar cliente')
   const clientOptions = clientOptionsQuery.data ?? []
   const activeContract = contractContextQuery.data?.contract ?? null
-  const shouldInferOrderOrigin = Boolean(clientId) && (!selected || selectedClientOption !== null || Number(clientId) !== selected.idclien)
+  const shouldInferOrderOrigin = Boolean(clientId)
   const activeContractServices = activeContract?.services
     ?.map((service) => service.serviceDescription || service.serviceName || `Serviço #${service.serviceId}`)
     .join(', ') ?? ''
@@ -784,7 +784,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
                 activeContract.dueDay ? `Vencimento dia ${activeContract.dueDay}` : null,
                 `${activeContract.services?.length ?? 0} serviço(s) contratado(s)`,
               ].filter(Boolean).join(' · ')}</small>{activeContractServices && <small>Serviços: {activeContractServices}</small>}</>
-              : <><strong>Cliente sem contrato vigente</strong><small>{shouldInferOrderOrigin ? 'A ordem foi definida previamente como avulsa para a data selecionada.' : `O tipo já gravado na OS foi preservado como ${orderOrigin === 'C' ? 'contrato' : 'avulsa'}.`}</small></>}
+              : <><strong>Cliente sem contrato vigente</strong><small>A ordem foi definida previamente como avulsa para a data selecionada.</small></>}
       </span>
     </aside>}
     <div className="os-form-tabs" role="tablist"><button type="button" className={tab === 'general' ? 'active' : ''} onClick={() => setTab('general')}>Dados gerais</button><button type="button" className={tab === 'materials' ? 'active' : ''} onClick={() => setTab('materials')}>Materiais</button></div>
