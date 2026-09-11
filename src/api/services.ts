@@ -1,5 +1,7 @@
 import type {
   AppUser,
+  AttendanceLocation,
+  AttendanceLocationPayload,
   AuthResponse,
   Client,
   ClientContractContext,
@@ -137,6 +139,27 @@ export const api = {
     async findByCep(cep: string) {
       const { data } = await http.get<CepAddressResponse>(`/addresses/cep/${cep}`)
       return data
+    },
+  },
+  attendanceLocations: {
+    async byClient(clientId: number) {
+      const { data } = await http.get<AttendanceLocation[]>('/attendance-locations', { params: { clientId } })
+      return data
+    },
+    async findForClient(id: number, clientId: number) {
+      const { data } = await http.get<AttendanceLocation>(`/attendance-locations/${id}`, { params: { clientId } })
+      return data
+    },
+    async create(payload: AttendanceLocationPayload) {
+      const { data } = await http.post<AttendanceLocation>('/attendance-locations', payload)
+      return data
+    },
+    async update(id: number, payload: AttendanceLocationPayload) {
+      const { data } = await http.put<AttendanceLocation>(`/attendance-locations/${id}`, payload)
+      return data
+    },
+    async remove(id: number) {
+      await http.delete(`/attendance-locations/${id}`)
     },
   },
   systemParameters: {
@@ -329,6 +352,7 @@ export const api = {
 
 export const queryKeys = {
   addresses: ['addresses'] as const,
+  attendanceLocations: ['attendance-locations'] as const,
   systemParameters: ['system-parameters'] as const,
   emails: ['emails'] as const,
   clients: ['clients'] as const,
