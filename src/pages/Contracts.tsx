@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Ban, Building2, ChevronLeft, ChevronRight, CircleDollarSign, Download, Edit3, ExternalLink, FileSignature, Plus, Printer, RefreshCw, Search, Settings2, Trash2, Upload, X } from 'lucide-react'
+import { Ban, Building2, ChevronLeft, ChevronRight, CircleDollarSign, Download, Edit3, ExternalLink, FileSignature, MapPin, Plus, Printer, RefreshCw, Search, Settings2, Trash2, Upload, UserRound, X } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useRouter } from '../router'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money, toDateInput, toDateTimeInput } from '../lib/format'
-import type { Contract, ContractListSortBy, ContractPayload, ContractServiceItem, ContractServicePayload, SortDirection } from '../types'
+import type { ClientSearchOption, Contract, ContractListSortBy, ContractPayload, ContractServiceItem, ContractServicePayload, Employee, SortDirection, Supplier } from '../types'
 import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 type StatusFilter = 'TODOS' | 'ATIVO' | 'CANCELADO'
@@ -92,6 +92,22 @@ function formatFileSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB`
 }
 
+function contractClientDisplay(client: ClientSearchOption) {
+  return client.tradeName || client.legalName || `Cliente #${client.id}`
+}
+
+function contractClientAddress(client: ClientSearchOption) {
+  return [client.street, client.complement, client.district, client.city, client.state].filter(Boolean).join(' · ')
+}
+
+function contractEmployeeDisplay(employee: Employee) {
+  return employee.name || employee.nickname || `Funcionário #${employee.id}`
+}
+
+function contractSupplierDisplay(supplier: Supplier) {
+  return supplier.tradeName || supplier.legalName || `Fornecedor #${supplier.id}`
+}
+
 export function Contracts() {
   const queryClient = useQueryClient()
   const signedDocumentInputRef = useRef<HTMLInputElement>(null)
@@ -108,6 +124,18 @@ export function Contracts() {
   const [modalOpen, setModalOpen] = useState(false)
   const [formLoading, setFormLoading] = useState(false)
   const [selected, setSelected] = useState<Contract | null>(null)
+  const [contractClientId, setContractClientId] = useState('')
+  const [contractClient, setContractClient] = useState<ClientSearchOption | null>(null)
+  const [clientPickerOpen, setClientPickerOpen] = useState(false)
+  const [clientPickerSearch, setClientPickerSearch] = useState('')
+  const [contractEmployeeId, setContractEmployeeId] = useState('')
+  const [contractEmployee, setContractEmployee] = useState<Employee | null>(null)
+  const [employeePickerOpen, setEmployeePickerOpen] = useState(false)
+  const [employeePickerSearch, setEmployeePickerSearch] = useState('')
+  const [contractSupplierId, setContractSupplierId] = useState('')
+  const [contractSupplier, setContractSupplier] = useState<Supplier | null>(null)
+  const [supplierPickerOpen, setSupplierPickerOpen] = useState(false)
+  const [supplierPickerSearch, setSupplierPickerSearch] = useState('')
   const [serviceRows, setServiceRows] = useState<ServiceRow[]>(() => [emptyServiceRow()])
   const [detailId, setDetailId] = useState<number | null>(null)
   const [documentLoadingId, setDocumentLoadingId] = useState<number | null>(null)
@@ -124,6 +152,9 @@ export function Contracts() {
   const [cancelError, setCancelError] = useState('')
   const [deleteError, setDeleteError] = useState('')
   const debouncedSearch = useDebouncedValue(search)
+  const debouncedClientPickerSearch = useDebouncedValue(clientPickerSearch.trim())
+  const debouncedEmployeePickerSearch = useDebouncedValue(employeePickerSearch.trim())
+  const debouncedSupplierPickerSearch = useDebouncedValue(supplierPickerSearch.trim())
 
   const contractsQuery = useQuery({
     queryKey: [...queryKeys.contracts, 'list', debouncedSearch, statusFilter, sortBy, direction, page, pageSize, clientFilter],
@@ -142,6 +173,25 @@ export function Contracts() {
   const clientsQuery = useQuery({
     queryKey: [...queryKeys.clients, 'contract-selector'],
     queryFn: () => api.clients.list({ sortBy: 'NAME', direction: 'ASC', page: 0, size: 100 }),
+  })
+
+  const clientPickerReady = debouncedClientPickerSearch.length >= 2 || /^\d+$/.test(debouncedClientPickerSearch)
+  const clientPickerQuery = useQuery({
+    queryKey: [...queryKeys.clients, 'contract-search', debouncedClientPickerSearch],
+    queryFn: () => api.clients.search(debouncedClientPickerSearch),
+    enabled: clientPickerOpen && clientPickerReady,
+  })
+
+  const employeePickerQuery = useQuery({
+    queryKey: [...queryKeys.employees, 'contract-search', debouncedEmployeePickerSearch],
+    queryFn: () => api.employees.search(debouncedEmployeePickerSearch),
+    enabled: employeePickerOpen,
+  })
+
+  const supplierPickerQuery = useQuery({
+    queryKey: [...queryKeys.suppliers, 'contract-search', debouncedSupplierPickerSearch],
+    queryFn: () => api.suppliers.list({ query: debouncedSupplierPickerSearch || undefined, page: 0, size: 50 }),
+    enabled: supplierPickerOpen,
   })
 
   const filteredClientQuery = useQuery({
@@ -195,6 +245,9 @@ export function Contracts() {
     onSuccess: (contract) => {
       setModalOpen(false)
       setSelected(null)
+      setContractClient(null)
+      setContractEmployee(null)
+      setContractSupplier(null)
       setServiceRows([emptyServiceRow()])
       queryClient.setQueryData([...queryKeys.contracts, 'detail', contract.id], contract)
       setDetailId(contract.id)
@@ -331,6 +384,19 @@ export function Contracts() {
   const serviceOptions = servicesQuery.data?.content ?? []
   const filteredClientOption = clientOptions.find((client) => client.id === clientFilter)
   const filteredClientName = filteredClientQuery.data?.nmfanta || filteredClientOption?.tradeName || filteredClientQuery.data?.name || filteredClientOption?.name || (clientFilter ? `Cliente #${clientFilter}` : '')
+  const contractClientLabel = contractClient
+    ? contractClientDisplay(contractClient)
+    : selected && String(selected.clientId) === contractClientId
+      ? selected.clientTradeName || selected.clientName || `Cliente #${selected.clientId}`
+      : clientFilter !== null && String(clientFilter) === contractClientId
+        ? filteredClientName
+        : contractClientId ? `Cliente #${contractClientId}` : 'Buscar cliente'
+  const contractEmployeeLabel = contractEmployee
+    ? contractEmployeeDisplay(contractEmployee)
+    : contractEmployeeId ? `Funcionário #${contractEmployeeId}` : 'Buscar funcionário'
+  const contractSupplierLabel = contractSupplier
+    ? contractSupplierDisplay(contractSupplier)
+    : contractSupplierId ? `Fornecedor #${contractSupplierId}` : 'Buscar fornecedor'
   const minimumContractMonths = systemParametersQuery.data?.minimumContractMonths ?? 3
   const configuredDueDays = Array.from(new Set([
     systemParametersQuery.data?.primaryDueDay ?? 10,
@@ -351,6 +417,12 @@ export function Contracts() {
 
   function openNew() {
     setSelected(null)
+    setContractClientId(clientFilter === null ? '' : String(clientFilter))
+    setContractClient(null)
+    setContractEmployeeId('')
+    setContractEmployee(null)
+    setContractSupplierId('')
+    setContractSupplier(null)
     setServiceRows([emptyServiceRow()])
     setFormError('')
     setFormLoading(false)
@@ -369,7 +441,19 @@ export function Contracts() {
         ? await queryClient.fetchQuery({ queryKey: [...queryKeys.contracts, 'detail', contractOrId], queryFn: () => api.contracts.find(contractOrId) })
         : contractOrId
       setSelected(contract)
+      setContractClientId(String(contract.clientId))
+      setContractClient(null)
+      setContractEmployeeId(contract.employeeId == null ? '' : String(contract.employeeId))
+      setContractEmployee(null)
+      setContractSupplierId(contract.supplierId == null ? '' : String(contract.supplierId))
+      setContractSupplier(null)
       setServiceRows(contract.services?.length ? contract.services.map(serviceRowFrom) : [emptyServiceRow()])
+      const [employeeResult, supplierResult] = await Promise.allSettled([
+        contract.employeeId == null ? Promise.resolve(null) : api.employees.find(contract.employeeId),
+        contract.supplierId == null ? Promise.resolve(null) : api.suppliers.find(contract.supplierId),
+      ])
+      if (employeeResult.status === 'fulfilled') setContractEmployee(employeeResult.value)
+      if (supplierResult.status === 'fulfilled') setContractSupplier(supplierResult.value)
     } catch (error) {
       setFormError(apiErrorMessage(error))
     } finally {
@@ -395,11 +479,37 @@ export function Contracts() {
     setServiceRows((rows) => rows.length === 1 ? [emptyServiceRow()] : rows.filter((_, rowIndex) => rowIndex !== index))
   }
 
+  function selectContractClient(client: ClientSearchOption) {
+    setContractClientId(String(client.id))
+    setContractClient(client)
+    setClientPickerOpen(false)
+    setClientPickerSearch('')
+  }
+
+  function selectContractEmployee(employee: Employee) {
+    setContractEmployeeId(String(employee.id))
+    setContractEmployee(employee)
+    setEmployeePickerOpen(false)
+    setEmployeePickerSearch('')
+  }
+
+  function selectContractSupplier(supplier: Supplier) {
+    setContractSupplierId(String(supplier.id))
+    setContractSupplier(supplier)
+    setSupplierPickerOpen(false)
+    setSupplierPickerSearch('')
+  }
+
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setFormError('')
     const data = new FormData(event.currentTarget)
     const validRows = serviceRows.filter((row) => row.serviceId !== null)
+
+    if (!contractClientId) {
+      setFormError('Pesquise e selecione um cliente antes de salvar o contrato.')
+      return
+    }
 
     if (validRows.length === 0) {
       setFormError('Adicione pelo menos um serviço ao contrato.')
@@ -430,7 +540,7 @@ export function Contracts() {
     }))
 
     const payload: ContractPayload = {
-      clientId: Number(data.get('clientId')),
+      clientId: Number(contractClientId),
       contractDate,
       renewalDate: dateTimeFromDate(textValue(data, 'renewalDate')),
       adhesionFee: nullableNumber(data, 'adhesionFee'),
@@ -442,9 +552,9 @@ export function Contracts() {
       canceled: selected?.canceled ?? false,
       cancellationDate: selected?.cancellationDate ?? null,
       cancellationReason: selected?.cancellationReason ?? null,
-      employeeId: nullableNumber(data, 'employeeId'),
+      employeeId: contractEmployeeId ? Number(contractEmployeeId) : null,
       employeePercentage: nullableNumber(data, 'employeePercentage'),
-      supplierId: nullableNumber(data, 'supplierId'),
+      supplierId: contractSupplierId ? Number(contractSupplierId) : null,
       statusFlag: textValue(data, 'statusFlag') || null,
       lastAdjustmentDate: textValue(data, 'lastAdjustmentDate') || null,
       services,
@@ -533,7 +643,7 @@ export function Contracts() {
               </aside> : <aside className="contract-system-parameters contract-system-parameters--empty"><Settings2 size={18} /><span><strong>Parâmetros não cadastrados</strong><small>Cadastre as referências globais em Parâmetros do sistema.</small></span></aside>}
             <div className="form-section-title"><span>1</span><div><strong>Dados do contrato</strong><small>Cliente, vigência e vencimento</small></div></div>
             <div className="form-grid form-grid--four">
-              <FormField label="Cliente"><select name="clientId" required defaultValue={selected?.clientId ?? clientFilter ?? ''}><option value="" disabled>Selecione o cliente</option>{selected && !clientOptions.some((client) => client.id === selected.clientId) && <option value={selected.clientId}>{selected.clientTradeName || selected.clientName || `Cliente #${selected.clientId}`}{selected.clientTradeName && selected.clientName ? ` · ${selected.clientName}` : ''}</option>}{!selected && clientFilter !== null && !clientOptions.some((client) => client.id === clientFilter) && <option value={clientFilter}>{filteredClientName}</option>}{clientOptions.map((client) => <option key={client.id} value={client.id}>{client.tradeName || client.name || `Cliente #${client.id}`}{client.tradeName && client.name ? ` · ${client.name}` : ''} · {client.document || 'sem documento'}</option>)}</select></FormField>
+              <FormField label="Cliente"><button type="button" className="contract-reference-trigger" onClick={() => { setClientPickerSearch(''); setClientPickerOpen(true) }}><Search size={16} /><span><strong>{contractClientLabel}</strong><small>{contractClientId ? `Código #${contractClientId} · Clique para alterar` : 'Nome fantasia, razão social ou código'}</small></span></button></FormField>
               <FormField label="Data do contrato"><input name="contractDate" type="date" required defaultValue={toDateInput(selected?.contractDate)} /></FormField>
               <FormField label="Data de renovação"><input name="renewalDate" type="date" defaultValue={selected?.renewalDate?.slice(0, 10) ?? ''} /></FormField>
               <FormField label="Dia do vencimento"><select name="dueDay" defaultValue={selected?.dueDay ?? configuredDueDays[0]}>{selected?.dueDay && !configuredDueDays.includes(selected.dueDay) && <option value={selected.dueDay}>Dia {selected.dueDay} (legado)</option>}{configuredDueDays.map((day) => <option key={day} value={day}>Dia {day}</option>)}</select></FormField>
@@ -547,9 +657,9 @@ export function Contracts() {
             <div className="form-grid form-grid--four">
               <FormField label="% de venda"><input name="salePercentage" type="number" min="0" max="100" step="1" defaultValue={selected?.salePercentage ?? 0} /></FormField>
               <FormField label="% de renovação"><input name="renewalPercentage" type="number" min="0" max="100" step="1" defaultValue={selected?.renewalPercentage ?? 0} /></FormField>
-              <FormField label="Código do funcionário"><input name="employeeId" type="number" min="0" defaultValue={selected?.employeeId ?? ''} /></FormField>
+              <FormField label="Funcionário"><div className="contract-reference-control"><button type="button" className="contract-reference-trigger" onClick={() => { setEmployeePickerSearch(''); setEmployeePickerOpen(true) }}><Search size={16} /><span><strong>{contractEmployeeLabel}</strong><small>{contractEmployeeId ? `Código #${contractEmployeeId} · Clique para alterar` : 'Nome, apelido, cargo ou código'}</small></span></button>{contractEmployeeId && <button type="button" className="contract-reference-clear" onClick={() => { setContractEmployeeId(''); setContractEmployee(null) }} aria-label="Remover funcionário" title="Remover funcionário"><X size={15} /></button>}</div></FormField>
               <FormField label="% do funcionário"><input name="employeePercentage" type="number" min="0" max="100" step="0.01" defaultValue={selected?.employeePercentage ?? ''} /></FormField>
-              <FormField label="Código do fornecedor"><input name="supplierId" type="number" min="0" defaultValue={selected?.supplierId ?? ''} /></FormField>
+              <FormField label="Fornecedor"><div className="contract-reference-control"><button type="button" className="contract-reference-trigger" onClick={() => { setSupplierPickerSearch(''); setSupplierPickerOpen(true) }}><Search size={16} /><span><strong>{contractSupplierLabel}</strong><small>{contractSupplierId ? `Código #${contractSupplierId} · Clique para alterar` : 'Nome fantasia, razão social ou código'}</small></span></button>{contractSupplierId && <button type="button" className="contract-reference-clear" onClick={() => { setContractSupplierId(''); setContractSupplier(null) }} aria-label="Remover fornecedor" title="Remover fornecedor"><X size={15} /></button>}</div></FormField>
               <FormField label="Flag de situação"><input name="statusFlag" maxLength={2} defaultValue={selected?.statusFlag ?? ''} /></FormField>
             </div>
 
@@ -576,6 +686,46 @@ export function Contracts() {
             {selected?.canceled && <div className="warning-box"><Ban size={18} /><span><strong>Contrato cancelado</strong><small>Os dados de cancelamento serão preservados nesta edição.</small></span></div>}
           </ModalForm>
         )}
+      </Modal>
+
+      <Modal open={clientPickerOpen} onClose={() => setClientPickerOpen(false)} title="Selecionar cliente" description="Pesquise por nome fantasia, razão social ou código do cliente." size="large">
+        <div className="modal__body employee-picker-modal client-picker-modal">
+          <div className="search-box employee-picker-modal__search"><Search size={18} /><input autoFocus value={clientPickerSearch} onChange={(event) => setClientPickerSearch(event.target.value)} placeholder="Digite ao menos 2 letras ou o código..." /></div>
+          <div className="employee-picker-modal__results">
+            {!clientPickerReady ? <EmptyState title="Pesquise um cliente" description="Digite ao menos 2 letras do nome fantasia ou razão social, ou informe o código." /> : clientPickerQuery.isLoading ? <LoadingState label="Buscando clientes..." /> : clientPickerQuery.isError ? <ErrorState message={apiErrorMessage(clientPickerQuery.error)} onRetry={() => clientPickerQuery.refetch()} /> : (clientPickerQuery.data?.length ?? 0) === 0 ? <EmptyState title="Nenhum cliente encontrado" description="Tente outro nome ou código de cliente." /> : clientPickerQuery.data?.map((client) => <button type="button" key={client.id} onClick={() => selectContractClient(client)}>
+              <span className="employee-picker-modal__avatar"><Building2 size={19} /></span>
+              <span className="employee-picker-modal__identity"><strong>{contractClientDisplay(client)}</strong><small>{client.legalName && client.legalName !== client.tradeName ? client.legalName : 'Razão social não informada'}</small></span>
+              <span className="client-picker-modal__address"><MapPin size={16} /><span><strong>Endereço principal</strong><small>{contractClientAddress(client) || 'Endereço não informado'}</small></span></span>
+              <span className="employee-picker-modal__meta"><strong>Código #{client.id}</strong><small>{client.document || 'CPF/CNPJ não informado'}</small></span>
+            </button>)}
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={employeePickerOpen} onClose={() => setEmployeePickerOpen(false)} title="Selecionar funcionário" description="Somente funcionários ativos aparecem nesta pesquisa." size="large">
+        <div className="modal__body employee-picker-modal">
+          <div className="search-box employee-picker-modal__search"><Search size={18} /><input autoFocus value={employeePickerSearch} onChange={(event) => setEmployeePickerSearch(event.target.value)} placeholder="Digite o nome, apelido, cargo ou código..." /></div>
+          <div className="employee-picker-modal__results">
+            {employeePickerQuery.isLoading ? <LoadingState label="Buscando funcionários..." /> : employeePickerQuery.isError ? <ErrorState message={apiErrorMessage(employeePickerQuery.error)} onRetry={() => employeePickerQuery.refetch()} /> : (employeePickerQuery.data?.length ?? 0) === 0 ? <EmptyState title="Nenhum funcionário ativo encontrado" description="Tente outro nome, apelido, cargo ou código." /> : employeePickerQuery.data?.map((employee) => <button type="button" key={employee.id} onClick={() => selectContractEmployee(employee)}>
+              <span className="employee-picker-modal__avatar"><UserRound size={19} /></span>
+              <span className="employee-picker-modal__identity"><strong>{contractEmployeeDisplay(employee)}</strong><small>{employee.nickname && employee.nickname !== employee.name ? `${employee.nickname} · ` : ''}Código #{employee.id}</small></span>
+              <span className="employee-picker-modal__meta"><strong>{employee.position || 'Cargo não informado'}</strong><small>{employee.phone || employee.secondaryPhone || employee.tertiaryPhone || 'Telefone não informado'}</small></span>
+            </button>)}
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={supplierPickerOpen} onClose={() => setSupplierPickerOpen(false)} title="Selecionar fornecedor" description="Pesquise por nome fantasia, razão social, documento ou código." size="large">
+        <div className="modal__body employee-picker-modal">
+          <div className="search-box employee-picker-modal__search"><Search size={18} /><input autoFocus value={supplierPickerSearch} onChange={(event) => setSupplierPickerSearch(event.target.value)} placeholder="Digite o fornecedor, documento ou código..." /></div>
+          <div className="employee-picker-modal__results">
+            {supplierPickerQuery.isLoading ? <LoadingState label="Buscando fornecedores..." /> : supplierPickerQuery.isError ? <ErrorState message={apiErrorMessage(supplierPickerQuery.error)} onRetry={() => supplierPickerQuery.refetch()} /> : (supplierPickerQuery.data?.content.length ?? 0) === 0 ? <EmptyState title="Nenhum fornecedor encontrado" description="Tente outro nome, documento ou código." /> : supplierPickerQuery.data?.content.map((supplier) => <button type="button" key={supplier.id} onClick={() => selectContractSupplier(supplier)}>
+              <span className="employee-picker-modal__avatar"><Building2 size={19} /></span>
+              <span className="employee-picker-modal__identity"><strong>{contractSupplierDisplay(supplier)}</strong><small>{supplier.legalName && supplier.legalName !== supplier.tradeName ? supplier.legalName : 'Razão social não informada'}</small></span>
+              <span className="employee-picker-modal__meta"><strong>Código #{supplier.id}</strong><small>{supplier.document || supplier.phone || 'Documento não informado'}</small></span>
+            </button>)}
+          </div>
+        </div>
       </Modal>
 
       <DetailModal

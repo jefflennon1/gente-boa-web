@@ -232,6 +232,10 @@ export const api = {
     },
   },
   suppliers: {
+    async find(id: number) {
+      const { data } = await http.get<Supplier>(`/suppliers/${id}`)
+      return data
+    },
     async list(params: Pick<ListParams, 'query' | 'page' | 'size'> = {}) {
       const { data } = await http.get<PagedResponse<Supplier>>('/suppliers', { params: { page: 0, size: 20, ...params } })
       return data
