@@ -492,9 +492,10 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       : selected?.clientName || (clientId ? `Cliente #${clientId}` : 'Selecionar cliente')
   const clientOptions = clientOptionsQuery.data ?? []
   const activeContract = contractContextQuery.data?.contract ?? null
+  const contractBalance = contractContextQuery.data?.balance ?? null
   const shouldInferOrderOrigin = Boolean(clientId)
   const activeContractServices = activeContract?.services
-    ?.map((service) => service.serviceDescription || service.serviceName || `Serviço #${service.serviceId}`)
+    ?.map((service) => `${service.serviceDescription || service.serviceName || `Serviço #${service.serviceId}`}: ${service.quantity} ${service.unit || 'hora(s)'}`)
     .join(', ') ?? ''
   const attendanceLocations = useMemo(() => {
     const locations = attendanceLocationsQuery.data ?? []
@@ -545,6 +546,15 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     const realized = minutesFromTime(item.actualDuration) || durationMinutes(item.actualStart, item.actualEnd)
     return realized > 0 ? sum + Math.max(realized, minimumMinutes) : sum
   }, 0)
+  const selectedOrderPeriod = toDateInput(selected?.dtordem || selected?.scheduledDate)?.slice(0, 7)
+  const currentPeriod = requestDate.slice(0, 7)
+  const previouslyAccountedMinutes = selected?.status === 'FINALIZADA'
+    && selected.idcontr === activeContract?.id
+    && selectedOrderPeriod === currentPeriod
+    ? minutesFromTime(selected.qthorac)
+    : 0
+  const balanceBeforeThisOrder = (contractBalance?.balanceMinutes ?? 0) + previouslyAccountedMinutes
+  const projectedBalanceMinutes = Math.max(0, balanceBeforeThisOrder - billableMinutes)
   const operationalRule = orderOrigin === 'C'
     ? systemParametersQuery.data?.contractRules || `Cada atendimento desconta no mínimo ${minimumMinutes} minutos das horas contratadas.`
     : systemParametersQuery.data?.oneOffRules || `Cada atendimento é cobrado pelo mínimo de ${minimumMinutes} minutos.`
@@ -800,7 +810,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     const firstSchedule = normalizedSchedules[0]
     const payload: ServiceOrderPayload = {
       ...selectedBase,
-      idclien: Number(clientId), dtordem: dateTime(requestDate), flordem: orderOrigin, nmsolic: requester.trim() || null,
+      idclien: Number(clientId), idcontr: orderOrigin === 'C' ? activeContract?.id ?? selected?.idcontr ?? null : null, dtordem: dateTime(requestDate), flordem: orderOrigin, nmsolic: requester.trim() || null,
       idlocal: locationId ? Number(locationId) : null, idopera: selected?.idopera ?? user?.id ?? null, status,
       flstatu: status === 'FINALIZADA' ? 'F' : status === 'CANCELADA' ? 'C' : 'A', category,
       flcateg: category === 'GARANTIA' ? 'G' : category === 'VISITA_TECNICA' ? 'V' : category === 'CANCELAMENTO' ? 'C' : category === 'DESLOCAMENTO' ? 'D' : 'M',
@@ -857,6 +867,12 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
               ].filter(Boolean).join(' · ')}</small>{activeContractServices && <small>Serviços: {activeContractServices}</small>}</>
               : <><strong>Cliente sem contrato vigente</strong><small>A ordem foi definida previamente como avulsa para a data selecionada.</small></>}
       </span>
+      {activeContract && <div className="os-contract-balance">
+        <span><small>Horas contratadas</small><strong>{contractBalance?.contracted ?? asDuration(activeContract.services.reduce((sum, service) => sum + numberValue(service.quantity) * 60, 0))}</strong></span>
+        <span><small>Utilizadas no mês</small><strong>{contractBalance?.used ?? '00:00'}</strong></span>
+        <span><small>Saldo disponível</small><strong>{contractBalance?.balance ?? asDuration(activeContract.services.reduce((sum, service) => sum + numberValue(service.quantity) * 60, 0))}</strong></span>
+        <span className="os-contract-balance__projected"><small>Saldo após esta OS</small><strong>{asDuration(projectedBalanceMinutes)}</strong></span>
+      </div>}
     </aside>}
     <div className="os-form-tabs" role="tablist"><button type="button" className={tab === 'general' ? 'active' : ''} onClick={() => setTab('general')}>Dados gerais</button><button type="button" className={tab === 'materials' ? 'active' : ''} onClick={() => setTab('materials')}>Materiais</button></div>
 

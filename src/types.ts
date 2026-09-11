@@ -423,6 +423,21 @@ export interface Contract {
 export interface ClientContractContext {
   hasContract: boolean
   contract: Contract | null
+  balance: ContractTimeBalance | null
+}
+
+export interface ContractTimeBalance {
+  contractId: number
+  clientId: number
+  year: number
+  month: number
+  unit: string
+  contracted: string
+  used: string
+  balance: string
+  contractedMinutes: number
+  usedMinutes: number
+  balanceMinutes: number
 }
 
 export interface ContractListItem {
@@ -523,6 +538,7 @@ export interface ServiceOrder {
   id: number
   code: string | null
   idclien: number | null
+  idcontr?: number | null
   client: Client | null
   clientName: string | null
   service: string | null
