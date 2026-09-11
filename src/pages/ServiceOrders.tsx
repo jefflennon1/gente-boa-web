@@ -6,7 +6,7 @@ import { apiErrorMessage } from '../api/client'
 import { useAuth } from '../auth'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money, toDateInput } from '../lib/format'
-import type { Client, ClientAddress, ClientSearchOption, Employee, Material, PagedResponse, ServiceCatalogItem, ServiceCategory, ServiceOrder, ServiceOrderListItem, ServiceOrderMaterialItem, ServiceOrderMaterialOrder, ServiceOrderOrigin, ServiceOrderPayload, ServiceOrderSchedule, ServiceOrderServiceItem, ServiceOrderStatus, Supplier } from '../types'
+import type { AttendanceLocation, AttendanceLocationPayload, Client, ClientSearchOption, Employee, Material, PagedResponse, ServiceCatalogItem, ServiceCategory, ServiceOrder, ServiceOrderListItem, ServiceOrderMaterialItem, ServiceOrderMaterialOrder, ServiceOrderOrigin, ServiceOrderPayload, ServiceOrderSchedule, ServiceOrderServiceItem, ServiceOrderStatus, Supplier } from '../types'
 import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 const stages: ServiceOrderStatus[] = ['ABERTA', 'FINALIZADA', 'CANCELADA']
@@ -132,17 +132,9 @@ function scheduleEmployeeDisplay(schedule: ServiceOrderSchedule) {
   return schedule.employeeName || schedule.employeeNickname || (schedule.employeeId ? `Funcionário #${schedule.employeeId}` : 'Selecionar funcionário')
 }
 
-function primaryClientAddress(client: Client | null | undefined) {
-  if (!client) return ''
-  const cityState = [client.dscidad || client.city, client.dsestad].filter(Boolean).join(' / ')
-  return [client.dsender || client.address, client.dscompl, client.dsbairr, cityState, client.nrcep].filter(Boolean).join(' · ')
-}
-
-function additionalClientAddress(address: ClientAddress) {
-  const cityState = [address.city, address.state].filter(Boolean).join(' / ')
-  const location = [address.street, address.complement, address.district, cityState, address.zipCode].filter(Boolean).join(' · ')
-  if (address.description && location) return `${address.description} — ${location}`
-  return address.description || location || `Local #${address.id}`
+function attendanceLocationDisplay(location: AttendanceLocation) {
+  const address = [location.address, location.complement, location.district, location.city, location.zipCode].filter(Boolean).join(' · ')
+  return location.description && address ? `${location.description} — ${address}` : location.description || address || `Local #${location.id}`
 }
 
 export function ServiceOrders() {
@@ -396,6 +388,8 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   const [orderOrigin, setOrderOrigin] = useState<ServiceOrderOrigin>(selected?.flordem === 'C' ? 'C' : 'A')
   const [requester, setRequester] = useState(selected?.nmsolic ?? '')
   const [locationId, setLocationId] = useState(selected?.idlocal ? String(selected.idlocal) : '')
+  const [locationModalOpen, setLocationModalOpen] = useState(false)
+  const [locationError, setLocationError] = useState('')
   const [status, setStatus] = useState<ServiceOrderStatus>(selected?.status || 'ABERTA')
   const [category, setCategory] = useState<ServiceCategory>(selected?.category || 'MAO_DE_OBRA')
   const [serviceType, setServiceType] = useState(selected?.tpservic || 'E')
@@ -446,6 +440,17 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     queryFn: () => api.contracts.activeByClient(Number(clientId), requestDate),
     enabled: Boolean(clientId && requestDate),
   })
+  const attendanceLocationsQuery = useQuery({
+    queryKey: [...queryKeys.attendanceLocations, 'client', Number(clientId)],
+    queryFn: () => api.attendanceLocations.byClient(Number(clientId)),
+    enabled: Boolean(clientId),
+  })
+  const selectedAttendanceLocationQuery = useQuery({
+    queryKey: [...queryKeys.attendanceLocations, 'client', Number(clientId), 'location', Number(locationId)],
+    queryFn: () => api.attendanceLocations.findForClient(Number(locationId), Number(clientId)),
+    enabled: Boolean(clientId && locationId),
+    retry: false,
+  })
   const employeesQuery = useQuery({
     queryKey: [...queryKeys.employees, 'service-order-search', debouncedEmployeeSearch],
     queryFn: () => api.employees.search(debouncedEmployeeSearch),
@@ -460,6 +465,17 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
         : `${employeeDisplay(employee)} foi desativado. Ao reabrir esta busca, ele não aparecerá mais.`)
     },
     onError: (error) => onNotify(apiErrorMessage(error, 'Não foi possível alterar a disponibilidade do funcionário.')),
+  })
+  const createAttendanceLocationMutation = useMutation({
+    mutationFn: (payload: AttendanceLocationPayload) => api.attendanceLocations.create(payload),
+    onSuccess: async (location) => {
+      await queryClient.invalidateQueries({ queryKey: [...queryKeys.attendanceLocations, 'client', location.clientId] })
+      setLocationId(String(location.id))
+      setLocationModalOpen(false)
+      setLocationError('')
+      onNotify(`Local “${location.description}” cadastrado e selecionado.`)
+    },
+    onError: (error) => setLocationError(apiErrorMessage(error, 'Não foi possível cadastrar o local de atendimento.')),
   })
   const systemParametersQuery = useQuery({ queryKey: queryKeys.systemParameters, queryFn: api.systemParameters.get })
   const debouncedSupplierSearch = useDebouncedValue(supplierSearch)
@@ -480,7 +496,13 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   const activeContractServices = activeContract?.services
     ?.map((service) => service.serviceDescription || service.serviceName || `Serviço #${service.serviceId}`)
     .join(', ') ?? ''
-  const mainAddress = primaryClientAddress(selectedClient)
+  const attendanceLocations = useMemo(() => {
+    const locations = attendanceLocationsQuery.data ?? []
+    const selectedLocation = selectedAttendanceLocationQuery.data
+    return selectedLocation && !locations.some((location) => location.id === selectedLocation.id)
+      ? [selectedLocation, ...locations]
+      : locations
+  }, [attendanceLocationsQuery.data, selectedAttendanceLocationQuery.data])
   const minimumMinutes = orderOrigin === 'C'
     ? systemParametersQuery.data?.contractMinimumMinutes ?? 20
     : systemParametersQuery.data?.oneOffMinimumMinutes ?? 30
@@ -549,6 +571,46 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     setClientSearch('')
     setClientPickerOpen(true)
     setClientError('')
+  }
+
+  function openLocationModal() {
+    if (!clientId) return
+    setLocationError('')
+    setLocationModalOpen(true)
+  }
+
+  function submitAttendanceLocation(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!clientId) return
+    const data = new FormData(event.currentTarget)
+    const value = (name: string) => String(data.get(name) ?? '').trim() || null
+    createAttendanceLocationMutation.mutate({
+      clientId: Number(clientId),
+      contractId: activeContract?.id ?? 0,
+      description: value('description') ?? '',
+      address: value('address') ?? '',
+      complement: value('complement'),
+      district: value('district'),
+      city: value('city'),
+      zipCode: value('zipCode'),
+      contactName: value('contactName'),
+      referencePoint: value('referencePoint'),
+      bank1: null,
+      agency1: null,
+      account1: null,
+      bank2: null,
+      agency2: null,
+      account2: null,
+      paymentMethod: null,
+      paymentCondition: null,
+      spreadDescription: null,
+      spreadValue: null,
+      spreadGroup: null,
+      contactPhone: value('contactPhone'),
+      cnpj: value('cnpj'),
+      username: user?.name ?? null,
+      requester: value('requester'),
+    })
   }
 
   function updateSchedule(index: number, patch: Partial<ScheduleDraft>) {
@@ -767,7 +829,16 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
         <button type="button" className="os-client-modal-trigger" onClick={openClientPicker}><Search size={16} /><span><strong>{clientId ? selectedClientLabel : 'Buscar cliente'}</strong><small>{clientId ? `Código #${clientId} · Clique para alterar` : 'Nome fantasia, razão social ou código'}</small></span></button>
         {clientError && <small className="os-client-picker__error">{clientError}</small>}
       </FormField>
-      <FormField label="Local"><select value={locationId} onChange={(event) => setLocationId(event.target.value)} disabled={!clientId || clientQuery.isLoading}><option value="">{clientQuery.isLoading ? 'Carregando endereço...' : mainAddress || 'Endereço principal não informado'}</option>{selectedClient?.addresses?.map((address) => <option key={address.id} value={address.id}>{additionalClientAddress(address)}</option>)}</select></FormField>
+      <FormField label="Local">
+        <div className="os-location-control">
+          <select value={locationId} onChange={(event) => setLocationId(event.target.value)} disabled={!clientId || attendanceLocationsQuery.isLoading}>
+            <option value="">{!clientId ? 'Selecione primeiro o cliente' : attendanceLocationsQuery.isLoading ? 'Carregando locais...' : attendanceLocations.length ? 'Selecione um local' : 'Nenhum local cadastrado'}</option>
+            {attendanceLocations.map((location) => <option key={location.id} value={location.id}>{attendanceLocationDisplay(location)}</option>)}
+          </select>
+          <button type="button" onClick={openLocationModal} disabled={!clientId} title="Adicionar novo local de atendimento" aria-label="Adicionar novo local de atendimento"><Plus size={17} /></button>
+        </div>
+        {selectedAttendanceLocationQuery.isError && locationId && <small className="os-client-picker__error">O local #{locationId} não pertence a este cliente ou não existe mais.</small>}
+      </FormField>
       <FormField label="Situação"><select value={status} onChange={(event) => setStatus(event.target.value as ServiceOrderStatus)}><option value="ABERTA">Aberta</option><option value="FINALIZADA">Finalizada</option><option value="CANCELADA">Cancelada</option></select></FormField>
     </div>
     {clientId && <aside className={`os-accounting-rule ${activeContract ? 'os-accounting-rule--contract' : 'os-accounting-rule--one-off'}`}>
@@ -890,6 +961,24 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       </div>
     </div>
   </Modal>
+  <Modal open={locationModalOpen} onClose={() => !createAttendanceLocationMutation.isPending && setLocationModalOpen(false)} title="Novo local de atendimento" description={`Cadastre um endereço vinculado a ${selectedClientLabel}.`} size="large">
+    <ModalForm onSubmit={submitAttendanceLocation} onCancel={() => setLocationModalOpen(false)} submitting={createAttendanceLocationMutation.isPending} submitLabel={createAttendanceLocationMutation.isPending ? 'Cadastrando...' : 'Cadastrar local'}>
+      <FormError message={locationError} />
+      <div className="attendance-location-form-grid">
+        <FormField label="Descrição do local"><input name="description" required maxLength={50} placeholder="Ex.: Sede, filial ou condomínio" /></FormField>
+        <FormField label="Endereço"><input name="address" required maxLength={200} placeholder="Rua, avenida e número" /></FormField>
+        <FormField label="Complemento"><input name="complement" maxLength={100} /></FormField>
+        <FormField label="Bairro"><input name="district" maxLength={100} /></FormField>
+        <FormField label="Cidade"><input name="city" maxLength={100} /></FormField>
+        <FormField label="CEP"><input name="zipCode" maxLength={10} /></FormField>
+        <FormField label="Contato no local"><input name="contactName" maxLength={50} /></FormField>
+        <FormField label="Telefone do contato"><input name="contactPhone" maxLength={18} /></FormField>
+        <FormField label="Solicitante"><input name="requester" maxLength={100} defaultValue={requester} /></FormField>
+        <FormField label="CNPJ do local"><input name="cnpj" maxLength={25} /></FormField>
+        <FormField label="Ponto de referência"><textarea name="referencePoint" rows={3} maxLength={300} /></FormField>
+      </div>
+    </ModalForm>
+  </Modal>
   <Modal open={employeePickerIndex !== null} onClose={closeEmployeePicker} title="Selecionar funcionário" description="Pesquise por código, nome, apelido ou cargo e escolha o profissional responsável." size="large">
     <div className="modal__body employee-picker-modal">
       <div className="search-box employee-picker-modal__search"><Search size={18} /><input autoFocus value={employeeSearch} onChange={(event) => setEmployeeSearch(event.target.value)} placeholder="Digite o nome, apelido, cargo ou código..." /></div>
@@ -935,11 +1024,18 @@ function supplierDisplay(supplier: Supplier) {
 function ServiceOrderDetail({ order, catalog }: { order: ServiceOrder; catalog: ServiceCatalogItem[] }) {
   const tradeName = order.client?.nmfanta
   const legalName = order.clientName || order.client?.nmrazao || order.client?.name
+  const attendanceLocationQuery = useQuery({
+    queryKey: [...queryKeys.attendanceLocations, 'client', order.idclien, 'location', order.idlocal],
+    queryFn: () => api.attendanceLocations.findForClient(order.idlocal!, order.idclien!),
+    enabled: Boolean(order.idclien && order.idlocal),
+    retry: false,
+  })
+  const attendanceLocation = attendanceLocationQuery.data
   return <div className="detail-modal-content">
     <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><Wrench /></span><div><span>OS-{order.id} · {order.flordem === 'C' ? 'Contrato' : 'Avulsa'}</span><h2>{tradeName || legalName || 'Cliente não identificado'}</h2>{tradeName && legalName && <p>{legalName}</p>}</div></div><div className="detail-status-stack">{order.priority === 'URGENTE' && <Badge tone="red">Urgente</Badge>}<Badge tone={statusTone[order.status]}>{enumLabel(order.status)}</Badge></div></div>
     <div className="detail-metrics"><span><small>Data da requisição</small><strong>{formatDate(order.dtordem)}</strong></span><span><small>Agendamentos</small><strong>{order.schedules?.length ?? 0}</strong></span><span><small>Tempo realizado</small><strong>{order.qthorat || '00:00'}</strong></span><span><small>{order.flordem === 'C' ? 'Tempo descontado' : 'Tempo cobrado'}</small><strong>{order.qthorac || '00:00'}</strong></span><span><small>Valor a cobrar</small><strong>{money(order.vlcobra)}</strong></span></div>
     <div className="detail-sections-grid">
-      <section className="drawer-section"><h3>Atendimento</h3><dl><div><dt>Solicitante</dt><dd>{order.nmsolic || 'Não informado'}</dd></div><div><dt>Categoria</dt><dd>{enumLabel(order.category)}</dd></div><div><dt>Tipo de serviço</dt><dd>{serviceTypes.find((item) => item.value === order.tpservic)?.label || 'Não informado'}</dd></div><div><dt>Procurar por</dt><dd>{order.procurarpor || 'Não informado'}</dd></div><div><dt>Local</dt><dd>{order.idlocal ? `Local #${order.idlocal}` : 'Endereço principal'}</dd></div></dl></section>
+      <section className="drawer-section"><h3>Atendimento</h3><dl><div><dt>Solicitante</dt><dd>{order.nmsolic || 'Não informado'}</dd></div><div><dt>Categoria</dt><dd>{enumLabel(order.category)}</dd></div><div><dt>Tipo de serviço</dt><dd>{serviceTypes.find((item) => item.value === order.tpservic)?.label || 'Não informado'}</dd></div><div><dt>Procurar por</dt><dd>{order.procurarpor || 'Não informado'}</dd></div><div><dt>Local</dt><dd>{attendanceLocation ? attendanceLocationDisplay(attendanceLocation) : order.idlocal ? `Local #${order.idlocal}` : 'Não informado'}</dd></div></dl></section>
       <section className="drawer-section"><h3>Valores</h3><dl><div><dt>Serviços</dt><dd>{money(order.vlhorar)}</dd></div><div><dt>Materiais</dt><dd>{money(order.vlmater)}</dd></div><div><dt>Transporte / aluguel</dt><dd>{money(numberValue(order.vltrans) + numberValue(order.vlalug))}</dd></div><div><dt>Desconto</dt><dd>{order.vldesco ?? 0}%</dd></div></dl></section>
       {order.flordem === 'C' && <section className="drawer-section drawer-section--wide"><h3>Consumo mensal do contrato</h3><dl><div><dt>Horas contratadas</dt><dd>{order.sdcontr || '00:00'}</dd></div><div><dt>Utilizado antes desta OS</dt><dd>{order.sdanter || '00:00'}</dd></div><div><dt>Utilizado no mês</dt><dd>{order.sdutili || '00:00'}</dd></div><div><dt>Saldo do mês</dt><dd>{order.sdfinal || '00:00'}</dd></div><div><dt>Excedente</dt><dd>{order.sdexced || '00:00'}</dd></div></dl></section>}
       <section className="drawer-section drawer-section--wide"><h3>Descrição e observações</h3><p className="drawer-section__text">{order.dsdescr || order.description || 'Descrição não informada'}</p>{order.dsobser && <p className="drawer-section__text detail-text-spaced">{order.dsobser}</p>}{order.dscancel && <p className="drawer-section__text detail-text-spaced"><strong>Cancelamento:</strong> {order.dscancel}</p>}</section>

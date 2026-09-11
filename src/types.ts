@@ -99,6 +99,38 @@ export interface ClientEmailPayload {
   body: string
 }
 
+export interface AttendanceLocation {
+  id: number
+  contractId: number
+  clientId: number
+  description: string
+  address: string
+  complement: string | null
+  district: string | null
+  city: string | null
+  zipCode: string | null
+  contactName: string | null
+  referencePoint: string | null
+  bank1: string | null
+  agency1: string | null
+  account1: string | null
+  bank2: string | null
+  agency2: string | null
+  account2: string | null
+  paymentMethod: string | null
+  paymentCondition: string | null
+  spreadDescription: string | null
+  spreadValue: number | null
+  spreadGroup: string | null
+  contactPhone: string | null
+  cnpj: string | null
+  username: string | null
+  requester: string | null
+  registeredAt: ISODateTime | null
+}
+
+export type AttendanceLocationPayload = Omit<AttendanceLocation, 'id' | 'registeredAt'>
+
 export interface Client {
   id: number
   name: string | null
