@@ -132,6 +132,28 @@ function scheduleEmployeeDisplay(schedule: ServiceOrderSchedule) {
   return schedule.employeeName || schedule.employeeNickname || (schedule.employeeId ? `Funcionário #${schedule.employeeId}` : 'Selecionar funcionário')
 }
 
+function finalizationError(
+  serviceItems: ServiceOrderServiceItem[],
+  schedules: ServiceOrderSchedule[],
+  catalog: ServiceCatalogItem[],
+) {
+  if (serviceItems.length === 0) {
+    return 'Não há serviço cadastrado, ordem de serviço não pode ser encerrada.'
+  }
+  for (const service of serviceItems) {
+    const appointments = schedules.filter((schedule) => schedule.serviceId === service.serviceId || (serviceItems.length === 1 && !schedule.serviceId))
+    const incomplete = appointments.find((schedule) => !schedule.actualStart || !schedule.actualEnd)
+    if (appointments.length === 0 || incomplete) {
+      const description = catalog.find((item) => item.id === service.serviceId)?.description || `Serviço #${service.serviceId}`
+      const employee = incomplete
+        ? incomplete.employeeName || incomplete.employeeNickname || (incomplete.employeeId ? `Funcionário #${incomplete.employeeId}` : 'não informado')
+        : 'não informado'
+      return `Ordem de serviço não pode ser finalizada, preencha o horário de início e hora final do serviço: ${description} feito pelo funcionário ${employee}.`
+    }
+  }
+  return ''
+}
+
 function attendanceLocationDisplay(location: AttendanceLocation) {
   const address = [location.address, location.complement, location.district, location.city, location.zipCode].filter(Boolean).join(' · ')
   return location.description && address ? `${location.description} — ${address}` : location.description || address || `Local #${location.id}`
@@ -289,10 +311,31 @@ export function ServiceOrders() {
     setModalOpen(true)
   }
 
-  function advance(order: ServiceOrderListItem | ServiceOrder) {
+  async function advance(order: ServiceOrderListItem | ServiceOrder) {
     const currentIndex = flowStages.indexOf(order.status)
     if (currentIndex < 0 || currentIndex === flowStages.length - 1) return
-    advanceMutation.mutate({ id: order.id, status: flowStages[currentIndex + 1] })
+    const nextStatus = flowStages[currentIndex + 1]
+    if (nextStatus === 'FINALIZADA') {
+      try {
+        const completeOrder = await queryClient.fetchQuery({
+          queryKey: [...queryKeys.serviceOrders, 'detail', order.id],
+          queryFn: () => api.serviceOrders.find(order.id),
+        })
+        const validationMessage = finalizationError(
+          completeOrder.serviceItems ?? [],
+          completeOrder.schedules ?? [],
+          catalogQuery.data?.content ?? [],
+        )
+        if (validationMessage) {
+          showToast(validationMessage)
+          return
+        }
+      } catch (error) {
+        showToast(apiErrorMessage(error, 'Não foi possível verificar os dados da ordem de serviço.'))
+        return
+      }
+    }
+    advanceMutation.mutate({ id: order.id, status: nextStatus })
   }
 
   const detail = detailQuery.data
@@ -764,13 +807,10 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       setTab('general')
       return
     }
-    const timedServiceIds = new Set(serviceItems.filter((item) => numberValue(item.minuteValue) > 0).map((item) => item.serviceId))
     if (status === 'FINALIZADA') {
-      const incompleteAppointment = schedules.some((schedule) => schedule.serviceId && timedServiceIds.has(schedule.serviceId)
-        && (minutesFromTime(schedule.actualDuration) || durationMinutes(schedule.actualStart, schedule.actualEnd)) === 0)
-      const serviceWithoutAppointment = [...timedServiceIds].some((serviceId) => !officialMinutesByService.has(serviceId))
-      if (incompleteAppointment || serviceWithoutAppointment) {
-        setScheduleError('Informe o horário realizado de todos os atendimentos cobrados antes de finalizar a ordem.')
+      const validationMessage = finalizationError(serviceItems, schedules, catalog)
+      if (validationMessage) {
+        setScheduleError(validationMessage)
         setTab('general')
         return
       }
