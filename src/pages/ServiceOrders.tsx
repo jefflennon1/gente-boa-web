@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Clock3, Columns3, Edit3, List, MapPin, Plus, Search, Trash2, UserRound, Wrench, X } from 'lucide-react'
+import { Building2, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Clock3, Columns3, Edit3, List, MapPin, Play, Plus, Search, Square, Trash2, UserRound, Wrench, X } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useAuth } from '../auth'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money, toDateInput } from '../lib/format'
-import type { AttendanceLocation, AttendanceLocationPayload, Client, ClientSearchOption, Employee, Material, PagedResponse, ServiceCatalogItem, ServiceCategory, ServiceOrder, ServiceOrderListItem, ServiceOrderMaterialItem, ServiceOrderMaterialOrder, ServiceOrderOrigin, ServiceOrderPayload, ServiceOrderSchedule, ServiceOrderServiceItem, ServiceOrderStatus, Supplier } from '../types'
+import type { AttendanceLocation, AttendanceLocationPayload, Client, ClientSearchOption, Employee, Material, PagedResponse, ServiceCatalogItem, ServiceCategory, ServiceOrder, ServiceOrderListItem, ServiceOrderMaterialItem, ServiceOrderMaterialOrder, ServiceOrderOrigin, ServiceOrderPayload, ServiceOrderSchedule, ServiceOrderServiceItem, ServiceOrderStatus, ServiceOrderTracking, Supplier } from '../types'
 import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 const stages: ServiceOrderStatus[] = ['ABERTA', 'FINALIZADA', 'CANCELADA']
@@ -41,10 +41,27 @@ type DateBounds = {
   endDate?: string
 }
 
+type TimerAction = {
+  mode: 'start' | 'stop'
+  orderId: number
+  trackingId?: number
+  scheduleId: number
+  serviceId: number
+  serviceDescription: string
+  employeeId: number | null
+  employeeName: string
+}
+
 function localToday() {
   const now = new Date()
   const offset = now.getTimezoneOffset() * 60_000
   return new Date(now.getTime() - offset).toISOString().slice(0, 10)
+}
+
+function localDateTimeNow() {
+  const now = new Date()
+  const offset = now.getTimezoneOffset() * 60_000
+  return new Date(now.getTime() - offset).toISOString().slice(0, 16)
 }
 
 function dateInputValue(date: Date) {
@@ -108,6 +125,17 @@ function minutesFromTime(value?: string | null) {
 function asDuration(minutes: number) {
   const safe = Math.max(0, Math.round(minutes))
   return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`
+}
+
+function LiveElapsed({ startedAt }: { startedAt: string | null }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
+  const started = startedAt ? new Date(startedAt).getTime() : Number.NaN
+  const elapsed = Number.isFinite(started) ? Math.max(0, Math.floor((now - started) / 60_000)) : 0
+  return <>{asDuration(elapsed)}</>
 }
 
 function currencyValue(value: number) {
@@ -179,6 +207,10 @@ export function ServiceOrders() {
   const [orderToDelete, setOrderToDelete] = useState<number | null>(null)
   const [toast, setToast] = useState('')
   const [formError, setFormError] = useState('')
+  const [timerAction, setTimerAction] = useState<TimerAction | null>(null)
+  const [timerDateTime, setTimerDateTime] = useState(localDateTimeNow())
+  const [timerError, setTimerError] = useState('')
+  const [timerLoadingId, setTimerLoadingId] = useState<number | null>(null)
   const debouncedSearch = useDebouncedValue(search)
   const dateBounds = useMemo(
     () => resolveDateBounds(dateFilterMode, date, rangeStart, rangeEnd, month, weekDate),
@@ -245,6 +277,25 @@ export function ServiceOrders() {
       if (context?.previous) queryClient.setQueryData(ordersQueryKey, context.previous)
       showToast(apiErrorMessage(error))
     },
+  })
+  const trackingMutation = useMutation({
+    mutationFn: async ({ action, dateTime }: { action: TimerAction; dateTime: string }) => action.mode === 'start'
+      ? api.serviceOrders.startTracking(action.orderId, {
+          scheduleId: action.scheduleId,
+          serviceId: action.serviceId,
+          employeeId: action.employeeId,
+          startedAt: `${dateTime}:00`,
+        })
+      : api.serviceOrders.stopTracking(action.orderId, action.trackingId!, `${dateTime}:00`),
+    onSuccess: async (tracking) => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.serviceOrders })
+      setTimerAction(null)
+      setTimerError('')
+      showToast(tracking.running
+        ? `Atendimento da OS-${tracking.serviceOrderId} iniciado às ${tracking.startTime}.`
+        : `Atendimento da OS-${tracking.serviceOrderId} encerrado com ${tracking.duration || '00:00'}.`)
+    },
+    onError: (error) => setTimerError(apiErrorMessage(error)),
   })
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.serviceOrders.remove(id),
@@ -338,6 +389,69 @@ export function ServiceOrders() {
     advanceMutation.mutate({ id: order.id, status: nextStatus })
   }
 
+  async function openTimer(order: ServiceOrderListItem | ServiceOrder) {
+    setTimerLoadingId(order.id)
+    try {
+      const completeOrder = await queryClient.fetchQuery({
+        queryKey: [...queryKeys.serviceOrders, 'detail', order.id],
+        queryFn: () => api.serviceOrders.find(order.id),
+      })
+      const trackingDetails = completeOrder.trackingDetails ?? []
+      const running = trackingDetails.find((tracking) => tracking.running)
+      if (running) {
+        if (running.scheduleId == null || running.serviceId == null) {
+          showToast('O acompanhamento em andamento não possui serviço ou agendamento vinculado.')
+          return
+        }
+        setTimerAction({
+          mode: 'stop', orderId: order.id, trackingId: running.id, scheduleId: running.scheduleId,
+          serviceId: running.serviceId, serviceDescription: running.serviceDescription,
+          employeeId: running.employeeId, employeeName: running.employeeName,
+        })
+        setTimerDateTime(localDateTimeNow())
+        setTimerError('')
+        return
+      }
+      const services = completeOrder.serviceItems ?? []
+      if (services.length === 0) {
+        showToast('Não há serviço cadastrado para iniciar o atendimento.')
+        return
+      }
+      const trackedScheduleIds = new Set(trackingDetails.filter((tracking) => Boolean(tracking.startTime)).map((tracking) => tracking.scheduleId).filter((id): id is number => id != null))
+      const schedule = (completeOrder.schedules ?? []).find((item) => item.scheduleId != null && !trackedScheduleIds.has(item.scheduleId))
+      if (!schedule || schedule.scheduleId == null) {
+        showToast('Não há um novo agendamento disponível para iniciar.')
+        return
+      }
+      const serviceId = schedule.serviceId ?? (services.length === 1 ? services[0].serviceId : null)
+      if (serviceId == null) {
+        showToast('Selecione o serviço executado no agendamento antes de iniciar.')
+        return
+      }
+      const serviceDescription = catalogQuery.data?.content.find((service) => service.id === serviceId)?.description || `Serviço #${serviceId}`
+      const employeeName = schedule.employeeName || schedule.employeeNickname
+        || (schedule.employeeId ? `Funcionário #${schedule.employeeId}` : 'Funcionário não informado')
+      setTimerAction({
+        mode: 'start', orderId: order.id, scheduleId: schedule.scheduleId, serviceId,
+        serviceDescription, employeeId: schedule.employeeId ?? null, employeeName,
+      })
+      setTimerDateTime(schedule.actualStart
+        ? `${toDateInput(schedule.actualDate) || localToday()}T${schedule.actualStart}`
+        : localDateTimeNow())
+      setTimerError('')
+    } catch (error) {
+      showToast(apiErrorMessage(error, 'Não foi possível carregar o acompanhamento da ordem.'))
+    } finally {
+      setTimerLoadingId(null)
+    }
+  }
+
+  function submitTimer(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!timerAction || !timerDateTime) return
+    trackingMutation.mutate({ action: timerAction, dateTime: timerDateTime })
+  }
+
   const detail = detailQuery.data
 
   return <>
@@ -373,13 +487,15 @@ export function ServiceOrders() {
             {stageOrders.map((order) => <article className="os-card" key={order.id} onClick={() => setDetailId(order.id)}>
               <div className="os-card__top"><span>OS-{order.id}</span>{order.priority === 'URGENTE' && <Badge tone="red">Urgente</Badge>}</div>
               <h3>{order.clientTradeName || order.clientName || 'Cliente não identificado'}</h3>{order.clientTradeName && order.clientName && <small className="os-card__company-name">{order.clientName}</small>}<p>{order.description || 'Descrição não informada'}</p>
+              <div className={`os-card__services ${order.serviceDescriptions.length === 0 ? 'os-card__services--empty' : ''}`}><strong>Serviços</strong><span>{order.serviceDescriptions.length ? order.serviceDescriptions.join(' · ') : 'NENHUM SERVIÇO VINCULADO'}</span></div>
               <div className="os-meta"><span><CalendarDays size={14} />{formatDate(order.orderedAt)}</span><span><UserRound size={14} />{order.requester || 'Sem solicitante'}</span></div>
-              {!['FINALIZADA', 'CANCELADA'].includes(stage) ? <button type="button" disabled={advanceMutation.isPending} onClick={(event) => { event.preventDefault(); event.stopPropagation(); advance(order) }}>Finalizar OS <CheckCircle2 size={15} /></button> : <span className="os-complete"><CheckCircle2 size={15} /> {stage === 'FINALIZADA' ? 'Atendimento concluído' : 'Atendimento cancelado'}</span>}
+              {order.tracking?.startTime && <div className={`os-timer-status ${order.tracking.running ? 'os-timer-status--running' : ''}`}><Clock3 size={14} /><span><strong>{order.tracking.running ? <>Em andamento · <LiveElapsed startedAt={order.tracking.startedAt} /></> : `Atendimento realizado: ${order.tracking.duration || '00:00'}`}</strong><small>{order.tracking.employeeName}{order.tracking.running ? ` · Início ${order.tracking.startTime}` : ''}</small></span></div>}
+              {!['FINALIZADA', 'CANCELADA'].includes(stage) ? <div className="os-card__actions"><button type="button" className={`os-timer-button ${order.tracking?.running ? 'os-timer-button--stop' : ''}`} disabled={order.serviceDescriptions.length === 0 || timerLoadingId === order.id || trackingMutation.isPending} title={order.serviceDescriptions.length === 0 ? 'Nenhum serviço vinculado à ordem de serviço' : undefined} onClick={(event) => { event.preventDefault(); event.stopPropagation(); openTimer(order) }}>{order.tracking?.running ? <><Square size={14} /> Parar</> : <><Play size={14} /> Iniciar</>}</button><button type="button" disabled={advanceMutation.isPending} onClick={(event) => { event.preventDefault(); event.stopPropagation(); advance(order) }}>Finalizar OS <CheckCircle2 size={15} /></button></div> : <span className="os-complete"><CheckCircle2 size={15} /> {stage === 'FINALIZADA' ? 'Atendimento concluído' : 'Atendimento cancelado'}</span>}
             </article>)}
             {stageOrders.length === 0 && <div className="kanban-empty">Nenhuma OS nesta etapa.</div>}
           </div></section>
         })}
-      </div> : <div className={`table-wrap ${ordersQuery.isFetching ? 'table-wrap--refreshing' : ''}`}><table className="data-table os-table"><thead><tr><th>OS / Cliente</th><th>Atendimento</th><th>Data</th><th>Categoria</th><th>Valor</th><th>Status</th><th /></tr></thead><tbody>{orders.map((order) => <tr key={order.id} onClick={() => setDetailId(order.id)}><td><strong>OS-{order.id}</strong><small className="table-secondary">{order.clientTradeName || order.clientName || 'Cliente não identificado'}</small></td><td><strong className="table-primary">{order.description || 'Não informado'}</strong><small className="table-secondary">{order.requester || 'Sem solicitante'}</small></td><td>{formatDate(order.orderedAt)}</td><td>{enumLabel(order.category)}</td><td>{money(order.totalValue)}</td><td><Badge tone={statusTone[order.status]}>{enumLabel(order.status)}</Badge></td><td><button className="row-action" aria-label={`Visualizar OS-${order.id}`}><ChevronRight size={18} /></button></td></tr>)}</tbody></table></div>}
+      </div> : <div className={`table-wrap ${ordersQuery.isFetching ? 'table-wrap--refreshing' : ''}`}><table className="data-table os-table"><thead><tr><th>OS / Cliente</th><th>Atendimento / Serviços</th><th>Data</th><th>Categoria</th><th>Valor</th><th>Status</th><th /></tr></thead><tbody>{orders.map((order) => <tr key={order.id} onClick={() => setDetailId(order.id)}><td><strong>OS-{order.id}</strong><small className="table-secondary">{order.clientTradeName || order.clientName || 'Cliente não identificado'}</small></td><td><strong className="table-primary">{order.description || 'Não informado'}</strong><small className={`table-secondary ${order.serviceDescriptions.length === 0 ? 'service-description-empty' : ''}`}>{order.serviceDescriptions.length ? order.serviceDescriptions.join(' · ') : 'NENHUM SERVIÇO VINCULADO'}</small></td><td>{formatDate(order.orderedAt)}</td><td>{enumLabel(order.category)}</td><td>{money(order.totalValue)}</td><td><Badge tone={statusTone[order.status]}>{enumLabel(order.status)}</Badge></td><td><button className="row-action" aria-label={`Visualizar OS-${order.id}`}><ChevronRight size={18} /></button></td></tr>)}</tbody></table></div>}
       <footer className="table-footer table-footer--pagination">
         <span>Mostrando <strong>{firstResult}–{lastResult}</strong> de <strong>{total.toLocaleString('pt-BR')}</strong> ordens</span>
         <div className="os-pagination-area">
@@ -394,9 +510,17 @@ export function ServiceOrders() {
       </footer>
     </section>
 
-    <DetailModal open={detailId !== null} onClose={() => setDetailId(null)} title={detail ? `Ordem de serviço OS-${detail.id}` : 'Detalhes da ordem de serviço'} description="Dados do atendimento, agenda, serviços e valores registrados." size="xlarge" actions={detail ? <><Button variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending} onClick={() => setOrderToDelete(detail.id)}>Excluir</Button>{!['FINALIZADA', 'CANCELADA'].includes(detail.status) && <Button variant="secondary" icon={<CheckCircle2 size={16} />} disabled={advanceMutation.isPending} onClick={() => advance(detail)}>Finalizar OS</Button>}<Button icon={<Edit3 size={16} />} onClick={() => openEdit(detail)}>Editar OS</Button></> : undefined}>
+    <DetailModal open={detailId !== null} onClose={() => setDetailId(null)} title={detail ? `Ordem de serviço OS-${detail.id}` : 'Detalhes da ordem de serviço'} description="Dados do atendimento, agenda, serviços e valores registrados." size="xlarge" actions={detail ? <><Button variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending} onClick={() => setOrderToDelete(detail.id)}>Excluir</Button>{!['FINALIZADA', 'CANCELADA'].includes(detail.status) && <Button variant="secondary" icon={detail.trackingDetails?.some((tracking) => tracking.running) ? <Square size={16} /> : <Play size={16} />} disabled={!detail.serviceItems?.length || trackingMutation.isPending || timerLoadingId === detail.id} title={!detail.serviceItems?.length ? 'Nenhum serviço vinculado à ordem de serviço' : undefined} onClick={() => openTimer(detail)}>{detail.trackingDetails?.some((tracking) => tracking.running) ? 'Parar atendimento' : 'Iniciar atendimento'}</Button>}{!['FINALIZADA', 'CANCELADA'].includes(detail.status) && <Button variant="secondary" icon={<CheckCircle2 size={16} />} disabled={advanceMutation.isPending} onClick={() => advance(detail)}>Finalizar OS</Button>}<Button icon={<Edit3 size={16} />} onClick={() => openEdit(detail)}>Editar OS</Button></> : undefined}>
       {detailQuery.isLoading ? <LoadingState label="Carregando a ordem de serviço..." /> : detailQuery.isError ? <ErrorState message={apiErrorMessage(detailQuery.error)} onRetry={() => detailQuery.refetch()} /> : detail ? <ServiceOrderDetail order={detail} catalog={catalogQuery.data?.content ?? []} /> : null}
     </DetailModal>
+
+    <Modal open={timerAction !== null} onClose={() => !trackingMutation.isPending && setTimerAction(null)} title={timerAction?.mode === 'stop' ? 'Parar atendimento' : 'Iniciar atendimento'} description={timerAction ? `OS-${timerAction.orderId} · ${timerAction.serviceDescription}` : undefined} size="medium">
+      <ModalForm onSubmit={submitTimer} onCancel={() => setTimerAction(null)} submitting={trackingMutation.isPending} submitLabel={trackingMutation.isPending ? 'Registrando...' : timerAction?.mode === 'stop' ? 'Confirmar parada' : 'Confirmar início'}>
+        {timerError && <FormError message={timerError} />}
+        <div className="os-timer-confirmation"><span className={timerAction?.mode === 'stop' ? 'os-timer-confirmation__icon os-timer-confirmation__icon--stop' : 'os-timer-confirmation__icon'}>{timerAction?.mode === 'stop' ? <Square size={22} /> : <Play size={22} />}</span><div><strong>{timerAction?.mode === 'stop' ? 'Confirma o horário final' : 'Confirma o horário inicial'} do serviço {timerAction?.serviceDescription}?</strong><small><UserRound size={13} /> {timerAction?.employeeName}</small></div></div>
+        <FormField label={timerAction?.mode === 'stop' ? 'Data e hora final' : 'Data e hora inicial'}><input type="datetime-local" value={timerDateTime} onChange={(event) => setTimerDateTime(event.target.value)} required /></FormField>
+      </ModalForm>
+    </Modal>
 
     <Modal open={modalOpen} onClose={() => !saveMutation.isPending && setModalOpen(false)} title={selected ? `Editar OS-${selected.id}` : 'Nova ordem de serviço'} description="Preenchimento baseado na tela operacional do sistema Delphi." size="xlarge">
       <ServiceOrderForm key={formKey} selected={selected} catalog={catalogQuery.data?.content ?? []} formError={formError} submitting={saveMutation.isPending} onCancel={() => setModalOpen(false)} onDelete={(id) => setOrderToDelete(id)} onNotify={showToast} onSubmit={(payload) => saveMutation.mutate({ id: selected?.id, payload })} />
@@ -757,6 +881,19 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     }))
   }
 
+  function selectScheduleService(index: number, serviceId: number | null) {
+    updateSchedule(index, { serviceId })
+    if (serviceId != null) {
+      const service = catalog.find((item) => item.id === serviceId)
+      if (service) {
+        setServiceItems((current) => current.some((item) => item.serviceId === serviceId)
+          ? current
+          : [...current, serviceDraft(service)])
+      }
+    }
+    setScheduleError('')
+  }
+
   function addMaterial() {
     const material = materialOptions.find((item) => item.id === Number(materialToAdd))
     if (!material) {
@@ -939,7 +1076,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
             <td><input type="time" value={item.expectedEnd || ''} onChange={(event) => updateSchedule(index, { expectedEnd: event.target.value })} /></td>
             <td><input value={item.expectedDuration || '00:00'} readOnly /></td>
             <td><div className="os-employee-cell"><button type="button" className="os-employee-picker-trigger" onClick={() => openEmployeePicker(index)} title="Buscar funcionário"><Search size={14} /><span><strong>{scheduleEmployeeDisplay(item)}</strong>{item.employeeId && <small>{[item.employeePosition, item.employeePhone, `#${item.employeeId}`].filter(Boolean).join(' · ')}</small>}</span></button>{item.employeeId && <button type="button" className="os-employee-clear" onClick={() => clearEmployee(index)} aria-label={`Remover ${scheduleEmployeeDisplay(item)} do agendamento`}><X size={13} /></button>}</div></td>
-            <td><select value={item.serviceId ?? ''} onChange={(event) => updateSchedule(index, { serviceId: event.target.value ? Number(event.target.value) : null })} disabled={!serviceItems.length} required={serviceItems.length > 0}><option value="">{serviceItems.length ? 'Selecione' : 'Adicione um serviço'}</option>{serviceItems.map((service) => <option key={service.serviceId} value={service.serviceId}>{catalog.find((option) => option.id === service.serviceId)?.description || `Serviço #${service.serviceId}`}</option>)}</select></td>
+            <td><select value={item.serviceId ?? ''} onChange={(event) => selectScheduleService(index, event.target.value ? Number(event.target.value) : null)} disabled={!catalog.length} required={serviceItems.length > 0}><option value="">{catalog.length ? 'Selecione um serviço' : 'Nenhum serviço cadastrado'}</option>{catalog.map((service) => <option key={service.id} value={service.id}>{service.description || `Serviço #${service.id}`}</option>)}</select></td>
             <td><input type="date" value={toDateInput(item.actualDate)} onChange={(event) => updateSchedule(index, { actualDate: event.target.value ? dateTime(event.target.value) : null })} required={actualRequired} /></td>
             <td><input type="time" value={item.actualStart || ''} onChange={(event) => updateSchedule(index, { actualStart: event.target.value })} required={actualRequired} /></td>
             <td><input type="time" value={item.actualEnd || ''} onChange={(event) => updateSchedule(index, { actualEnd: event.target.value })} required={actualRequired} /></td>
@@ -1095,11 +1232,12 @@ function ServiceOrderDetail({ order, catalog }: { order: ServiceOrder; catalog: 
       <section className="drawer-section"><h3>Valores</h3><dl><div><dt>Serviços</dt><dd>{money(order.vlhorar)}</dd></div><div><dt>Materiais</dt><dd>{money(order.vlmater)}</dd></div><div><dt>Transporte / aluguel</dt><dd>{money(numberValue(order.vltrans) + numberValue(order.vlalug))}</dd></div><div><dt>Desconto</dt><dd>{order.vldesco ?? 0}%</dd></div></dl></section>
       {order.flordem === 'C' && <section className="drawer-section drawer-section--wide"><h3>Consumo mensal do contrato</h3><dl><div><dt>Horas contratadas</dt><dd>{order.sdcontr || '00:00'}</dd></div><div><dt>Utilizado antes desta OS</dt><dd>{order.sdanter || '00:00'}</dd></div><div><dt>Utilizado no mês</dt><dd>{order.sdutili || '00:00'}</dd></div><div><dt>Saldo do mês</dt><dd>{order.sdfinal || '00:00'}</dd></div><div><dt>Excedente</dt><dd>{order.sdexced || '00:00'}</dd></div></dl></section>}
       <section className="drawer-section drawer-section--wide"><h3>Descrição e observações</h3><p className="drawer-section__text">{order.dsdescr || order.description || 'Descrição não informada'}</p>{order.dsobser && <p className="drawer-section__text detail-text-spaced">{order.dsobser}</p>}{order.dscancel && <p className="drawer-section__text detail-text-spaced"><strong>Cancelamento:</strong> {order.dscancel}</p>}</section>
+      <section className="drawer-section drawer-section--wide"><h3>Acompanhamento dos atendimentos</h3>{order.trackingDetails?.length ? <div className="detail-list-grid">{order.trackingDetails.map((tracking) => <span key={tracking.id} className={tracking.running ? 'tracking-detail--running' : ''}><strong>{tracking.serviceDescription} · {tracking.running ? <>Em andamento: <LiveElapsed startedAt={tracking.startedAt} /></> : tracking.duration || '00:00'}</strong><small>Funcionário: {tracking.employeeName} · Início: {formatDate(tracking.startedAt)} às {tracking.startTime} · Final: {tracking.endTime || '--:--'}</small></span>)}</div> : <p className="drawer-section__text">Nenhum acompanhamento iniciado.</p>}</section>
       <section className="drawer-section drawer-section--wide"><h3>Agendamentos</h3>{order.schedules?.length ? <div className="detail-list-grid">{order.schedules.map((item) => {
         const serviceName = catalog.find((service) => service.id === item.serviceId)?.description
         return <span key={item.scheduleId}><strong>Previsto: {formatDate(item.expectedDate)} · {item.expectedStart || '--:--'}–{item.expectedEnd || '--:--'}</strong><small>Funcionário: {item.employeeName || item.employeeNickname || (item.employeeId ? `#${item.employeeId}` : 'Aguardando')}{item.employeePosition ? ` · ${item.employeePosition}` : ''}{item.employeePhone ? ` · ${item.employeePhone}` : ''} · Serviço: {serviceName || (item.serviceId ? `#${item.serviceId}` : 'não vinculado')} · Realizado: {item.actualDate ? formatDate(item.actualDate) : 'sem data'} · {item.actualStart || '--:--'}–{item.actualEnd || '--:--'} ({item.actualDuration || '00:00'})</small></span>
       })}</div> : <p className="drawer-section__text">Nenhum agendamento vinculado.</p>}</section>
-      <section className="drawer-section drawer-section--wide"><h3>Serviços</h3>{order.serviceItems?.length ? <div className="detail-list-grid">{order.serviceItems.map((item) => <span key={item.serviceId}><strong>{catalog.find((service) => service.id === item.serviceId)?.description || `Serviço #${item.serviceId}`}</strong><small>Horas oficiais: {item.hours || '00:00'} · {item.quantity || 0} × {money(item.unitValue)} · Total {money(item.totalValue)}</small></span>)}</div> : <p className="drawer-section__text">Nenhum serviço vinculado.</p>}</section>
+      <section className="drawer-section drawer-section--wide"><h3>Serviços</h3>{order.serviceItems?.length ? <div className="detail-list-grid">{order.serviceItems.map((item) => <span key={item.serviceId}><strong>{catalog.find((service) => service.id === item.serviceId)?.description || `Serviço #${item.serviceId}`}</strong><small>Horas oficiais: {item.hours || '00:00'} · {item.quantity || 0} × {money(item.unitValue)} · Total {money(item.totalValue)}</small></span>)}</div> : <p className="drawer-section__text service-description-empty">NENHUM SERVIÇO VINCULADO</p>}</section>
       <section className="drawer-section drawer-section--wide"><h3>Pedido de compra</h3>{order.materialOrder ? <><dl><div><dt>Pedido</dt><dd>#{order.materialOrder.id}</dd></div><div><dt>Fornecedor</dt><dd>{order.materialOrder.supplierTradeName || order.materialOrder.supplierName || `#${order.materialOrder.supplierId}`}</dd></div><div><dt>Data de entrada</dt><dd>{formatDate(order.materialOrder.entryDate)}</dd></div><div><dt>Total líquido</dt><dd>{money(order.materialOrder.netValue)}</dd></div></dl>{order.materialOrder.items?.length ? <div className="detail-list-grid detail-purchase-items">{order.materialOrder.items.map((item) => <span key={`${item.purchaseOrderId}-${item.itemId}`}><strong>{item.materialDescription || `Material #${item.materialId}`}</strong><small>{item.quantity || 0} {item.materialUnit || 'UN'} × {money(item.unitValue)} · Total {money(item.totalValue)}</small></span>)}</div> : <p className="drawer-section__text detail-text-spaced">Nenhum item vinculado ao pedido.</p>}</> : <p className="drawer-section__text">Nenhum pedido de compra vinculado.</p>}</section>
     </div>
   </div>

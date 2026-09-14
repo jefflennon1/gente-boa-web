@@ -520,6 +520,22 @@ export interface ServiceOrderServiceItem {
   minuteValue?: number | null
 }
 
+export interface ServiceOrderTracking {
+  id: number
+  serviceOrderId: number
+  scheduleId: number | null
+  serviceId: number | null
+  employeeId: number | null
+  employeeName: string
+  serviceDescription: string
+  startedAt: ISODateTime | null
+  endedAt: ISODateTime | null
+  startTime: string | null
+  endTime: string | null
+  duration: string | null
+  running: boolean
+}
+
 export interface ServiceOrderListItem {
   id: number
   orderedAt: ISODateTime
@@ -532,6 +548,8 @@ export interface ServiceOrderListItem {
   description: string | null
   totalValue: number | null
   priority: Priority
+  tracking?: ServiceOrderTracking | null
+  serviceDescriptions: string[]
 }
 
 export interface ServiceOrder {
@@ -600,6 +618,7 @@ export interface ServiceOrder {
   schedules?: ServiceOrderSchedule[] | null
   serviceItems?: ServiceOrderServiceItem[] | null
   materialOrder?: ServiceOrderMaterialOrder | null
+  trackingDetails?: ServiceOrderTracking[] | null
 }
 
 export type ServiceOrderPayload = Partial<Omit<ServiceOrder, 'id' | 'code' | 'client' | 'clientName'>> & {

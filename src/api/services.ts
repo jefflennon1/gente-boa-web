@@ -31,6 +31,7 @@ import type {
   PagedResponse,
   ServiceOrder,
   ServiceOrderListItem,
+  ServiceOrderTracking,
   ServiceOrderStatus,
   ServiceOrderPayload,
   ServiceCatalogItem,
@@ -287,6 +288,14 @@ export const api = {
     },
     async updateStatus(id: number, status: ServiceOrderStatus) {
       const { data } = await http.put<ServiceOrder>(`/service-orders/${id}/status`, null, { params: { status } })
+      return data
+    },
+    async startTracking(id: number, payload: { scheduleId: number; serviceId?: number | null; employeeId?: number | null; startedAt: string }) {
+      const { data } = await http.post<ServiceOrderTracking>(`/service-orders/${id}/tracking/start`, payload)
+      return data
+    },
+    async stopTracking(id: number, trackingId: number, endedAt: string) {
+      const { data } = await http.put<ServiceOrderTracking>(`/service-orders/${id}/tracking/${trackingId}/stop`, { endedAt })
       return data
     },
     async remove(id: number) {
