@@ -22,6 +22,7 @@ import type {
   ClientEmailPayload,
   Invoice,
   InvoicePayload,
+  IssuerCompanyProfile,
   NfseCancelPayload,
   NfseIntegrationStatus,
   Employee,
@@ -355,6 +356,12 @@ export const api = {
       return data
     },
   },
+  companyProfile: {
+    async find() {
+      const { data } = await http.get<IssuerCompanyProfile>('/company-profile')
+      return data
+    },
+  },
   statements: resource<Statement, StatementPayload>('/statements'),
   users: resource<AppUser, CreateUserPayload | UpdateUserPayload>('/users'),
 }
@@ -372,6 +379,7 @@ export const queryKeys = {
   suppliers: ['suppliers'] as const,
   serviceOrders: ['service-orders'] as const,
   invoices: ['invoices'] as const,
+  companyProfile: ['company-profile'] as const,
   statements: ['statements'] as const,
   users: ['users'] as const,
 }

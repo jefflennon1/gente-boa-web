@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -27,10 +27,12 @@ import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money, toDateInput } from '../lib/format'
 import type {
+  Client,
   ClientSearchOption,
   Invoice,
   InvoicePayload,
   InvoiceStatus,
+  IssuerCompanyProfile,
   NfseCancelPayload,
 } from '../types'
 import {
@@ -97,6 +99,11 @@ function clientAddress(client: ClientSearchOption) {
     .join(' · ')
 }
 
+function currencyInputValue(value: FormDataEntryValue | null) {
+  const digits = String(value || '').replace(/\D/g, '')
+  return digits ? Number(digits) / 100 : 0
+}
+
 function invoiceClient(invoice: Invoice): ClientSearchOption | null {
   if (!invoice.clientId) return null
   return {
@@ -135,6 +142,7 @@ export function NationalInvoices() {
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [formInvoice, setFormInvoice] = useState<Invoice | null | undefined>(undefined)
   const [selectedClient, setSelectedClient] = useState<ClientSearchOption | null>(null)
+  const [customerCityCode, setCustomerCityCode] = useState('')
   const [clientPickerOpen, setClientPickerOpen] = useState(false)
   const [clientSearch, setClientSearch] = useState('')
   const [detail, setDetail] = useState<Invoice | null>(null)
@@ -155,11 +163,33 @@ export function NationalInvoices() {
     queryKey: [...queryKeys.invoices, 'integration-status'],
     queryFn: api.invoices.integrationStatus,
   })
+  const companyProfileQuery = useQuery({
+    queryKey: queryKeys.companyProfile,
+    queryFn: api.companyProfile.find,
+  })
   const clientOptionsQuery = useQuery({
     queryKey: [...queryKeys.clients, 'search', debouncedClientSearch],
     queryFn: () => api.clients.search(debouncedClientSearch),
     enabled: clientPickerOpen && clientSearchReady,
   })
+  const selectedClientDetailsQuery = useQuery({
+    queryKey: [...queryKeys.clients, 'invoice-details', selectedClient?.id],
+    queryFn: () => api.clients.find(selectedClient!.id),
+    enabled: Boolean(selectedClient?.id),
+  })
+
+  useEffect(() => {
+    if (customerCityCode || !selectedClient) return
+    const zipCode = (selectedClientDetailsQuery.data?.nrcep || selectedClient.zipCode || '').replace(/\D/g, '')
+    if (zipCode.length !== 8) return
+    let active = true
+    api.addresses.findByCep(zipCode)
+      .then((address) => {
+        if (active && address.ibge) setCustomerCityCode(address.ibge)
+      })
+      .catch(() => undefined)
+    return () => { active = false }
+  }, [customerCityCode, selectedClient, selectedClientDetailsQuery.data])
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: queryKeys.invoices })
   const showToast = (message: string, variant: 'success' | 'error' = 'success') => {
@@ -175,6 +205,7 @@ export function NationalInvoices() {
       await invalidate()
       setFormInvoice(undefined)
       setSelectedClient(null)
+      setCustomerCityCode('')
       setDetail(null)
       showToast(variables.id ? 'Documento fiscal atualizado.' : 'Documento fiscal cadastrado.')
     },
@@ -254,12 +285,14 @@ export function NationalInvoices() {
   function openNew() {
     setFormError('')
     setSelectedClient(null)
+    setCustomerCityCode('')
     setFormInvoice(null)
   }
 
   function openEdit(invoice: Invoice) {
     setFormError('')
     setSelectedClient(invoiceClient(invoice))
+    setCustomerCityCode(invoice.customerCityCode || '')
     setDetail(null)
     setFormInvoice(invoice)
   }
@@ -271,6 +304,7 @@ export function NationalInvoices() {
 
   function selectClient(client: ClientSearchOption) {
     setSelectedClient(client)
+    setCustomerCityCode('')
     setClientPickerOpen(false)
     setClientSearch('')
   }
@@ -291,13 +325,26 @@ export function NationalInvoices() {
     const payload: InvoicePayload = {
       clientId: selectedClient.id,
       competence: String(data.get('competence')),
-      amount: Number(data.get('amount') || 0),
+      amount: currencyInputValue(data.get('amount')),
       unconditionalDiscount: Number(data.get('unconditionalDiscount') || 0),
       deductionValue: Number(data.get('deductionValue') || 0),
       issRate: Number(data.get('issRate') || 0),
       issRetained: data.get('issRetained') === 'true',
       serviceCityCode: String(data.get('serviceCityCode')).trim(),
       customerCityCode: String(data.get('customerCityCode')).trim(),
+      customerDocument: String(data.get('customerDocument') || '').trim(),
+      customerName: String(data.get('customerName') || '').trim(),
+      customerMunicipalRegistration: String(data.get('customerMunicipalRegistration') || '').trim(),
+      customerZipCode: String(data.get('customerZipCode') || '').trim(),
+      customerStreet: String(data.get('customerStreet') || '').trim(),
+      customerNumber: String(data.get('customerNumber') || '').trim(),
+      customerComplement: String(data.get('customerComplement') || '').trim(),
+      customerDistrict: String(data.get('customerDistrict') || '').trim(),
+      customerCity: String(data.get('customerCity') || '').trim(),
+      customerState: String(data.get('customerState') || '').trim(),
+      customerPhone: String(data.get('customerPhone') || '').trim(),
+      customerEmail: String(data.get('customerEmail') || '').trim(),
+      issuerCnae: String(data.get('issuerCnae')).trim(),
       nationalServiceCode: String(data.get('nationalServiceCode')).trim(),
       municipalServiceCode: String(data.get('municipalServiceCode')).trim(),
       nbsCode: String(data.get('nbsCode')).trim(),
@@ -306,6 +353,15 @@ export function NationalInvoices() {
       notes: String(data.get('notes')).trim(),
       laborAmount: Number(data.get('laborAmount') || 0),
       materialAmount: Number(data.get('materialAmount') || 0),
+      conditionalDiscount: Number(data.get('conditionalDiscount') || 0),
+      pisCofinsCst: String(data.get('pisCofinsCst')).trim(),
+      pisCofinsWithholdingType: String(data.get('pisCofinsWithholdingType')).trim(),
+      pisCofinsBase: Number(data.get('pisCofinsBase') || 0),
+      pisValue: Number(data.get('pisValue') || 0),
+      cofinsValue: Number(data.get('cofinsValue') || 0),
+      retainedInss: Number(data.get('retainedInss') || 0),
+      retainedIrrf: Number(data.get('retainedIrrf') || 0),
+      retainedCsll: Number(data.get('retainedCsll') || 0),
       status: String(data.get('status')) as InvoiceStatus,
       replacedAccessKey: String(data.get('replacedAccessKey')).trim(),
       replacementReasonCode: String(data.get('replacementReasonCode')).trim(),
@@ -335,6 +391,7 @@ export function NationalInvoices() {
   }
 
   const integration = integrationQuery.data
+  const companyProfile = companyProfileQuery.data
   const integrationLabel = integration?.environment === 'PRODUCAO' ? 'Produção' : 'Produção restrita'
 
   return (
@@ -432,42 +489,82 @@ export function NationalInvoices() {
       <Modal open={formInvoice !== undefined} onClose={() => !saveMutation.isPending && setFormInvoice(undefined)} title={formInvoice ? `Editar ${invoiceCode(formInvoice)}` : 'Nova nota fiscal'} description="Prepare e valide a DPS antes do envio ao Emissor Nacional." size="xlarge">
         <ModalForm onSubmit={submit} onCancel={() => setFormInvoice(undefined)} submitting={saveMutation.isPending} submitLabel={saveMutation.isPending ? 'Salvando...' : formInvoice ? 'Salvar alterações' : 'Cadastrar documento'}>
           <FormError message={formError} />
-          <div className="form-section-title"><span>1</span><div><strong>Tomador e competência</strong><small>O cadastro do cliente fornece documento e endereço da NFS-e</small></div></div>
-          <div className="form-grid form-grid--two">
-            <FormField label="Cliente">
-              <button type="button" className="os-client-modal-trigger" onClick={openClientPicker}><Search size={16} /><span><strong>{selectedClient ? clientDisplay(selectedClient) : 'Pesquisar cliente'}</strong><small>{selectedClient ? `Código #${selectedClient.id} · ${selectedClient.document || 'sem CPF/CNPJ'}` : 'Nome fantasia, razão social ou código'}</small></span></button>
-            </FormField>
-            <FormField label="Competência"><input name="competence" type="date" required defaultValue={toDateInput(formInvoice?.competence) || new Date().toISOString().slice(0, 10)} /></FormField>
-            <FormField label="Município da prestação (IBGE)" hint="Fortaleza: 2304400"><input name="serviceCityCode" inputMode="numeric" maxLength={7} required defaultValue={formInvoice?.serviceCityCode || '2304400'} /></FormField>
-            <FormField label="Município do tomador (IBGE)"><input name="customerCityCode" inputMode="numeric" maxLength={7} required defaultValue={formInvoice?.customerCityCode || '2304400'} /></FormField>
-          </div>
+          <section className="nfse-form-section">
+            <div className="form-section-title"><span>1</span><div><strong>Dados do prestador</strong><small>Empresa responsável pela emissão da nota fiscal</small></div></div>
+            <IssuerCompanySummary profile={companyProfile} loading={companyProfileQuery.isLoading} error={companyProfileQuery.isError} />
+          </section>
 
-          <div className="form-section-title"><span>2</span><div><strong>Serviço nacional</strong><small>Códigos e discriminação transmitidos na DPS</small></div></div>
-          <div className="form-grid form-grid--three">
-            <FormField label="Código nacional de tributação" hint="6 dígitos conforme catálogo nacional"><input name="nationalServiceCode" inputMode="numeric" maxLength={6} required defaultValue={formInvoice?.nationalServiceCode || ''} /></FormField>
+          <section className="nfse-form-section">
+            <div className="form-section-title"><span>2</span><div><strong>Dados do cliente</strong><small>Cliente para quem a nota fiscal será emitida</small></div></div>
+            <div className="form-grid form-grid--two">
+              <FormField label="Cliente *">
+                <button type="button" className="os-client-modal-trigger" onClick={openClientPicker}><Search size={16} /><span><strong>{selectedClient ? clientDisplay(selectedClient) : 'Pesquisar cliente'}</strong><small>{selectedClient ? `Código #${selectedClient.id} · ${selectedClient.document || 'sem CPF/CNPJ'}` : 'Nome fantasia, razão social ou código'}</small></span></button>
+              </FormField>
+              <FormField label="Município do cliente (IBGE) *" hint="Preenchido pelo CEP; confirme antes de emitir"><input name="customerCityCode" inputMode="numeric" maxLength={7} required value={customerCityCode} onChange={(event) => setCustomerCityCode(event.target.value.replace(/\D/g, '').slice(0, 7))} /></FormField>
+            </div>
+            {selectedClient && <ClientInvoiceFields key={`${selectedClient.id}-${formInvoice?.id || 'new'}`} client={selectedClientDetailsQuery.data} fallback={selectedClient} invoice={formInvoice} loading={selectedClientDetailsQuery.isLoading} />}
+          </section>
+
+          <section className="nfse-form-section">
+            <div className="form-section-title"><span>3</span><div><strong>Dados do serviço</strong><small>Tributação, descrição, valores e demais informações do serviço prestado</small></div></div>
+            <div className="form-grid form-grid--two">
+              <FormField label="Competência *"><input name="competence" type="date" required defaultValue={toDateInput(formInvoice?.competence) || new Date().toISOString().slice(0, 10)} /></FormField>
+              <FormField label="Município da prestação (IBGE) *" hint="Fortaleza: 2304400"><input name="serviceCityCode" inputMode="numeric" maxLength={7} required defaultValue={formInvoice?.serviceCityCode || companyProfile?.cityCode || '2304400'} /></FormField>
+            </div>
+            <div className="nfse-form-subtitle"><strong>Classificação tributária</strong><small>Códigos transmitidos na DPS</small></div>
+            <div className="form-grid form-grid--two">
+            <FormField label="Atividade do prestador (CNAE) *" hint="Escolha a atividade da Gente Boa relacionada ao serviço">
+              <select name="issuerCnae" required defaultValue={formInvoice?.issuerCnae || companyProfile?.primaryCnae || ''} disabled={!companyProfile}>
+                <option value="">Selecione o CNAE</option>
+                {companyProfile && <option value={companyProfile.primaryCnae}>{companyProfile.primaryCnae} · {companyProfile.primaryActivityDescription} (principal)</option>}
+                {(companyProfile?.secondaryCnaes || []).map((item) => <option key={item.id} value={item.cnaeCode}>{item.cnaeCode} · {item.description}</option>)}
+              </select>
+            </FormField>
+            <FormField label="Código nacional de tributação *" hint="Selecione conforme o serviço efetivamente prestado">
+              <select name="nationalServiceCode" required defaultValue={formInvoice?.nationalServiceCode || ''} disabled={!companyProfile?.nationalTaxCodes.length}>
+                <option value="">Selecione o código nacional</option>
+                {(companyProfile?.nationalTaxCodes || []).map((item) => <option key={item.id} value={item.code}>{item.code} · {item.description}</option>)}
+              </select>
+            </FormField>
             <FormField label="Código municipal" hint="3 dígitos"><input name="municipalServiceCode" inputMode="numeric" maxLength={3} defaultValue={formInvoice?.municipalServiceCode || ''} /></FormField>
             <FormField label="Código NBS"><input name="nbsCode" inputMode="numeric" maxLength={9} defaultValue={formInvoice?.nbsCode || ''} /></FormField>
-          </div>
-          <FormField label="Discriminação do serviço"><textarea name="serviceDescription" rows={4} maxLength={2000} required defaultValue={formInvoice?.serviceDescription || ''} /></FormField>
-
-          <div className="form-section-title"><span>3</span><div><strong>Valores e ISS</strong><small>Base econômica que será enviada ao ambiente nacional</small></div></div>
-          <div className="form-grid form-grid--four">
-            <FormField label="Valor do serviço"><input name="amount" type="number" min="0.01" step="0.01" required defaultValue={formInvoice?.amount || 0} /></FormField>
-            <FormField label="Desconto incondicionado"><input name="unconditionalDiscount" type="number" min="0" step="0.01" defaultValue={formInvoice?.unconditionalDiscount || 0} /></FormField>
-            <FormField label="Dedução"><input name="deductionValue" type="number" min="0" step="0.01" defaultValue={formInvoice?.deductionValue || 0} /></FormField>
-            <FormField label="Alíquota ISS (%)"><input name="issRate" type="number" min="0" step="0.01" defaultValue={formInvoice?.tax ? (formInvoice.tax / Math.max(formInvoice.amount, 1)) * 100 : 0} /></FormField>
-            <FormField label="ISS retido"><select name="issRetained" defaultValue={String(formInvoice?.issRetained || false)}><option value="false">Não</option><option value="true">Sim</option></select></FormField>
-            <FormField label="Mão de obra"><input name="laborAmount" type="number" min="0" step="0.01" defaultValue={formInvoice?.laborAmount || 0} /></FormField>
-            <FormField label="Materiais"><input name="materialAmount" type="number" min="0" step="0.01" defaultValue={formInvoice?.materialAmount || 0} /></FormField>
-            <FormField label="Preparação"><select name="status" defaultValue={formInvoice?.status === 'REJEITADA' ? 'REVISAR' : formInvoice?.status || 'RASCUNHO'}><option value="RASCUNHO">Rascunho</option><option value="REVISAR">Revisar</option><option value="PRONTA">Pronta para emitir</option></select></FormField>
-          </div>
-          <div className="form-grid form-grid--two">
+            </div>
+            <FormField label="Discriminação do serviço *"><textarea name="serviceDescription" rows={4} maxLength={2000} required defaultValue={formInvoice?.serviceDescription || ''} /></FormField>
+            <div className="form-grid form-grid--two">
             <FormField label="Natureza da operação"><input name="nature" maxLength={100} defaultValue={formInvoice?.nature || ''} /></FormField>
             <FormField label="Observações internas"><textarea name="notes" rows={2} maxLength={2000} defaultValue={formInvoice?.notes || ''} /></FormField>
-          </div>
+            </div>
 
-          <details className="nfse-replacement-fields"><summary>Substituição de NFS-e anterior</summary><div className="form-grid form-grid--three"><FormField label="Chave substituída"><input name="replacedAccessKey" maxLength={50} defaultValue={formInvoice?.replacedAccessKey || ''} /></FormField><FormField label="Código do motivo"><input name="replacementReasonCode" maxLength={2} defaultValue={formInvoice?.replacementReasonCode || ''} /></FormField><FormField label="Motivo"><input name="replacementReason" maxLength={255} defaultValue={formInvoice?.replacementReason || ''} /></FormField></div></details>
-          <details className="nfse-replacement-fields"><summary>Informações IBS/CBS (leiaute 2026)</summary><div className="form-grid form-grid--three"><FormField label="Informar IBS/CBS"><select name="ibsCbsApplicable" defaultValue={String(formInvoice?.ibsCbsApplicable || false)}><option value="false">Não</option><option value="true">Sim</option></select></FormField><FormField label="Consumidor final"><select name="ibsCbsFinalConsumer" defaultValue={formInvoice?.ibsCbsFinalConsumer || '0'}><option value="0">Não</option><option value="1">Sim</option></select></FormField><FormField label="Destinatário é o tomador"><select name="ibsCbsDestinationIndicator" defaultValue={formInvoice?.ibsCbsDestinationIndicator || '0'}><option value="0">Sim</option><option value="1">Não</option></select></FormField><FormField label="Indicador da operação" hint="6 dígitos do Anexo C"><input name="ibsCbsOperationIndicator" inputMode="numeric" maxLength={6} defaultValue={formInvoice?.ibsCbsOperationIndicator || ''} /></FormField><FormField label="CST IBS/CBS"><input name="ibsCbsCst" inputMode="numeric" maxLength={3} defaultValue={formInvoice?.ibsCbsCst || ''} /></FormField><FormField label="Classificação tributária"><input name="ibsCbsTaxClassification" inputMode="numeric" maxLength={6} defaultValue={formInvoice?.ibsCbsTaxClassification || ''} /></FormField></div></details>
+            <details className="nfse-replacement-fields"><summary>Substituição de NFS-e anterior</summary><div className="form-grid form-grid--three"><FormField label="Chave substituída"><input name="replacedAccessKey" maxLength={50} defaultValue={formInvoice?.replacedAccessKey || ''} /></FormField><FormField label="Código do motivo"><input name="replacementReasonCode" maxLength={2} defaultValue={formInvoice?.replacementReasonCode || ''} /></FormField><FormField label="Motivo"><input name="replacementReason" maxLength={255} defaultValue={formInvoice?.replacementReason || ''} /></FormField></div></details>
+            <details className="nfse-replacement-fields"><summary>Informações IBS/CBS (leiaute 2026)</summary><div className="form-grid form-grid--three"><FormField label="Informar IBS/CBS"><select name="ibsCbsApplicable" defaultValue={String(formInvoice?.ibsCbsApplicable || false)}><option value="false">Não</option><option value="true">Sim</option></select></FormField><FormField label="Consumidor final"><select name="ibsCbsFinalConsumer" defaultValue={formInvoice?.ibsCbsFinalConsumer || '0'}><option value="0">Não</option><option value="1">Sim</option></select></FormField><FormField label="Destinatário é o tomador"><select name="ibsCbsDestinationIndicator" defaultValue={formInvoice?.ibsCbsDestinationIndicator || '0'}><option value="0">Sim</option><option value="1">Não</option></select></FormField><FormField label="Indicador da operação" hint="6 dígitos do Anexo C"><input name="ibsCbsOperationIndicator" inputMode="numeric" maxLength={6} defaultValue={formInvoice?.ibsCbsOperationIndicator || ''} /></FormField><FormField label="CST IBS/CBS"><input name="ibsCbsCst" inputMode="numeric" maxLength={3} defaultValue={formInvoice?.ibsCbsCst || ''} /></FormField><FormField label="Classificação tributária"><input name="ibsCbsTaxClassification" inputMode="numeric" maxLength={6} defaultValue={formInvoice?.ibsCbsTaxClassification || ''} /></FormField></div></details>
+          </section>
+
+          <section className="nfse-form-section">
+            <div className="form-section-title"><span>4</span><div><strong>Valores e tributos</strong><small>Valores do serviço, ISS e retenções federais transmitidos na DPS</small></div></div>
+            <div className="nfse-form-subtitle"><strong>Valores do serviço</strong><small>Campos com * são obrigatórios</small></div>
+            <div className="form-grid form-grid--four">
+              <FormField label="Valor do serviço *"><CurrencyInput name="amount" initialValue={formInvoice?.amount || 0} required /></FormField>
+              <FormField label="Dedução"><input name="deductionValue" type="number" min="0" step="0.01" defaultValue={formInvoice?.deductionValue || 0} /></FormField>
+              <FormField label="Desconto incondicionado"><input name="unconditionalDiscount" type="number" min="0" step="0.01" defaultValue={formInvoice?.unconditionalDiscount || 0} /></FormField>
+              <FormField label="Desconto condicionado"><input name="conditionalDiscount" type="number" min="0" step="0.01" defaultValue={formInvoice?.conditionalDiscount || 0} /></FormField>
+              <FormField label="Alíquota ISS (%)"><input name="issRate" type="number" min="0" step="0.01" defaultValue={formInvoice?.tax ? (formInvoice.tax / Math.max(formInvoice.amount, 1)) * 100 : 0} /></FormField>
+              <FormField label="ISS retido"><select name="issRetained" defaultValue={String(formInvoice?.issRetained || false)}><option value="false">Não</option><option value="true">Sim</option></select></FormField>
+              <FormField label="Mão de obra"><input name="laborAmount" type="number" min="0" step="0.01" defaultValue={formInvoice?.laborAmount || 0} /></FormField>
+              <FormField label="Materiais"><input name="materialAmount" type="number" min="0" step="0.01" defaultValue={formInvoice?.materialAmount || 0} /></FormField>
+            </div>
+            <div className="nfse-form-subtitle"><strong>Tributos federais</strong><small>Preencha somente quando aplicável à operação</small></div>
+            <div className="form-grid form-grid--four">
+              <FormField label="CST PIS/COFINS"><input name="pisCofinsCst" inputMode="numeric" maxLength={2} defaultValue={formInvoice?.pisCofinsCst || ''} /></FormField>
+              <FormField label="Tipo de retenção PIS/COFINS"><select name="pisCofinsWithholdingType" defaultValue={formInvoice?.pisCofinsWithholdingType || ''}><option value="">Não informar</option><option value="0">PIS/COFINS/CSLL não retidos</option><option value="1">PIS/COFINS retidos</option><option value="2">PIS/COFINS não retidos</option><option value="3">PIS/COFINS/CSLL retidos</option><option value="4">PIS/COFINS retidos; CSLL não</option><option value="5">Somente PIS retido</option><option value="6">Somente COFINS retido</option><option value="7">COFINS/CSLL retidos</option><option value="8">Somente CSLL retido</option><option value="9">PIS/CSLL retidos</option></select></FormField>
+              <FormField label="Base PIS/COFINS"><input name="pisCofinsBase" type="number" min="0" step="0.01" defaultValue={formInvoice?.pisCofinsBase || 0} /></FormField>
+              <FormField label="PIS"><input name="pisValue" type="number" min="0" step="0.01" defaultValue={formInvoice?.pisValue || 0} /></FormField>
+              <FormField label="COFINS"><input name="cofinsValue" type="number" min="0" step="0.01" defaultValue={formInvoice?.cofinsValue || 0} /></FormField>
+              <FormField label="INSS/CP retido"><input name="retainedInss" type="number" min="0" step="0.01" defaultValue={formInvoice?.retainedInss || 0} /></FormField>
+              <FormField label="IRRF retido"><input name="retainedIrrf" type="number" min="0" step="0.01" defaultValue={formInvoice?.retainedIrrf || 0} /></FormField>
+              <FormField label="CSLL retido"><input name="retainedCsll" type="number" min="0" step="0.01" defaultValue={formInvoice?.retainedCsll || 0} /></FormField>
+              <FormField label="Preparação"><select name="status" defaultValue={formInvoice?.status === 'REJEITADA' ? 'REVISAR' : formInvoice?.status || 'RASCUNHO'}><option value="RASCUNHO">Rascunho</option><option value="REVISAR">Revisar</option><option value="PRONTA">Pronta para emitir</option></select></FormField>
+            </div>
+          </section>
         </ModalForm>
       </Modal>
 
@@ -506,9 +603,67 @@ function InvoiceDetail({ invoice }: { invoice: Invoice }) {
     <div className="detail-metrics"><span><small>Competência</small><strong>{formatDate(invoice.competence)}</strong></span><span><small>Valor do serviço</small><strong>{money(invoice.amount)}</strong></span><span><small>ISS</small><strong>{money(invoice.tax)}</strong></span><span><small>Tentativas</small><strong>{invoice.attempts || 0}</strong></span></div>
     <div className="detail-sections-grid">
       <section className="drawer-section"><h3>Identificação nacional</h3><dl><div><dt>Número da NFS-e</dt><dd>{invoice.number || 'Ainda não autorizado'}</dd></div><div><dt>Chave de acesso</dt><dd className="nfse-long-value">{invoice.accessKey || 'Não disponível'}</dd></div><div><dt>DPS</dt><dd>{invoice.dpsId || 'Ainda não numerada'}</dd></div><div><dt>Ambiente / layout</dt><dd>{invoice.environment ? `${enumLabel(invoice.environment)} · ${invoice.layoutVersion}` : 'Registro legado'}</dd></div></dl></section>
-      <section className="drawer-section"><h3>Tributação do serviço</h3><dl><div><dt>Código nacional</dt><dd>{invoice.nationalServiceCode || 'Não informado'}</dd></div><div><dt>Código municipal</dt><dd>{invoice.municipalServiceCode || 'Não informado'}</dd></div><div><dt>Município da prestação</dt><dd>{invoice.serviceCityCode || 'Não informado'}</dd></div><div><dt>ISS retido</dt><dd>{invoice.issRetained ? 'Sim' : 'Não'}</dd></div></dl></section>
+      <section className="drawer-section"><h3>Tributação do serviço</h3><dl><div><dt>CNAE do prestador</dt><dd>{invoice.issuerCnae || 'Não informado'}</dd></div><div><dt>Código nacional</dt><dd>{invoice.nationalServiceCode || 'Não informado'}</dd></div><div><dt>Código municipal</dt><dd>{invoice.municipalServiceCode || 'Não informado'}</dd></div><div><dt>Município da prestação</dt><dd>{invoice.serviceCityCode || 'Não informado'}</dd></div><div><dt>ISS retido</dt><dd>{invoice.issRetained ? 'Sim' : 'Não'}</dd></div></dl></section>
       {invoice.ibsCbsApplicable && <section className="drawer-section"><h3>IBS/CBS</h3><dl><div><dt>Indicador da operação</dt><dd>{invoice.ibsCbsOperationIndicator}</dd></div><div><dt>CST</dt><dd>{invoice.ibsCbsCst}</dd></div><div><dt>Classificação tributária</dt><dd>{invoice.ibsCbsTaxClassification}</dd></div><div><dt>Consumidor final</dt><dd>{invoice.ibsCbsFinalConsumer === '1' ? 'Sim' : 'Não'}</dd></div></dl></section>}
       <section className="drawer-section drawer-section--wide"><h3>Serviço</h3><p className="drawer-section__text">{invoice.serviceDescription || invoice.notes || 'Descrição não informada.'}</p>{invoice.address && <p className="drawer-section__text detail-text-spaced"><strong>Tomador:</strong> {invoice.address}</p>}</section>
     </div>
   </div>
+}
+
+function CurrencyInput({ name, initialValue, required = false }: { name: string; initialValue: number; required?: boolean }) {
+  const [value, setValue] = useState(Math.max(0, Number(initialValue) || 0))
+  return <input
+    name={name}
+    type="text"
+    inputMode="numeric"
+    autoComplete="off"
+    required={required}
+    value={money(value)}
+    onFocus={(event) => event.currentTarget.select()}
+    onChange={(event) => {
+      const digits = event.target.value.replace(/\D/g, '').slice(0, 17)
+      setValue(digits ? Number(digits) / 100 : 0)
+    }}
+  />
+}
+
+function ClientInvoiceFields({ client, fallback, invoice, loading }: { client?: Client; fallback: ClientSearchOption; invoice: Invoice | null | undefined; loading: boolean }) {
+  if (loading && !client) return <div className="nfse-customer-card nfse-customer-card--state">Carregando dados fiscais do cliente...</div>
+  const legalName = invoice?.customerNameSnapshot || client?.nmrazao || client?.name || fallback.legalName || ''
+  const document = invoice?.customerDocument || client?.document || client?.nrcnpj || client?.nrcpf || fallback.document || ''
+  return <section className="nfse-customer-card">
+    <div className="nfse-customer-card__heading"><strong>Dados que serão enviados para identificar o tomador</strong><small>As alterações abaixo valem somente para esta nota fiscal.</small></div>
+    <div className="form-grid form-grid--three">
+      <FormField label="CPF/CNPJ *"><input name="customerDocument" inputMode="numeric" maxLength={18} required defaultValue={document} /></FormField>
+      <FormField label="Nome / razão social *"><input name="customerName" maxLength={150} required defaultValue={legalName} /></FormField>
+      <FormField label="Inscrição municipal"><input name="customerMunicipalRegistration" maxLength={15} defaultValue={invoice?.customerMunicipalRegistration || ''} /></FormField>
+      <FormField label="CEP"><input name="customerZipCode" inputMode="numeric" maxLength={9} defaultValue={invoice?.customerZipCode || client?.nrcep || fallback.zipCode || ''} /></FormField>
+      <FormField label="Logradouro"><input name="customerStreet" maxLength={255} defaultValue={invoice?.customerStreet || client?.dsender || fallback.street || ''} /></FormField>
+      <FormField label="Número"><input name="customerNumber" maxLength={60} defaultValue={invoice?.customerNumber || client?.dscompl || ''} /></FormField>
+      <FormField label="Complemento"><input name="customerComplement" maxLength={156} defaultValue={invoice?.customerComplement || fallback.complement || ''} /></FormField>
+      <FormField label="Bairro"><input name="customerDistrict" maxLength={60} defaultValue={invoice?.customerDistrict || client?.dsbairr || fallback.district || ''} /></FormField>
+      <FormField label="Cidade"><input name="customerCity" maxLength={100} defaultValue={invoice?.customerCity || client?.dscidad || fallback.city || ''} /></FormField>
+      <FormField label="UF"><input name="customerState" maxLength={2} defaultValue={invoice?.customerState || client?.dsestad || fallback.state || ''} /></FormField>
+      <FormField label="Telefone"><input name="customerPhone" maxLength={20} defaultValue={invoice?.customerPhone || client?.phone || client?.nrtele1 || ''} /></FormField>
+      <FormField label="E-mail"><input name="customerEmail" type="email" maxLength={80} defaultValue={invoice?.customerEmail || client?.email || client?.dsemail || ''} /></FormField>
+    </div>
+  </section>
+}
+
+function IssuerCompanySummary({ profile, loading, error }: { profile?: IssuerCompanyProfile; loading: boolean; error: boolean }) {
+  if (loading) return <div className="nfse-issuer-card nfse-issuer-card--state">Carregando dados da empresa...</div>
+  if (error || !profile) return <div className="nfse-issuer-card nfse-issuer-card--state is-error">Não foi possível carregar os dados da empresa emitente.</div>
+  const address = [profile.street, profile.number, profile.complement, profile.district, profile.city, profile.state, profile.zipCode]
+    .filter(Boolean)
+    .join(' · ')
+  return <section className="nfse-issuer-card">
+    <div className="nfse-issuer-card__identity"><span><Building2 size={19} /></span><div><strong>{profile.legalName}</strong><small>{profile.tradeName}</small></div></div>
+    <dl>
+      <div><dt>CNPJ</dt><dd>{profile.cnpj}</dd></div>
+      <div><dt>Inscrição municipal</dt><dd>{profile.municipalRegistration}</dd></div>
+      <div><dt>Regime</dt><dd>{profile.taxationRegime || 'Não informado'}</dd></div>
+      <div><dt>Situação</dt><dd>{profile.registrationStatus || 'Não informada'}</dd></div>
+      <div className="nfse-issuer-card__wide"><dt>Endereço</dt><dd>{address}</dd></div>
+    </dl>
+  </section>
 }

@@ -610,6 +610,42 @@ h1, h2, h3, p { margin-top: 0; }
 .nfse-replacement-fields summary { color: var(--brand); font-size: 9px; font-weight: 800; cursor: pointer; }
 .nfse-replacement-fields[open] summary { margin-bottom: 12px; }
 .nfse-long-value { overflow-wrap: anywhere; }
+.nfse-form-section { padding: 16px; border: 1px solid #e1e3ef; border-radius: 13px; background: #fff; }
+.nfse-form-section + .nfse-form-section { margin-top: 16px; }
+.nfse-form-section > .form-section-title { margin: 0 0 16px; padding: 0; border: 0; }
+.nfse-form-subtitle { margin: 19px 0 12px; padding-bottom: 8px; display: flex; align-items: baseline; gap: 8px; border-bottom: 1px solid var(--line); }
+.nfse-form-subtitle:first-of-type { margin-top: 0; }
+.nfse-form-subtitle strong { color: var(--ink); font-size: 9.5px; }
+.nfse-form-subtitle small { color: var(--muted); font-size: 8px; }
+.nfse-issuer-card { margin-bottom: 2px; padding: 14px; border: 1px solid #dfe2f0; border-radius: 12px; background: #fafaff; }
+.nfse-issuer-card__identity { display: flex; align-items: center; gap: 10px; margin-bottom: 13px; }
+.nfse-issuer-card__identity > span { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; color: var(--brand); background: var(--brand-soft); }
+.nfse-issuer-card__identity strong, .nfse-issuer-card__identity small { display: block; }
+.nfse-issuer-card__identity strong { color: var(--ink); font-size: 10px; }
+.nfse-issuer-card__identity small { margin-top: 2px; color: var(--muted); font-size: 8.5px; }
+.nfse-issuer-card dl { margin: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px 18px; }
+.nfse-issuer-card dl div { min-width: 0; }
+.nfse-issuer-card dt, .nfse-issuer-card dd { margin: 0; }
+.nfse-issuer-card dt { color: var(--muted); font-size: 7.8px; }
+.nfse-issuer-card dd { margin-top: 3px; color: var(--ink); font-size: 9px; font-weight: 700; overflow-wrap: anywhere; }
+.nfse-issuer-card__wide { grid-column: span 2; }
+.nfse-issuer-card details { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.nfse-issuer-card summary { color: var(--brand); font-size: 8.5px; font-weight: 800; cursor: pointer; }
+.nfse-issuer-card ul { margin: 10px 0 0; padding: 0; display: grid; gap: 7px; list-style: none; }
+.nfse-issuer-card li { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 8px; color: var(--muted); font-size: 8px; line-height: 1.4; }
+.nfse-issuer-card li strong { color: var(--ink); }
+.nfse-issuer-card--state { color: var(--muted); font-size: 9px; }
+.nfse-issuer-card--state.is-error { color: #b4232d; border-color: #f0c7cb; background: #fff7f8; }
+.nfse-customer-card { margin-top: 12px; padding: 14px; border: 1px solid #dfe2f0; border-radius: 12px; background: #fafaff; }
+.nfse-customer-card__heading { margin-bottom: 12px; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.nfse-customer-card__heading strong { color: var(--ink); font-size: 9px; }
+.nfse-customer-card__heading small { color: var(--muted); font-size: 8px; }
+.nfse-customer-card dl { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px 18px; }
+.nfse-customer-card dt, .nfse-customer-card dd { margin: 0; }
+.nfse-customer-card dt { color: var(--muted); font-size: 7.8px; }
+.nfse-customer-card dd { margin-top: 3px; color: var(--ink); font-size: 9px; font-weight: 700; overflow-wrap: anywhere; }
+.nfse-customer-card__wide { grid-column: span 2; }
+.nfse-customer-card--state { color: var(--muted); font-size: 9px; }
 
 @media (min-width: 981px) {
   .sidebar--collapsed { width: 82px; padding-right: 11px; padding-left: 11px; }
@@ -649,6 +685,10 @@ h1, h2, h3, p { margin-top: 0; }
 }
 
 @media (max-width: 740px) {
+  .nfse-issuer-card dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nfse-issuer-card__wide { grid-column: 1 / -1; }
+  .nfse-customer-card dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nfse-customer-card__wide { grid-column: 1 / -1; }
   .nfse-integration-banner { grid-template-columns: 38px minmax(0, 1fr); }
   .nfse-integration-banner > .badge { grid-column: 2; }
   .nfse-pagination { align-items: flex-start; gap: 10px; }

@@ -655,12 +655,34 @@ export interface Invoice {
   accessKey: string | null
   serviceCityCode: string | null
   customerCityCode: string | null
+  customerDocument: string | null
+  customerNameSnapshot: string | null
+  customerMunicipalRegistration: string | null
+  customerZipCode: string | null
+  customerStreet: string | null
+  customerNumber: string | null
+  customerComplement: string | null
+  customerDistrict: string | null
+  customerCity: string | null
+  customerState: string | null
+  customerPhone: string | null
+  customerEmail: string | null
+  issuerCnae: string | null
   nationalServiceCode: string | null
   municipalServiceCode: string | null
   nbsCode: string | null
   serviceDescription: string | null
   unconditionalDiscount: number
+  conditionalDiscount: number
   deductionValue: number
+  pisCofinsCst: string | null
+  pisCofinsWithholdingType: string | null
+  pisCofinsBase: number
+  pisValue: number
+  cofinsValue: number
+  retainedInss: number
+  retainedIrrf: number
+  retainedCsll: number
   errorCode: string | null
   errorMessage: string | null
   attempts: number
@@ -709,6 +731,19 @@ export interface InvoicePayload {
   issRetained?: boolean
   serviceCityCode?: string
   customerCityCode?: string
+  customerDocument?: string
+  customerName?: string
+  customerMunicipalRegistration?: string
+  customerZipCode?: string
+  customerStreet?: string
+  customerNumber?: string
+  customerComplement?: string
+  customerDistrict?: string
+  customerCity?: string
+  customerState?: string
+  customerPhone?: string
+  customerEmail?: string
+  issuerCnae?: string
   nationalServiceCode?: string
   municipalServiceCode?: string
   nbsCode?: string
@@ -717,6 +752,15 @@ export interface InvoicePayload {
   notes?: string
   laborAmount?: number
   materialAmount?: number
+  conditionalDiscount?: number
+  pisCofinsCst?: string
+  pisCofinsWithholdingType?: string
+  pisCofinsBase?: number
+  pisValue?: number
+  cofinsValue?: number
+  retainedInss?: number
+  retainedIrrf?: number
+  retainedCsll?: number
   status?: InvoiceStatus
   replacedAccessKey?: string
   replacementReasonCode?: string
@@ -755,6 +799,51 @@ export interface NfseIntegrationStatus {
   layoutVersion: string
   danfseConfigured: boolean
   missingConfiguration: string[]
+}
+
+export interface CompanyCnae {
+  id: number
+  municipalActivityCode: string
+  cnaeCode: string
+  description: string
+}
+
+export interface CompanyNationalTaxCode {
+  id: number
+  code: string
+  description: string
+}
+
+export interface IssuerCompanyProfile {
+  id: number
+  legalName: string
+  tradeName: string
+  cnpj: string
+  municipalRegistration: string
+  activityStartDate: ISODate | null
+  primaryActivityCode: string
+  primaryCnae: string
+  primaryActivityDescription: string
+  legalNatureCode: string | null
+  legalNatureDescription: string | null
+  establishmentType: string | null
+  street: string | null
+  number: string | null
+  complement: string | null
+  district: string | null
+  zipCode: string | null
+  city: string | null
+  state: string | null
+  cityCode: string | null
+  registrationStatus: string | null
+  taxationRegime: string | null
+  taxSubstitute: boolean
+  simei: boolean
+  simpleNational: boolean
+  simpleNationalOptionDate: ISODate | null
+  sefinRegistrationDate: ISODate | null
+  secondaryCnaes: CompanyCnae[]
+  nationalTaxCodes: CompanyNationalTaxCode[]
 }
 
 export interface NfseCancelPayload {
