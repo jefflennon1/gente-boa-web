@@ -814,6 +814,24 @@ export interface CompanyNationalTaxCode {
   description: string
 }
 
+export interface FiscalNationalTaxCode {
+  code: string
+  description: string
+}
+
+export interface FiscalNbsCode {
+  code: string
+  formattedCode: string
+  description: string
+}
+
+export interface FiscalCatalog {
+  source: string
+  sourceVersion: string
+  nationalTaxCodes: FiscalNationalTaxCode[]
+  nbsCodes: FiscalNbsCode[]
+}
+
 export interface IssuerCompanyProfile {
   id: number
   legalName: string

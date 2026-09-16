@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Building2,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
@@ -66,6 +67,43 @@ const pendingStatuses: InvoiceStatus[] = [
   'CONSULTA_PENDENTE',
   'CANCELAMENTO_SOLICITADO',
 ]
+
+// Vinculos operacionais definidos para as atividades cadastradas da emitente.
+// CNAE e codigo nacional classificam coisas diferentes; por isso esta relacao
+// pertence a configuracao da empresa, e nao a uma tabela universal do governo.
+const nationalTaxCodesByCnae: Record<string, string[]> = {
+  '4329199': ['070201', '070202', '140601'],
+  '4211102': ['070202', '071001', '230101', '240102'],
+  '4213800': ['070201', '070202', '071001'],
+  '4222701': ['070201', '070202'],
+  '4222702': ['070201', '070202'],
+  '4321500': ['070201', '070202', '140601', '310102'],
+  '4322301': ['070201', '070202', '070501'],
+  '4322302': ['070201', '070202', '140101', '140601'],
+  '4329104': ['070201', '070202', '140601', '240102'],
+  '4330401': ['070202', '070501'],
+  '4399101': ['070201'],
+  '4399105': ['070201', '070202'],
+  '7319002': ['170601'],
+  '7810800': ['170401', '170501'],
+}
+
+// Correlacao orientativa oficial do Anexo VIII 1.01.00 da NFS-e.
+// A chave corresponde ao item/subitem da LC 116 (os quatro primeiros digitos
+// do codigo nacional). A Receita informa que o anexo nao e regra de rejeicao.
+const nbsCodesByLc116Item: Record<string, string[]> = {
+  '0702': ['101011100', '101011200', '101012100', '101012200', '101012900', '101013000', '101021100', '101021200', '101021300', '101022000', '101023100', '101023200', '101023300', '101023400', '101023510', '101023520', '101023530', '101024110', '101024120', '101024190', '101024210', '101024220', '101025100', '101025210', '101025220', '101025310', '101025320', '101026100', '101026900', '101027000', '101028000', '101029000', '101032000', '101033000', '101034100', '101034200', '101040000', '101051100', '101051200', '101052100', '101052200', '101053000', '101054000', '101055000', '101056000', '101059000', '101061100', '101061900', '101062100', '101062200', '101063200', '101064000', '101066000', '101073000', '101074000', '101079000'],
+  '0705': ['101011100', '101011200', '101012100', '101012200', '101012900', '101013000', '101021100', '101021200', '101021300', '101022000', '101023100', '101023200', '101023300', '101023400', '101023510', '101023520', '101023530', '101024110', '101024120', '101024190', '101024210', '101024220', '101025100', '101025210', '101025220', '101025310', '101025320', '101026100', '101026900', '101027000', '101028000', '101029000', '101073000', '101079000'],
+  '0710': ['118031000', '118032200', '118032900', '124051400', '124069000', '124070000'],
+  '1401': ['118032900', '120011000', '120012000', '120013110', '120013120', '120013200', '120013300', '120013410', '120013420', '120013430', '120013500', '120013900', '120014000', '120015000', '120016000', '120017000', '120018100', '120018200', '120018300', '120018900', '120021000', '120022000', '120023000', '120024000', '120029000'],
+  '1406': ['101061200', '101061300', '101061400', '101061900', '101063100', '101063200', '101064000', '101066000', '101069000', '101076000', '120031000', '120032110', '120032190', '120032200', '120032300', '120032400', '120032510', '120032520', '120032610', '120032690', '120032900'],
+  '1704': ['118011100', '118011200'],
+  '1705': ['118012100', '118012200', '118012900'],
+  '1706': ['114061100', '114061200', '114061900', '114070000'],
+  '2301': ['114092100', '114092200', '114092300', '114092400', '114092500', '114092900', '114093000', '114099000'],
+  '2401': ['126060000'],
+  '3101': ['114150000'],
+}
 
 function invoiceCode(invoice: Invoice) {
   if (invoice.number) return `NFS-e ${invoice.number}`
@@ -143,6 +181,11 @@ export function NationalInvoices() {
   const [formInvoice, setFormInvoice] = useState<Invoice | null | undefined>(undefined)
   const [selectedClient, setSelectedClient] = useState<ClientSearchOption | null>(null)
   const [customerCityCode, setCustomerCityCode] = useState('')
+  const [selectedIssuerCnae, setSelectedIssuerCnae] = useState('')
+  const [selectedNationalTaxCode, setSelectedNationalTaxCode] = useState('')
+  const [selectedNbsCode, setSelectedNbsCode] = useState('')
+  const [catalogPicker, setCatalogPicker] = useState<'national' | 'nbs' | null>(null)
+  const [catalogSearch, setCatalogSearch] = useState('')
   const [clientPickerOpen, setClientPickerOpen] = useState(false)
   const [clientSearch, setClientSearch] = useState('')
   const [detail, setDetail] = useState<Invoice | null>(null)
@@ -166,6 +209,10 @@ export function NationalInvoices() {
   const companyProfileQuery = useQuery({
     queryKey: queryKeys.companyProfile,
     queryFn: api.companyProfile.find,
+  })
+  const fiscalCatalogQuery = useQuery({
+    queryKey: queryKeys.fiscalCatalog,
+    queryFn: api.fiscalCatalog.find,
   })
   const clientOptionsQuery = useQuery({
     queryKey: [...queryKeys.clients, 'search', debouncedClientSearch],
@@ -286,6 +333,9 @@ export function NationalInvoices() {
     setFormError('')
     setSelectedClient(null)
     setCustomerCityCode('')
+    setSelectedIssuerCnae(companyProfileQuery.data?.primaryCnae || '')
+    setSelectedNationalTaxCode('')
+    setSelectedNbsCode('')
     setFormInvoice(null)
   }
 
@@ -293,6 +343,9 @@ export function NationalInvoices() {
     setFormError('')
     setSelectedClient(invoiceClient(invoice))
     setCustomerCityCode(invoice.customerCityCode || '')
+    setSelectedIssuerCnae(invoice.issuerCnae || '')
+    setSelectedNationalTaxCode(invoice.nationalServiceCode || '')
+    setSelectedNbsCode(invoice.nbsCode || '')
     setDetail(null)
     setFormInvoice(invoice)
   }
@@ -321,6 +374,14 @@ export function NationalInvoices() {
       setFormError('Pesquise e selecione o cliente da nota fiscal.')
       return
     }
+    if (!selectedIssuerCnae) {
+      setFormError('Selecione a atividade do prestador (CNAE).')
+      return
+    }
+    if (!selectedNationalTaxCode) {
+      setFormError('Selecione o código nacional de tributação do serviço prestado.')
+      return
+    }
     const data = new FormData(event.currentTarget)
     const payload: InvoicePayload = {
       clientId: selectedClient.id,
@@ -347,7 +408,7 @@ export function NationalInvoices() {
       issuerCnae: String(data.get('issuerCnae')).trim(),
       nationalServiceCode: String(data.get('nationalServiceCode')).trim(),
       municipalServiceCode: String(data.get('municipalServiceCode')).trim(),
-      nbsCode: String(data.get('nbsCode')).trim(),
+      nbsCode: String(data.get('nbsCode')).replace(/\D/g, ''),
       serviceDescription: String(data.get('serviceDescription')).trim(),
       nature: String(data.get('nature')).trim(),
       notes: String(data.get('notes')).trim(),
@@ -392,6 +453,33 @@ export function NationalInvoices() {
 
   const integration = integrationQuery.data
   const companyProfile = companyProfileQuery.data
+  const fiscalCatalog = fiscalCatalogQuery.data
+  const availableNationalTaxCodes = useMemo(() => {
+    const configuredCodes = new Set(nationalTaxCodesByCnae[selectedIssuerCnae] || [])
+    if (selectedNationalTaxCode) configuredCodes.add(selectedNationalTaxCode)
+    return (fiscalCatalog?.nationalTaxCodes || []).filter((item) => configuredCodes.has(item.code))
+  }, [fiscalCatalog?.nationalTaxCodes, selectedIssuerCnae, selectedNationalTaxCode])
+  const availableNbsCodes = useMemo(() => {
+    const correlated = nbsCodesByLc116Item[selectedNationalTaxCode.slice(0, 4)]
+    if (!correlated) return []
+    const allowed = new Set(correlated)
+    if (selectedNbsCode) allowed.add(selectedNbsCode.replace(/\D/g, ''))
+    return (fiscalCatalog?.nbsCodes || []).filter((item) => allowed.has(item.code))
+  }, [fiscalCatalog?.nbsCodes, selectedNationalTaxCode, selectedNbsCode])
+  const selectedNationalTaxCodeOption = fiscalCatalog?.nationalTaxCodes.find((item) => item.code === selectedNationalTaxCode)
+  const selectedNbsCodeOption = fiscalCatalog?.nbsCodes.find((item) => item.code === selectedNbsCode.replace(/\D/g, ''))
+  const normalizedCatalogSearch = catalogSearch.trim().toLocaleLowerCase('pt-BR')
+  const catalogPickerOptions = (catalogPicker === 'national' ? availableNationalTaxCodes : availableNbsCodes).filter((item) => {
+    if (!normalizedCatalogSearch) return true
+    const code = catalogPicker === 'nbs' && 'formattedCode' in item ? `${item.code} ${item.formattedCode}` : item.code
+    return `${code} ${item.description}`.toLocaleLowerCase('pt-BR').includes(normalizedCatalogSearch)
+  })
+  useEffect(() => {
+    if (formInvoice === undefined || !companyProfile) return
+    if (!selectedIssuerCnae) {
+      setSelectedIssuerCnae(formInvoice?.issuerCnae || companyProfile.primaryCnae)
+    }
+  }, [companyProfile, formInvoice, selectedIssuerCnae])
   const integrationLabel = integration?.environment === 'PRODUCAO' ? 'Produção' : 'Produção restrita'
 
   return (
@@ -511,23 +599,33 @@ export function NationalInvoices() {
               <FormField label="Competência *"><input name="competence" type="date" required defaultValue={toDateInput(formInvoice?.competence) || new Date().toISOString().slice(0, 10)} /></FormField>
               <FormField label="Município da prestação (IBGE) *" hint="Fortaleza: 2304400"><input name="serviceCityCode" inputMode="numeric" maxLength={7} required defaultValue={formInvoice?.serviceCityCode || companyProfile?.cityCode || '2304400'} /></FormField>
             </div>
-            <div className="nfse-form-subtitle"><strong>Classificação tributária</strong><small>Códigos transmitidos na DPS</small></div>
+            <div className="nfse-form-subtitle"><strong>Classificação tributária</strong><small>Atividade da empresa e códigos fiscais do serviço</small></div>
             <div className="form-grid form-grid--two">
             <FormField label="Atividade do prestador (CNAE) *" hint="Escolha a atividade da Gente Boa relacionada ao serviço">
-              <select name="issuerCnae" required defaultValue={formInvoice?.issuerCnae || companyProfile?.primaryCnae || ''} disabled={!companyProfile}>
+              <select name="issuerCnae" required value={selectedIssuerCnae} disabled={!companyProfile} onChange={(event) => {
+                const cnae = event.target.value
+                setSelectedIssuerCnae(cnae)
+                setSelectedNationalTaxCode('')
+                setSelectedNbsCode('')
+              }}>
                 <option value="">Selecione o CNAE</option>
                 {companyProfile && <option value={companyProfile.primaryCnae}>{companyProfile.primaryCnae} · {companyProfile.primaryActivityDescription} (principal)</option>}
                 {(companyProfile?.secondaryCnaes || []).map((item) => <option key={item.id} value={item.cnaeCode}>{item.cnaeCode} · {item.description}</option>)}
               </select>
             </FormField>
-            <FormField label="Código nacional de tributação *" hint="Selecione conforme o serviço efetivamente prestado">
-              <select name="nationalServiceCode" required defaultValue={formInvoice?.nationalServiceCode || ''} disabled={!companyProfile?.nationalTaxCodes.length}>
-                <option value="">Selecione o código nacional</option>
-                {(companyProfile?.nationalTaxCodes || []).map((item) => <option key={item.id} value={item.code}>{item.code} · {item.description}</option>)}
-              </select>
+            <FormField label="Código nacional de tributação *" hint={selectedIssuerCnae ? `${availableNationalTaxCodes.length} serviço(s) configurado(s) para o CNAE selecionado` : 'Selecione primeiro a atividade do prestador'}>
+              <input type="hidden" name="nationalServiceCode" value={selectedNationalTaxCode} />
+              <button type="button" className="nfse-catalog-trigger" disabled={!selectedIssuerCnae || !availableNationalTaxCodes.length} onClick={() => { setCatalogSearch(''); setCatalogPicker('national') }}>
+                <span><strong>{selectedNationalTaxCodeOption ? selectedNationalTaxCodeOption.code : 'Selecionar serviço nacional'}</strong><small>{selectedNationalTaxCodeOption?.description || 'Pesquise pelo código ou pela descrição'}</small></span><ChevronDown size={17} />
+              </button>
             </FormField>
-            <FormField label="Código municipal" hint="3 dígitos"><input name="municipalServiceCode" inputMode="numeric" maxLength={3} defaultValue={formInvoice?.municipalServiceCode || ''} /></FormField>
-            <FormField label="Código NBS"><input name="nbsCode" inputMode="numeric" maxLength={9} defaultValue={formInvoice?.nbsCode || ''} /></FormField>
+            <FormField label="Código de tributação municipal da DPS" hint="Opcional · 3 dígitos"><input name="municipalServiceCode" inputMode="numeric" maxLength={3} defaultValue={formInvoice?.municipalServiceCode || ''} /></FormField>
+            <FormField label="NBS" hint={selectedNationalTaxCode ? `${availableNbsCodes.length} opção(ões) correlacionada(s) no Anexo VIII 1.01.00` : 'Opcional · selecione primeiro o serviço nacional'}>
+              <input type="hidden" name="nbsCode" value={selectedNbsCode} />
+              <button type="button" className="nfse-catalog-trigger" disabled={!selectedNationalTaxCode || !availableNbsCodes.length} onClick={() => { setCatalogSearch(''); setCatalogPicker('nbs') }}>
+                <span><strong>{selectedNbsCodeOption ? selectedNbsCodeOption.formattedCode : 'Selecionar NBS'}</strong><small>{selectedNbsCodeOption?.description || 'Pesquise pelo código ou pela descrição'}</small></span><ChevronDown size={17} />
+              </button>
+            </FormField>
             </div>
             <FormField label="Discriminação do serviço *"><textarea name="serviceDescription" rows={4} maxLength={2000} required defaultValue={formInvoice?.serviceDescription || ''} /></FormField>
             <div className="form-grid form-grid--two">
@@ -577,6 +675,40 @@ export function NationalInvoices() {
         </div>
       </Modal>
 
+      <Modal
+        open={catalogPicker !== null}
+        onClose={() => setCatalogPicker(null)}
+        title={catalogPicker === 'nbs' ? 'Selecionar NBS' : 'Selecionar código nacional de tributação'}
+        description={catalogPicker === 'nbs'
+          ? 'Opções correlacionadas ao serviço nacional conforme o Anexo VIII 1.01.00.'
+          : 'Serviços nacionais configurados para a atividade CNAE selecionada.'}
+        size="large"
+      >
+        <div className="modal__body nfse-catalog-picker">
+          <div className="search-box nfse-catalog-picker__search"><Search size={18} /><input autoFocus value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} placeholder="Pesquisar por código ou descrição..." /></div>
+          <div className="nfse-catalog-picker__results">
+            {catalogPicker === 'nbs' && !normalizedCatalogSearch && <button type="button" className={!selectedNbsCode ? 'is-selected' : ''} onClick={() => { setSelectedNbsCode(''); setCatalogPicker(null); setCatalogSearch('') }}><span><strong>Não informar NBS</strong><small>Deixar o campo opcional sem preenchimento</small></span>{!selectedNbsCode && <Check size={18} />}</button>}
+            {catalogPickerOptions.length === 0
+              ? <EmptyState title="Nenhuma opção encontrada" description="Altere a pesquisa ou confira a classificação selecionada anteriormente." />
+              : catalogPickerOptions.map((item) => {
+                const displayCode = 'formattedCode' in item ? String(item.formattedCode) : item.code
+                const selected = catalogPicker === 'nbs' ? item.code === selectedNbsCode.replace(/\D/g, '') : item.code === selectedNationalTaxCode
+                return <button type="button" key={item.code} className={selected ? 'is-selected' : ''} onClick={() => {
+                  if (catalogPicker === 'nbs') {
+                    setSelectedNbsCode(item.code)
+                  } else {
+                    if (item.code !== selectedNationalTaxCode) setSelectedNbsCode('')
+                    setSelectedNationalTaxCode(item.code)
+                  }
+                  setCatalogPicker(null)
+                  setCatalogSearch('')
+                }}><span><strong>{displayCode}</strong><small>{item.description}</small></span>{selected && <Check size={18} />}</button>
+              })}
+          </div>
+          {catalogPicker === 'nbs' && <p className="nfse-catalog-picker__notice">A correlação é orientativa. Confirme a classificação fiscal adequada ao serviço efetivamente prestado.</p>}
+        </div>
+      </Modal>
+
       <Modal open={emitModal} onClose={() => !issueMutation.isPending && setEmitModal(false)} title="Confirmar emissão nacional" description="Cada DPS será assinada e enviada ao ambiente configurado.">
         <div className="modal__body emission-summary"><FormError message={formError} /><span className="emission-summary__icon"><ShieldCheck size={25} /></span><div><strong>{selectedForIssue.length} documento(s) pronto(s)</strong><small>Valor total de {money(selectedForIssue.reduce((sum, item) => sum + item.amount, 0))}</small></div><ul>{selectedForIssue.map((invoice) => <li key={invoice.id}><span>{invoice.clientTradeName || invoice.clientName}</span><strong>{money(invoice.amount)}</strong></li>)}</ul></div>
         <footer className="modal__footer"><Button variant="secondary" onClick={() => setEmitModal(false)} disabled={issueMutation.isPending}>Voltar</Button><Button icon={<Send size={17} />} disabled={issueMutation.isPending || !integration?.ready} onClick={() => issueMutation.mutate(selectedForIssue.map((item) => item.id))}>{issueMutation.isPending ? 'Transmitindo...' : 'Assinar e emitir'}</Button></footer>
@@ -603,7 +735,7 @@ function InvoiceDetail({ invoice }: { invoice: Invoice }) {
     <div className="detail-metrics"><span><small>Competência</small><strong>{formatDate(invoice.competence)}</strong></span><span><small>Valor do serviço</small><strong>{money(invoice.amount)}</strong></span><span><small>ISS</small><strong>{money(invoice.tax)}</strong></span><span><small>Tentativas</small><strong>{invoice.attempts || 0}</strong></span></div>
     <div className="detail-sections-grid">
       <section className="drawer-section"><h3>Identificação nacional</h3><dl><div><dt>Número da NFS-e</dt><dd>{invoice.number || 'Ainda não autorizado'}</dd></div><div><dt>Chave de acesso</dt><dd className="nfse-long-value">{invoice.accessKey || 'Não disponível'}</dd></div><div><dt>DPS</dt><dd>{invoice.dpsId || 'Ainda não numerada'}</dd></div><div><dt>Ambiente / layout</dt><dd>{invoice.environment ? `${enumLabel(invoice.environment)} · ${invoice.layoutVersion}` : 'Registro legado'}</dd></div></dl></section>
-      <section className="drawer-section"><h3>Tributação do serviço</h3><dl><div><dt>CNAE do prestador</dt><dd>{invoice.issuerCnae || 'Não informado'}</dd></div><div><dt>Código nacional</dt><dd>{invoice.nationalServiceCode || 'Não informado'}</dd></div><div><dt>Código municipal</dt><dd>{invoice.municipalServiceCode || 'Não informado'}</dd></div><div><dt>Município da prestação</dt><dd>{invoice.serviceCityCode || 'Não informado'}</dd></div><div><dt>ISS retido</dt><dd>{invoice.issRetained ? 'Sim' : 'Não'}</dd></div></dl></section>
+      <section className="drawer-section"><h3>Tributação do serviço</h3><dl><div><dt>CNAE do prestador</dt><dd>{invoice.issuerCnae || 'Não informado'}</dd></div><div><dt>Código nacional</dt><dd>{invoice.nationalServiceCode || 'Não informado'}</dd></div><div><dt>Código municipal da DPS</dt><dd>{invoice.municipalServiceCode || 'Não informado'}</dd></div><div><dt>NBS</dt><dd>{invoice.nbsCode || 'Não informada'}</dd></div><div><dt>Município da prestação</dt><dd>{invoice.serviceCityCode || 'Não informado'}</dd></div><div><dt>ISS retido</dt><dd>{invoice.issRetained ? 'Sim' : 'Não'}</dd></div></dl></section>
       {invoice.ibsCbsApplicable && <section className="drawer-section"><h3>IBS/CBS</h3><dl><div><dt>Indicador da operação</dt><dd>{invoice.ibsCbsOperationIndicator}</dd></div><div><dt>CST</dt><dd>{invoice.ibsCbsCst}</dd></div><div><dt>Classificação tributária</dt><dd>{invoice.ibsCbsTaxClassification}</dd></div><div><dt>Consumidor final</dt><dd>{invoice.ibsCbsFinalConsumer === '1' ? 'Sim' : 'Não'}</dd></div></dl></section>}
       <section className="drawer-section drawer-section--wide"><h3>Serviço</h3><p className="drawer-section__text">{invoice.serviceDescription || invoice.notes || 'Descrição não informada.'}</p>{invoice.address && <p className="drawer-section__text detail-text-spaced"><strong>Tomador:</strong> {invoice.address}</p>}</section>
     </div>

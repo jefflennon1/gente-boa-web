@@ -617,6 +617,26 @@ h1, h2, h3, p { margin-top: 0; }
 .nfse-form-subtitle:first-of-type { margin-top: 0; }
 .nfse-form-subtitle strong { color: var(--ink); font-size: 9.5px; }
 .nfse-form-subtitle small { color: var(--muted); font-size: 8px; }
+.nfse-catalog-trigger { width: 100%; min-height: 40px; padding: 7px 10px; border: 1px solid #dadce6; border-radius: 9px; display: flex; align-items: center; gap: 9px; color: var(--ink); background: white; text-align: left; cursor: pointer; transition: .15s ease; }
+.nfse-catalog-trigger:hover:not(:disabled), .nfse-catalog-trigger:focus-visible { border-color: #989cd1; box-shadow: 0 0 0 3px rgba(46,49,145,.07); outline: 0; }
+.nfse-catalog-trigger:disabled { color: #a6a9b8; background: #f7f8fb; cursor: not-allowed; }
+.nfse-catalog-trigger > span { min-width: 0; flex: 1; display: grid; gap: 3px; }
+.nfse-catalog-trigger strong, .nfse-catalog-trigger small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nfse-catalog-trigger strong { color: #30354e; font-size: 9.5px; }
+.nfse-catalog-trigger small { color: var(--muted); font-size: 8px; font-weight: 500; }
+.nfse-catalog-trigger:disabled strong, .nfse-catalog-trigger:disabled small { color: #9da0b1; }
+.nfse-catalog-trigger > svg { flex: 0 0 auto; color: #777b92; }
+.nfse-catalog-picker { display: grid; gap: 14px; }
+.nfse-catalog-picker__search { width: 100%; max-width: none; }
+.nfse-catalog-picker__results { max-height: min(54vh, 500px); overflow-y: auto; display: grid; gap: 7px; padding-right: 3px; }
+.nfse-catalog-picker__results > button { width: 100%; min-height: 59px; padding: 10px 12px; border: 1px solid #e1e3ed; border-radius: 10px; display: flex; align-items: center; gap: 12px; color: var(--ink); background: white; text-align: left; cursor: pointer; transition: .15s ease; }
+.nfse-catalog-picker__results > button:hover { border-color: #bfc2df; background: #f9f9ff; box-shadow: 0 5px 16px rgba(35,38,91,.08); }
+.nfse-catalog-picker__results > button.is-selected { border-color: #adafda; background: var(--brand-soft); }
+.nfse-catalog-picker__results > button > span { min-width: 0; flex: 1; display: grid; gap: 4px; }
+.nfse-catalog-picker__results strong { color: var(--brand); font-size: 10px; }
+.nfse-catalog-picker__results small { color: #656a80; font-size: 8.5px; font-weight: 500; line-height: 1.4; }
+.nfse-catalog-picker__results svg { flex: 0 0 auto; color: var(--brand); }
+.nfse-catalog-picker__notice { margin: 0; padding: 10px 12px; border-radius: 9px; color: #6d7188; background: #f7f7fb; font-size: 8px; line-height: 1.5; }
 .nfse-issuer-card { margin-bottom: 2px; padding: 14px; border: 1px solid #dfe2f0; border-radius: 12px; background: #fafaff; }
 .nfse-issuer-card__identity { display: flex; align-items: center; gap: 10px; margin-bottom: 13px; }
 .nfse-issuer-card__identity > span { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; color: var(--brand); background: var(--brand-soft); }

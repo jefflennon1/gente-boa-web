@@ -23,6 +23,7 @@ import type {
   Invoice,
   InvoicePayload,
   IssuerCompanyProfile,
+  FiscalCatalog,
   NfseCancelPayload,
   NfseIntegrationStatus,
   Employee,
@@ -362,6 +363,12 @@ export const api = {
       return data
     },
   },
+  fiscalCatalog: {
+    async find() {
+      const { data } = await http.get<FiscalCatalog>('/fiscal-catalog')
+      return data
+    },
+  },
   statements: resource<Statement, StatementPayload>('/statements'),
   users: resource<AppUser, CreateUserPayload | UpdateUserPayload>('/users'),
 }
@@ -380,6 +387,7 @@ export const queryKeys = {
   serviceOrders: ['service-orders'] as const,
   invoices: ['invoices'] as const,
   companyProfile: ['company-profile'] as const,
+  fiscalCatalog: ['fiscal-catalog'] as const,
   statements: ['statements'] as const,
   users: ['users'] as const,
 }
