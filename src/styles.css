@@ -666,6 +666,9 @@ h1, h2, h3, p { margin-top: 0; }
 .nfse-customer-card dd { margin-top: 3px; color: var(--ink); font-size: 9px; font-weight: 700; overflow-wrap: anywhere; }
 .nfse-customer-card__wide { grid-column: span 2; }
 .nfse-customer-card--state { color: var(--muted); font-size: 9px; }
+.services-table { min-width: 940px; }
+.services-table td:nth-child(n+4):nth-child(-n+7), .services-table th:nth-child(n+4):nth-child(-n+7) { white-space: nowrap; }
+.service-form-grid .form-field:nth-child(4) { grid-column: span 2; }
 
 @media (min-width: 981px) {
   .sidebar--collapsed { width: 82px; padding-right: 11px; padding-left: 11px; }

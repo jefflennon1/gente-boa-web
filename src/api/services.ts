@@ -37,6 +37,7 @@ import type {
   ServiceOrderStatus,
   ServiceOrderPayload,
   ServiceCatalogItem,
+  ServiceCatalogPayload,
   Statement,
   StatementPayload,
   SortDirection,
@@ -243,6 +244,17 @@ export const api = {
     async find(id: number) {
       const { data } = await http.get<ServiceCatalogItem>(`/services/${id}`)
       return data
+    },
+    async create(payload: ServiceCatalogPayload) {
+      const { data } = await http.post<ServiceCatalogItem>('/services', payload)
+      return data
+    },
+    async update(id: number, payload: ServiceCatalogPayload) {
+      const { data } = await http.put<ServiceCatalogItem>(`/services/${id}`, payload)
+      return data
+    },
+    async remove(id: number) {
+      await http.delete(`/services/${id}`)
     },
   },
   materials: resource<Material, MaterialPayload>('/materials'),

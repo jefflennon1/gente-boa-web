@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Boxes, ChevronDown, ClipboardList, FileBarChart, FileSignature, FileText, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, ReceiptText, Search, Settings, UserRoundCog, UsersRound, X } from 'lucide-react'
+import { Bell, Boxes, BriefcaseBusiness, ChevronDown, ClipboardList, FileBarChart, FileSignature, FileText, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, ReceiptText, Search, Settings, UserRoundCog, UsersRound, X } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { useAuth } from '../auth'
 import { enumLabel, initials } from '../lib/format'
@@ -11,6 +11,7 @@ const nav = [
   { to: '/clientes', label: 'Clientes', icon: UsersRound },
   { to: '/contratos', label: 'Contratos', icon: FileSignature },
   { to: '/ordens-de-servico', label: 'Ordens de serviço', icon: ClipboardList },
+  { to: '/servicos', label: 'Serviços', icon: BriefcaseBusiness },
   { to: '/materiais', label: 'Materiais', icon: Boxes },
   { to: '/funcionarios', label: 'Funcionários', icon: UserRoundCog },
   { to: '/notas-fiscais', label: 'Notas fiscais', icon: ReceiptText },
@@ -21,7 +22,7 @@ const nav = [
 ]
 
 const routeNames: Record<string, string> = {
-  '/': 'Visão geral', '/clientes': 'Clientes', '/contratos': 'Contratos', '/ordens-de-servico': 'Ordens de serviço', '/materiais': 'Materiais', '/funcionarios': 'Funcionários', '/notas-fiscais': 'Notas fiscais', '/extratos': 'Extratos', '/relatorios': 'Relatórios', '/usuarios': 'Usuários', '/parametros-do-sistema': 'Parâmetros do sistema', '/envio-de-emails': 'Notificações',
+  '/': 'Visão geral', '/clientes': 'Clientes', '/contratos': 'Contratos', '/ordens-de-servico': 'Ordens de serviço', '/servicos': 'Serviços', '/materiais': 'Materiais', '/funcionarios': 'Funcionários', '/notas-fiscais': 'Notas fiscais', '/extratos': 'Extratos', '/relatorios': 'Relatórios', '/usuarios': 'Usuários', '/parametros-do-sistema': 'Parâmetros do sistema', '/envio-de-emails': 'Notificações',
 }
 
 export function AppLayout({ children }: { children: ReactNode }) {

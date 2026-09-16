@@ -9,6 +9,7 @@ const pages = {
   '/clientes': lazy(() => import('./pages/Clients').then((module) => ({ default: module.Clients }))),
   '/contratos': lazy(() => import('./pages/Contracts').then((module) => ({ default: module.Contracts }))),
   '/ordens-de-servico': lazy(() => import('./pages/ServiceOrders').then((module) => ({ default: module.ServiceOrders }))),
+  '/servicos': lazy(() => import('./pages/Services').then((module) => ({ default: module.Services }))),
   '/materiais': lazy(() => import('./pages/Materials').then((module) => ({ default: module.Materials }))),
   '/funcionarios': lazy(() => import('./pages/Employees').then((module) => ({ default: module.Employees }))),
   '/notas-fiscais': lazy(() => import('./pages/NationalInvoices').then((module) => ({ default: module.NationalInvoices }))),

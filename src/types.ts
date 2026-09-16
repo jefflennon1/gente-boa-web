@@ -271,7 +271,11 @@ export interface ServiceCatalogItem {
   unit: string | null
   minimumValue?: number | null
   legacyMinuteValue?: number | null
+  extraValue?: number | null
+  oneOffValue?: number | null
 }
+
+export type ServiceCatalogPayload = Omit<ServiceCatalogItem, 'id' | 'defaultValue'>
 
 export interface Material {
   id: number

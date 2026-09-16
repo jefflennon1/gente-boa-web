@@ -1,4 +1,4 @@
-name: gente-boa-web-prod
+name: "${COMPOSE_PROJECT_NAME}"
 services:
   web:
     build:
@@ -10,4 +10,4 @@ services:
     ports:
       - "${WEB_PORT:-3000}:80"
     environment:
-      API_URL: "${API_URL:?Defina API_URL no arquivo .env}"
+      API_URL: "${API_URL}"
