@@ -868,6 +868,54 @@ export interface FiscalCatalog {
   nbsCodes: FiscalNbsCode[]
 }
 
+export interface MunicipalTaxCodesResult {
+  requestedUrl: string
+  httpStatus: number
+  successful: boolean
+  errorCode: string | null
+  errorMessage: string | null
+  rawBody: string | null
+}
+
+export interface PublicClientSignupPayload {
+  kind: ClientKind
+  nmrazao: string
+  nmfanta: string
+  nrcnpj: string
+  nrcpf: string
+  dsinscr: string
+  dtanive: string
+  nrtele1: string
+  nrtele2: string
+  nrfax: string
+  dsemail: string
+  dsindic: string
+  nmcont1: string
+  nrtelc1: string
+  nmcont2: string
+  nrtelc2: string
+  nmcont3: string
+  nrtelc3: string
+  nmcont4: string
+  nrtelc4: string
+  dsender: string
+  dscompl: string
+  dsbairr: string
+  dscidad: string
+  dsestad: string
+  nrcep: string
+  dsponto: string
+  flaudit: string
+  fliss: string
+  flenvioboleto: string
+  flenvioextrato: string
+  dsobser: string
+}
+
+export interface PublicClientSignupResponse {
+  message: string
+}
+
 export interface IssuerCompanyProfile {
   id: number
   legalName: string

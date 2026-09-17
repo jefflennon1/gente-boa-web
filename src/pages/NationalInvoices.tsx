@@ -34,6 +34,7 @@ import type {
   InvoicePayload,
   InvoiceStatus,
   IssuerCompanyProfile,
+  MunicipalTaxCodesResult,
   NfseCancelPayload,
   NfseIntegrationStatus,
 } from '../types'
@@ -104,6 +105,36 @@ const workRequiredTaxCodes = new Set([
   '070201', '070202', '070401', '070501', '070502', '070601', '070602',
   '070701', '070801', '071701', '071901', '141403', '141404',
 ])
+
+const brazilianCapitals: { uf: string; city: string; cityCode: string }[] = [
+  { uf: 'AC', city: 'Rio Branco', cityCode: '1200401' },
+  { uf: 'AL', city: 'Maceió', cityCode: '2704302' },
+  { uf: 'AP', city: 'Macapá', cityCode: '1600303' },
+  { uf: 'AM', city: 'Manaus', cityCode: '1302603' },
+  { uf: 'BA', city: 'Salvador', cityCode: '2927408' },
+  { uf: 'CE', city: 'Fortaleza', cityCode: '2304400' },
+  { uf: 'DF', city: 'Brasília', cityCode: '5300108' },
+  { uf: 'ES', city: 'Vitória', cityCode: '3205309' },
+  { uf: 'GO', city: 'Goiânia', cityCode: '5208707' },
+  { uf: 'MA', city: 'São Luís', cityCode: '2111300' },
+  { uf: 'MT', city: 'Cuiabá', cityCode: '5103403' },
+  { uf: 'MS', city: 'Campo Grande', cityCode: '5002704' },
+  { uf: 'MG', city: 'Belo Horizonte', cityCode: '3106200' },
+  { uf: 'PA', city: 'Belém', cityCode: '1501402' },
+  { uf: 'PB', city: 'João Pessoa', cityCode: '2507507' },
+  { uf: 'PR', city: 'Curitiba', cityCode: '4106902' },
+  { uf: 'PE', city: 'Recife', cityCode: '2611606' },
+  { uf: 'PI', city: 'Teresina', cityCode: '2211001' },
+  { uf: 'RJ', city: 'Rio de Janeiro', cityCode: '3304557' },
+  { uf: 'RN', city: 'Natal', cityCode: '2408102' },
+  { uf: 'RS', city: 'Porto Alegre', cityCode: '4314902' },
+  { uf: 'RO', city: 'Porto Velho', cityCode: '1100205' },
+  { uf: 'RR', city: 'Boa Vista', cityCode: '1400100' },
+  { uf: 'SC', city: 'Florianópolis', cityCode: '4205407' },
+  { uf: 'SP', city: 'São Paulo', cityCode: '3550308' },
+  { uf: 'SE', city: 'Aracaju', cityCode: '2800308' },
+  { uf: 'TO', city: 'Palmas', cityCode: '1721000' },
+]
 
 function invoiceCode(invoice: Invoice) {
   if (invoice.number) return `NFS-e ${invoice.number}`
@@ -205,6 +236,7 @@ export function NationalInvoices() {
   const [catalogPicker, setCatalogPicker] = useState<'national' | 'nbs' | null>(null)
   const [catalogSearch, setCatalogSearch] = useState('')
   const [clientPickerOpen, setClientPickerOpen] = useState(false)
+  const [capitalsModalOpen, setCapitalsModalOpen] = useState(false)
   const [clientSearch, setClientSearch] = useState('')
   const [detail, setDetail] = useState<Invoice | null>(null)
   const [toDelete, setToDelete] = useState<Invoice | null>(null)
@@ -339,6 +371,14 @@ export function NationalInvoices() {
     }),
     onSuccess: ({ invoice, kind, blob }) => downloadBlob(blob, `${kind === 'xml' ? 'nfse' : kind === 'danfse' ? 'danfse' : 'nota-fiscal'}-${invoice.number || invoice.id}.${kind === 'xml' ? 'xml' : 'pdf'}`),
     onError: (error) => showToast(apiErrorMessage(error), 'error'),
+  })
+
+  const municipalTaxCodesMutation = useMutation({
+    mutationFn: ({ cityCode, servico }: { cityCode: string; servico: string }) => api.fiscalCatalog.municipalTaxCodesHistorico(cityCode, servico),
+  })
+
+  const municipalConvenioMutation = useMutation({
+    mutationFn: (cityCode: string) => api.fiscalCatalog.municipalConvenio(cityCode),
   })
 
   const invoices = invoicesQuery.data?.content ?? []
@@ -667,6 +707,32 @@ export function NationalInvoices() {
               <FormField label="Competência *"><input name="competence" type="date" required value={competence} onChange={(event) => { setCompetence(event.target.value); setSelectedNationalTaxCode(''); setSelectedNbsCode('') }} /></FormField>
               <FormField label="Município da prestação (IBGE) *" hint="Fortaleza: 2304400"><input name="serviceCityCode" inputMode="numeric" maxLength={7} required value={serviceCityCode} onChange={(event) => { setServiceCityCode(event.target.value.replace(/\D/g, '').slice(0, 7)); setSelectedNationalTaxCode(''); setSelectedNbsCode('') }} /></FormField>
             </div>
+            <div className="nfse-tax-diagnostic">
+              <div className="nfse-tax-diagnostic__row">
+                <div>
+                  <strong>Códigos de tributação administrados pelo município</strong>
+                  <small>Consulta ao vivo na SEFIN/ADN Nacional (GET /parametrizacao/{'{'}município{'}'}/{'{'}nacional+municipal, 9 dígitos{'}'}/historicoaliquotas), ambiente {integrationLabel}</small>
+                </div>
+                <div className="nfse-tax-diagnostic__actions">
+                  <Button type="button" variant="secondary" onClick={() => setCapitalsModalOpen(true)}>Consultar todas as capitais</Button>
+                  <Button type="button" variant="secondary" onClick={() => municipalConvenioMutation.mutate(serviceCityCode)} disabled={!/^\d{7}$/.test(serviceCityCode) || municipalConvenioMutation.isPending}>
+                    {municipalConvenioMutation.isPending ? 'Consultando...' : 'Consultar convênio'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={!/^\d{7}$/.test(serviceCityCode) || !/^\d{6}$/.test(selectedNationalTaxCode) || municipalTaxCodesMutation.isPending}
+                    onClick={() => municipalTaxCodesMutation.mutate({ cityCode: serviceCityCode, servico: `${selectedNationalTaxCode}000` })}
+                  >
+                    {municipalTaxCodesMutation.isPending ? 'Consultando...' : `Consultar alíquotas de ${selectedNationalTaxCode || '(selecione o código nacional)'}000`}
+                  </Button>
+                </div>
+              </div>
+              {municipalConvenioMutation.isError && <p className="nfse-tax-diagnostic__error">Convênio: {apiErrorMessage(municipalConvenioMutation.error)}</p>}
+              {municipalConvenioMutation.data && <div><small>Resposta de <strong>/convenio</strong>:</small><MunicipalTaxCodesPanel result={municipalConvenioMutation.data} /></div>}
+              {municipalTaxCodesMutation.isError && <p className="nfse-tax-diagnostic__error">Alíquotas: {apiErrorMessage(municipalTaxCodesMutation.error)}</p>}
+              {municipalTaxCodesMutation.data && <div><small>Resposta de <strong>/{selectedNationalTaxCode}000/historicoaliquotas</strong>:</small><MunicipalTaxCodesPanel result={municipalTaxCodesMutation.data} /></div>}
+            </div>
             <div className="nfse-form-subtitle"><strong>Classificação tributária</strong><small>Atividade da empresa e códigos fiscais do serviço</small></div>
             <div className="form-grid form-grid--two">
             <FormField label="Atividade do prestador (CNAE) *" hint="Escolha a atividade da Gente Boa relacionada ao serviço">
@@ -817,6 +883,12 @@ export function NationalInvoices() {
         </div>
       </Modal>
 
+      <Modal open={capitalsModalOpen} onClose={() => setCapitalsModalOpen(false)} title="Códigos administrados por capital" description={`Consulta ao vivo na SEFIN/ADN Nacional (convênio e histórico de alíquotas de ${selectedNationalTaxCode || '070201'}000), uma capital por vez.`} size="large">
+        <div className="modal__body nfse-capitals-list">
+          {brazilianCapitals.map((capital) => <CapitalRow key={capital.cityCode} capital={capital} servico={`${selectedNationalTaxCode || '070201'}000`} />)}
+        </div>
+      </Modal>
+
       <Modal open={emitModal} onClose={() => !issueMutation.isPending && setEmitModal(false)} title="Confirmar emissão nacional" description="Cada DPS será assinada e enviada ao ambiente configurado.">
         <div className="modal__body emission-summary"><FormError message={formError} /><span className="emission-summary__icon"><ShieldCheck size={25} /></span><div><strong>{selectedForIssue.length} documento(s) pronto(s)</strong><small>Valor total de {money(selectedForIssue.reduce((sum, item) => sum + item.amount, 0))}</small></div><ul>{selectedForIssue.map((invoice) => <li key={invoice.id}><span>{invoice.clientTradeName || invoice.clientName}</span><strong>{money(invoice.amount)}</strong></li>)}</ul></div>
         <footer className="modal__footer"><Button variant="secondary" onClick={() => setEmitModal(false)} disabled={issueMutation.isPending}>Voltar</Button><Button icon={<Send size={17} />} disabled={issueMutation.isPending || !integration?.ready} onClick={() => issueMutation.mutate(selectedForIssue.map((item) => item.id))}>{issueMutation.isPending ? 'Transmitindo...' : 'Assinar e emitir'}</Button></footer>
@@ -866,6 +938,69 @@ function CurrencyInput({ name, initialValue, required = false }: { name: string;
       setValue(digits ? Number(digits) / 100 : 0)
     }}
   />
+}
+
+function CapitalRow({ capital, servico }: { capital: { uf: string; city: string; cityCode: string }; servico: string }) {
+  const convenioMutation = useMutation({ mutationFn: () => api.fiscalCatalog.municipalConvenio(capital.cityCode) })
+  const aliquotasMutation = useMutation({ mutationFn: () => api.fiscalCatalog.municipalTaxCodesHistorico(capital.cityCode, servico) })
+  const pending = convenioMutation.isPending || aliquotasMutation.isPending
+
+  function summarize(mutation: typeof convenioMutation) {
+    if (mutation.isError) return <span className="nfse-capital-row__badge is-error">Erro: {apiErrorMessage(mutation.error)}</span>
+    if (!mutation.data) return null
+    if (!mutation.data.successful) return <span className="nfse-capital-row__badge is-error">HTTP {mutation.data.httpStatus}</span>
+    return <span className="nfse-capital-row__badge is-ok">HTTP {mutation.data.httpStatus}</span>
+  }
+
+  return <div className="nfse-capital-row">
+    <div className="nfse-capital-row__heading">
+      <strong>{capital.city} · {capital.uf}</strong>
+      <small>{capital.cityCode}</small>
+    </div>
+    <div className="nfse-capital-row__actions">
+      {summarize(convenioMutation)}<span className="nfse-capital-row__label">convênio</span>
+      {summarize(aliquotasMutation)}<span className="nfse-capital-row__label">alíquotas {servico}</span>
+      <Button type="button" variant="secondary" disabled={pending} onClick={() => { convenioMutation.mutate(); aliquotasMutation.mutate() }}>
+        {pending ? 'Consultando...' : 'Consultar'}
+      </Button>
+    </div>
+    {convenioMutation.data && <div><small>Convênio:</small><MunicipalTaxCodesPanel result={convenioMutation.data} /></div>}
+    {aliquotasMutation.data && <div><small>Alíquotas:</small><MunicipalTaxCodesPanel result={aliquotasMutation.data} /></div>}
+  </div>
+}
+
+function MunicipalTaxCodesPanel({ result }: { result: MunicipalTaxCodesResult }) {
+  let parsed: unknown = null
+  let parseFailed = false
+  if (result.rawBody) {
+    try {
+      parsed = JSON.parse(result.rawBody)
+    } catch {
+      parseFailed = true
+    }
+  }
+  const items = Array.isArray(parsed) ? parsed : parsed && typeof parsed === 'object' ? Object.values(parsed as Record<string, unknown>) : []
+
+  if (!result.successful) {
+    return <div className="nfse-tax-diagnostic__result is-error">
+      <p><strong>HTTP {result.httpStatus}{result.errorCode ? ` · ${result.errorCode}` : ''}</strong> — {result.errorMessage || 'A ADN Nacional rejeitou a consulta.'}</p>
+      <p className="nfse-tax-diagnostic__url">{result.requestedUrl}</p>
+      {result.rawBody && <pre>{result.rawBody}</pre>}
+    </div>
+  }
+
+  if (!items.length) {
+    return <div className="nfse-tax-diagnostic__result is-empty">
+      <p><strong>Nenhum código de tributação administrado</strong> foi retornado pela ADN Nacional para este município nesta consulta.</p>
+      <p className="nfse-tax-diagnostic__url">{result.requestedUrl}</p>
+      {result.rawBody && <pre>{result.rawBody}</pre>}
+    </div>
+  }
+
+  return <div className="nfse-tax-diagnostic__result">
+    <p>{items.length} código(s) administrado(s) retornado(s) pela ADN Nacional:</p>
+    <pre>{parseFailed ? result.rawBody : JSON.stringify(parsed, null, 2)}</pre>
+  </div>
 }
 
 function ClientInvoiceFields({ client, fallback, invoice, loading }: { client?: Client; fallback: ClientSearchOption; invoice: Invoice | null | undefined; loading: boolean }) {

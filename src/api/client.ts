@@ -23,7 +23,8 @@ http.interceptors.response.use(
   (response) => response,
   (error: AxiosError<ApiProblem>) => {
     const isLoginRequest = error.config?.url?.includes('/auth/login')
-    if (error.response?.status === 401 && !isLoginRequest) {
+    const isPublicRequest = error.config?.url?.includes('/public/')
+    if (error.response?.status === 401 && !isLoginRequest && !isPublicRequest) {
       clearStoredToken()
       window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
     }

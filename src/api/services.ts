@@ -24,6 +24,9 @@ import type {
   InvoicePayload,
   IssuerCompanyProfile,
   FiscalCatalog,
+  MunicipalTaxCodesResult,
+  PublicClientSignupPayload,
+  PublicClientSignupResponse,
   NfseCancelPayload,
   NfseIntegrationStatus,
   Employee,
@@ -380,9 +383,35 @@ export const api = {
       const { data } = await http.get<FiscalCatalog>('/fiscal-catalog')
       return data
     },
+    async municipalTaxCodes(cityCode: string, servico: string, competencia: string) {
+      const { data } = await http.get<MunicipalTaxCodesResult>(`/fiscal-catalog/municipal-tax-codes/${cityCode}`, { params: { servico, competencia } })
+      return data
+    },
+    async municipalTaxCodesHistorico(cityCode: string, servico: string) {
+      const { data } = await http.get<MunicipalTaxCodesResult>(`/fiscal-catalog/municipal-tax-codes/${cityCode}/historico`, { params: { servico } })
+      return data
+    },
+    async municipalConvenio(cityCode: string) {
+      const { data } = await http.get<MunicipalTaxCodesResult>(`/fiscal-catalog/municipal-tax-codes/${cityCode}/convenio`)
+      return data
+    },
+    async municipalCustomResource(cityCode: string, resource: string) {
+      const { data } = await http.get<MunicipalTaxCodesResult>(`/fiscal-catalog/municipal-tax-codes/${cityCode}/custom`, { params: { resource } })
+      return data
+    },
   },
   statements: resource<Statement, StatementPayload>('/statements'),
   users: resource<AppUser, CreateUserPayload | UpdateUserPayload>('/users'),
+  publicClients: {
+    async referralDescriptions() {
+      const { data } = await http.get<string[]>('/public/clients/referral-descriptions')
+      return data
+    },
+    async create(payload: PublicClientSignupPayload) {
+      const { data } = await http.post<PublicClientSignupResponse>('/public/clients', payload)
+      return data
+    },
+  },
 }
 
 export const queryKeys = {

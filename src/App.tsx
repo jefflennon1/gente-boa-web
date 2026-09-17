@@ -20,17 +20,31 @@ const pages = {
   '/envio-de-emails': lazy(() => import('./pages/ClientEmails').then((module) => ({ default: module.ClientEmailsPage }))),
 }
 
+const publicPages = {
+  '/cadastro': lazy(() => import('./pages/PublicClientSignup').then((module) => ({ default: module.PublicClientSignup }))),
+}
+
 export default function App() {
   const { pathname, navigate } = useRouter()
   const { isAuthenticated, initializing, user } = useAuth()
   const Page = pages[pathname as keyof typeof pages]
+  const PublicPage = publicPages[pathname as keyof typeof publicPages]
 
   useEffect(() => {
+    if (PublicPage) return
     if (!isAuthenticated && pathname !== '/login') navigate('/login', { replace: true })
     else if (isAuthenticated && pathname === '/login') navigate('/', { replace: true })
     else if (isAuthenticated && ['/usuarios', '/parametros-do-sistema', '/envio-de-emails'].includes(pathname) && user?.role !== 'ADMINISTRADOR') navigate('/', { replace: true })
     else if (isAuthenticated && !Page) navigate('/', { replace: true })
-  }, [Page, isAuthenticated, navigate, pathname, user?.role])
+  }, [Page, PublicPage, isAuthenticated, navigate, pathname, user?.role])
+
+  if (PublicPage) {
+    return (
+      <Suspense fallback={<div className="page-loader page-loader--screen"><span /><strong>Carregando...</strong></div>}>
+        <PublicPage />
+      </Suspense>
+    )
+  }
 
   if (initializing) return <div className="page-loader page-loader--screen"><span /><strong>Validando sessão...</strong></div>
   if (!isAuthenticated) return <Login />
