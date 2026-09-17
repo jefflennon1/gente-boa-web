@@ -409,6 +409,15 @@ export function NationalInvoices() {
       return
     }
     const data = new FormData(event.currentTarget)
+    const municipalServiceCode = String(data.get('municipalServiceCode') || '').replace(/\D/g, '')
+    if (serviceCityCode === '2304400' && municipalServiceCode.length !== 3) {
+      setFormError('Informe o código municipal de tributação de Fortaleza com 3 dígitos.')
+      return
+    }
+    if (municipalServiceCode && municipalServiceCode.length !== 3) {
+      setFormError('O código municipal de tributação deve possuir 3 dígitos.')
+      return
+    }
     if (data.get('ibsCbsApplicable') === 'true' && !selectedNbsCode) {
       setFormError('Selecione a NBS para informar IBS/CBS.')
       return
@@ -453,7 +462,7 @@ export function NationalInvoices() {
       customerEmail: String(data.get('customerEmail') || '').trim(),
       issuerCnae: String(data.get('issuerCnae')).trim(),
       nationalServiceCode: String(data.get('nationalServiceCode')).trim(),
-      municipalServiceCode: '',
+      municipalServiceCode,
       nbsCode: String(data.get('nbsCode')).replace(/\D/g, ''),
       serviceDescription: String(data.get('serviceDescription')).trim(),
       workIdentificationType: workRequired ? workIdentificationType : '',
@@ -677,6 +686,18 @@ export function NationalInvoices() {
               <button type="button" className="nfse-catalog-trigger" disabled={!selectedIssuerCnae || !availableNationalTaxCodes.length} onClick={() => { setCatalogSearch(''); setCatalogPicker('national') }}>
                 <span><strong>{selectedNationalTaxCodeOption ? selectedNationalTaxCodeOption.code : 'Selecionar serviço nacional'}</strong><small>{selectedNationalTaxCodeOption?.description || 'Pesquise pelo código ou pela descrição'}</small></span><ChevronDown size={17} />
               </button>
+            </FormField>
+            <FormField label={`Código municipal de tributação${serviceCityCode === '2304400' ? ' *' : ''}`} hint={serviceCityCode === '2304400' ? 'Fortaleza sem desdobramento adicional: 000' : 'Complemento municipal com 3 dígitos'}>
+              <input
+                name="municipalServiceCode"
+                inputMode="numeric"
+                pattern="[0-9]{3}"
+                minLength={3}
+                maxLength={3}
+                required={serviceCityCode === '2304400'}
+                defaultValue={formInvoice?.municipalServiceCode || (serviceCityCode === '2304400' ? '000' : '')}
+                onInput={(event) => { event.currentTarget.value = event.currentTarget.value.replace(/\D/g, '').slice(0, 3) }}
+              />
             </FormField>
             <FormField label="NBS" hint={selectedNationalTaxCode ? `${availableNbsCodes.length} opção(ões) correlacionada(s) no Anexo VIII 1.01.00` : 'Opcional · selecione primeiro o serviço nacional'}>
               <input type="hidden" name="nbsCode" value={selectedNbsCode} />
