@@ -617,6 +617,8 @@ h1, h2, h3, p { margin-top: 0; }
 .nfse-form-subtitle:first-of-type { margin-top: 0; }
 .nfse-form-subtitle strong { color: var(--ink); font-size: 9.5px; }
 .nfse-form-subtitle small { color: var(--muted); font-size: 8px; }
+.nfse-work-fields { margin: 15px 0; padding: 14px; border: 1px solid #d9dcf2; border-radius: 11px; background: #f8f8ff; }
+.nfse-work-fields .nfse-form-subtitle { margin-top: 0; }
 .nfse-catalog-trigger { width: 100%; min-height: 40px; padding: 7px 10px; border: 1px solid #dadce6; border-radius: 9px; display: flex; align-items: center; gap: 9px; color: var(--ink); background: white; text-align: left; cursor: pointer; transition: .15s ease; }
 .nfse-catalog-trigger:hover:not(:disabled), .nfse-catalog-trigger:focus-visible { border-color: #989cd1; box-shadow: 0 0 0 3px rgba(46,49,145,.07); outline: 0; }
 .nfse-catalog-trigger:disabled { color: #a6a9b8; background: #f7f8fb; cursor: not-allowed; }

@@ -676,6 +676,15 @@ export interface Invoice {
   municipalServiceCode: string | null
   nbsCode: string | null
   serviceDescription: string | null
+  workIdentificationType: 'CNO_CEI' | 'CIB' | 'ADDRESS' | null
+  workPropertyRegistration: string | null
+  workCode: string | null
+  workCib: string | null
+  workZipCode: string | null
+  workStreet: string | null
+  workNumber: string | null
+  workComplement: string | null
+  workDistrict: string | null
   unconditionalDiscount: number
   conditionalDiscount: number
   deductionValue: number
@@ -752,6 +761,15 @@ export interface InvoicePayload {
   municipalServiceCode?: string
   nbsCode?: string
   serviceDescription?: string
+  workIdentificationType?: 'CNO_CEI' | 'CIB' | 'ADDRESS' | ''
+  workPropertyRegistration?: string
+  workCode?: string
+  workCib?: string
+  workZipCode?: string
+  workStreet?: string
+  workNumber?: string
+  workComplement?: string
+  workDistrict?: string
   nature?: string
   notes?: string
   laborAmount?: number

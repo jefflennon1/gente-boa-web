@@ -68,9 +68,6 @@ const pendingStatuses: InvoiceStatus[] = [
   'CANCELAMENTO_SOLICITADO',
 ]
 
-// Vinculos operacionais definidos para as atividades cadastradas da emitente.
-// CNAE e codigo nacional classificam coisas diferentes; por isso esta relacao
-// pertence a configuracao da empresa, e nao a uma tabela universal do governo.
 const nationalTaxCodesByCnae: Record<string, string[]> = {
   '4329199': ['070201', '070202', '140601'],
   '4211102': ['070202', '071001', '230101', '240102'],
@@ -88,9 +85,6 @@ const nationalTaxCodesByCnae: Record<string, string[]> = {
   '7810800': ['170401', '170501'],
 }
 
-// Correlacao orientativa oficial do Anexo VIII 1.01.00 da NFS-e.
-// A chave corresponde ao item/subitem da LC 116 (os quatro primeiros digitos
-// do codigo nacional). A Receita informa que o anexo nao e regra de rejeicao.
 const nbsCodesByLc116Item: Record<string, string[]> = {
   '0702': ['101011100', '101011200', '101012100', '101012200', '101012900', '101013000', '101021100', '101021200', '101021300', '101022000', '101023100', '101023200', '101023300', '101023400', '101023510', '101023520', '101023530', '101024110', '101024120', '101024190', '101024210', '101024220', '101025100', '101025210', '101025220', '101025310', '101025320', '101026100', '101026900', '101027000', '101028000', '101029000', '101032000', '101033000', '101034100', '101034200', '101040000', '101051100', '101051200', '101052100', '101052200', '101053000', '101054000', '101055000', '101056000', '101059000', '101061100', '101061900', '101062100', '101062200', '101063200', '101064000', '101066000', '101073000', '101074000', '101079000'],
   '0705': ['101011100', '101011200', '101012100', '101012200', '101012900', '101013000', '101021100', '101021200', '101021300', '101022000', '101023100', '101023200', '101023300', '101023400', '101023510', '101023520', '101023530', '101024110', '101024120', '101024190', '101024210', '101024220', '101025100', '101025210', '101025220', '101025310', '101025320', '101026100', '101026900', '101027000', '101028000', '101029000', '101073000', '101079000'],
@@ -104,6 +98,11 @@ const nbsCodesByLc116Item: Record<string, string[]> = {
   '2401': ['126060000'],
   '3101': ['114150000'],
 }
+
+const workRequiredTaxCodes = new Set([
+  '070201', '070202', '070401', '070501', '070502', '070601', '070602',
+  '070701', '070801', '071701', '071901', '141403', '141404',
+])
 
 function invoiceCode(invoice: Invoice) {
   if (invoice.number) return `NFS-e ${invoice.number}`
@@ -184,6 +183,7 @@ export function NationalInvoices() {
   const [selectedIssuerCnae, setSelectedIssuerCnae] = useState('')
   const [selectedNationalTaxCode, setSelectedNationalTaxCode] = useState('')
   const [selectedNbsCode, setSelectedNbsCode] = useState('')
+  const [workIdentificationType, setWorkIdentificationType] = useState<'CNO_CEI' | 'CIB' | 'ADDRESS'>('ADDRESS')
   const [catalogPicker, setCatalogPicker] = useState<'national' | 'nbs' | null>(null)
   const [catalogSearch, setCatalogSearch] = useState('')
   const [clientPickerOpen, setClientPickerOpen] = useState(false)
@@ -336,6 +336,7 @@ export function NationalInvoices() {
     setSelectedIssuerCnae(companyProfileQuery.data?.primaryCnae || '')
     setSelectedNationalTaxCode('')
     setSelectedNbsCode('')
+    setWorkIdentificationType('ADDRESS')
     setFormInvoice(null)
   }
 
@@ -346,6 +347,7 @@ export function NationalInvoices() {
     setSelectedIssuerCnae(invoice.issuerCnae || '')
     setSelectedNationalTaxCode(invoice.nationalServiceCode || '')
     setSelectedNbsCode(invoice.nbsCode || '')
+    setWorkIdentificationType(invoice.workIdentificationType || 'ADDRESS')
     setDetail(null)
     setFormInvoice(invoice)
   }
@@ -383,6 +385,22 @@ export function NationalInvoices() {
       return
     }
     const data = new FormData(event.currentTarget)
+    const workRequired = workRequiredTaxCodes.has(selectedNationalTaxCode)
+    if (workRequired && workIdentificationType === 'CNO_CEI' && !String(data.get('workCode') || '').trim()) {
+      setFormError('Informe o código CNO/CEI da obra.')
+      return
+    }
+    if (workRequired && workIdentificationType === 'CIB' && String(data.get('workCib') || '').trim().length !== 8) {
+      setFormError('Informe o CIB da obra com 8 caracteres.')
+      return
+    }
+    if (workRequired && workIdentificationType === 'ADDRESS') {
+      const workZipCode = String(data.get('workZipCode') || '').replace(/\D/g, '')
+      if (workZipCode.length !== 8 || !String(data.get('workStreet') || '').trim() || !String(data.get('workNumber') || '').trim() || !String(data.get('workDistrict') || '').trim()) {
+        setFormError('Preencha CEP, logradouro, número e bairro da obra.')
+        return
+      }
+    }
     const payload: InvoicePayload = {
       clientId: selectedClient.id,
       competence: String(data.get('competence')),
@@ -410,6 +428,15 @@ export function NationalInvoices() {
       municipalServiceCode: String(data.get('municipalServiceCode')).trim(),
       nbsCode: String(data.get('nbsCode')).replace(/\D/g, ''),
       serviceDescription: String(data.get('serviceDescription')).trim(),
+      workIdentificationType: workRequired ? workIdentificationType : '',
+      workPropertyRegistration: workRequired ? String(data.get('workPropertyRegistration') || '').trim() : '',
+      workCode: workRequired && workIdentificationType === 'CNO_CEI' ? String(data.get('workCode') || '').trim() : '',
+      workCib: workRequired && workIdentificationType === 'CIB' ? String(data.get('workCib') || '').trim() : '',
+      workZipCode: workRequired && workIdentificationType === 'ADDRESS' ? String(data.get('workZipCode') || '').trim() : '',
+      workStreet: workRequired && workIdentificationType === 'ADDRESS' ? String(data.get('workStreet') || '').trim() : '',
+      workNumber: workRequired && workIdentificationType === 'ADDRESS' ? String(data.get('workNumber') || '').trim() : '',
+      workComplement: workRequired && workIdentificationType === 'ADDRESS' ? String(data.get('workComplement') || '').trim() : '',
+      workDistrict: workRequired && workIdentificationType === 'ADDRESS' ? String(data.get('workDistrict') || '').trim() : '',
       nature: String(data.get('nature')).trim(),
       notes: String(data.get('notes')).trim(),
       laborAmount: Number(data.get('laborAmount') || 0),
@@ -628,6 +655,28 @@ export function NationalInvoices() {
             </FormField>
             </div>
             <FormField label="Discriminação do serviço *"><textarea name="serviceDescription" rows={4} maxLength={2000} required defaultValue={formInvoice?.serviceDescription || ''} /></FormField>
+            {workRequiredTaxCodes.has(selectedNationalTaxCode) && <div className="nfse-work-fields" key={`${selectedNationalTaxCode}-${selectedClient?.id || 'none'}-${formInvoice?.id || 'new'}`}>
+              <div className="nfse-form-subtitle"><strong>Informações da obra *</strong><small>Obrigatórias para o código nacional selecionado</small></div>
+              <div className="form-grid form-grid--two">
+                <FormField label="Identificação da obra *">
+                  <select value={workIdentificationType} onChange={(event) => setWorkIdentificationType(event.target.value as 'CNO_CEI' | 'CIB' | 'ADDRESS')}>
+                    <option value="ADDRESS">Endereço da obra</option>
+                    <option value="CNO_CEI">CNO/CEI</option>
+                    <option value="CIB">CIB</option>
+                  </select>
+                </FormField>
+                <FormField label="Inscrição imobiliária fiscal" hint="Opcional"><input name="workPropertyRegistration" maxLength={30} defaultValue={formInvoice?.workPropertyRegistration || ''} /></FormField>
+              </div>
+              {workIdentificationType === 'CNO_CEI' && <FormField label="Código CNO/CEI *"><input name="workCode" maxLength={30} required defaultValue={formInvoice?.workCode || ''} /></FormField>}
+              {workIdentificationType === 'CIB' && <FormField label="CIB *" hint="8 caracteres"><input name="workCib" minLength={8} maxLength={8} required defaultValue={formInvoice?.workCib || ''} /></FormField>}
+              {workIdentificationType === 'ADDRESS' && <div className="form-grid form-grid--three">
+                <FormField label="CEP da obra *"><input name="workZipCode" inputMode="numeric" maxLength={10} required defaultValue={formInvoice?.workZipCode || formInvoice?.customerZipCode || selectedClientDetailsQuery.data?.nrcep || selectedClient?.zipCode || ''} /></FormField>
+                <FormField label="Logradouro da obra *"><input name="workStreet" maxLength={255} required defaultValue={formInvoice?.workStreet || formInvoice?.customerStreet || selectedClientDetailsQuery.data?.dsender || selectedClient?.street || ''} /></FormField>
+                <FormField label="Número da obra *"><input name="workNumber" maxLength={60} required defaultValue={formInvoice?.workNumber || formInvoice?.customerNumber || selectedClientDetailsQuery.data?.dscompl || 'S/N'} /></FormField>
+                <FormField label="Complemento"><input name="workComplement" maxLength={156} defaultValue={formInvoice?.workComplement || formInvoice?.customerComplement || selectedClient?.complement || ''} /></FormField>
+                <FormField label="Bairro da obra *"><input name="workDistrict" maxLength={60} required defaultValue={formInvoice?.workDistrict || formInvoice?.customerDistrict || selectedClientDetailsQuery.data?.dsbairr || selectedClient?.district || ''} /></FormField>
+              </div>}
+            </div>}
             <div className="form-grid form-grid--two">
             <FormField label="Natureza da operação"><input name="nature" maxLength={100} defaultValue={formInvoice?.nature || ''} /></FormField>
             <FormField label="Observações internas"><textarea name="notes" rows={2} maxLength={2000} defaultValue={formInvoice?.notes || ''} /></FormField>
@@ -736,6 +785,7 @@ function InvoiceDetail({ invoice }: { invoice: Invoice }) {
     <div className="detail-sections-grid">
       <section className="drawer-section"><h3>Identificação nacional</h3><dl><div><dt>Número da NFS-e</dt><dd>{invoice.number || 'Ainda não autorizado'}</dd></div><div><dt>Chave de acesso</dt><dd className="nfse-long-value">{invoice.accessKey || 'Não disponível'}</dd></div><div><dt>DPS</dt><dd>{invoice.dpsId || 'Ainda não numerada'}</dd></div><div><dt>Ambiente / layout</dt><dd>{invoice.environment ? `${enumLabel(invoice.environment)} · ${invoice.layoutVersion}` : 'Registro legado'}</dd></div></dl></section>
       <section className="drawer-section"><h3>Tributação do serviço</h3><dl><div><dt>CNAE do prestador</dt><dd>{invoice.issuerCnae || 'Não informado'}</dd></div><div><dt>Código nacional</dt><dd>{invoice.nationalServiceCode || 'Não informado'}</dd></div><div><dt>Código municipal da DPS</dt><dd>{invoice.municipalServiceCode || 'Não informado'}</dd></div><div><dt>NBS</dt><dd>{invoice.nbsCode || 'Não informada'}</dd></div><div><dt>Município da prestação</dt><dd>{invoice.serviceCityCode || 'Não informado'}</dd></div><div><dt>ISS retido</dt><dd>{invoice.issRetained ? 'Sim' : 'Não'}</dd></div></dl></section>
+      {invoice.workIdentificationType && <section className="drawer-section"><h3>Informações da obra</h3><dl><div><dt>Identificação</dt><dd>{invoice.workIdentificationType === 'ADDRESS' ? 'Endereço' : invoice.workIdentificationType === 'CNO_CEI' ? 'CNO/CEI' : 'CIB'}</dd></div><div><dt>Código</dt><dd>{invoice.workCode || invoice.workCib || 'Identificada pelo endereço'}</dd></div><div><dt>Inscrição imobiliária</dt><dd>{invoice.workPropertyRegistration || 'Não informada'}</dd></div><div><dt>Endereço</dt><dd>{[invoice.workStreet, invoice.workNumber, invoice.workComplement, invoice.workDistrict, invoice.workZipCode].filter(Boolean).join(' · ') || 'Não se aplica'}</dd></div></dl></section>}
       {invoice.ibsCbsApplicable && <section className="drawer-section"><h3>IBS/CBS</h3><dl><div><dt>Indicador da operação</dt><dd>{invoice.ibsCbsOperationIndicator}</dd></div><div><dt>CST</dt><dd>{invoice.ibsCbsCst}</dd></div><div><dt>Classificação tributária</dt><dd>{invoice.ibsCbsTaxClassification}</dd></div><div><dt>Consumidor final</dt><dd>{invoice.ibsCbsFinalConsumer === '1' ? 'Sim' : 'Não'}</dd></div></dl></section>}
       <section className="drawer-section drawer-section--wide"><h3>Serviço</h3><p className="drawer-section__text">{invoice.serviceDescription || invoice.notes || 'Descrição não informada.'}</p>{invoice.address && <p className="drawer-section__text detail-text-spaced"><strong>Tomador:</strong> {invoice.address}</p>}</section>
     </div>
