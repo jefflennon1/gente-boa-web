@@ -24,6 +24,7 @@ import type {
   InvoicePayload,
   IssuerCompanyProfile,
   FiscalCatalog,
+  MunicipalServiceValidation,
   NfseCancelPayload,
   NfseIntegrationStatus,
   Employee,
@@ -378,6 +379,12 @@ export const api = {
   fiscalCatalog: {
     async find() {
       const { data } = await http.get<FiscalCatalog>('/fiscal-catalog')
+      return data
+    },
+    async validateMunicipalService(cityCode: string, nationalTaxCode: string, competence: string) {
+      const { data } = await http.get<MunicipalServiceValidation>('/fiscal-catalog/municipal-service', {
+        params: { cityCode, nationalTaxCode, competence },
+      })
       return data
     },
   },

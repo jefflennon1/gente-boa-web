@@ -868,6 +868,15 @@ export interface FiscalCatalog {
   nbsCodes: FiscalNbsCode[]
 }
 
+export interface MunicipalServiceValidation {
+  cityCode: string
+  nationalTaxCode: string
+  competence: ISODate
+  administered: boolean
+  issRate: number | null
+  message: string | null
+}
+
 export interface IssuerCompanyProfile {
   id: number
   legalName: string
