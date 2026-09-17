@@ -643,6 +643,7 @@ export interface Invoice {
   competence: string | null
   amount: number
   tax: number
+  issRate: number | null
   issRetained: boolean
   status: InvoiceStatus
   issuedAt: ISODate | null

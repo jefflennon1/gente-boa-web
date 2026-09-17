@@ -427,7 +427,7 @@ export function NationalInvoices() {
       clientId: selectedClient.id,
       competence: String(data.get('competence')),
       amount: currencyInputValue(data.get('amount')),
-      unconditionalDiscount: Number(data.get('unconditionalDiscount') || 0),
+      unconditionalDiscount: currencyInputValue(data.get('unconditionalDiscount')),
       deductionValue: 0,
       issRate: Number(data.get('issRate') || 0),
       issRetained: data.get('issRetained') === 'true',
@@ -461,17 +461,17 @@ export function NationalInvoices() {
       workDistrict: workRequired && workIdentificationType === 'ADDRESS' ? String(data.get('workDistrict') || '').trim() : '',
       nature: String(data.get('nature')).trim(),
       notes: String(data.get('notes')).trim(),
-      laborAmount: Number(data.get('laborAmount') || 0),
-      materialAmount: Number(data.get('materialAmount') || 0),
-      conditionalDiscount: Number(data.get('conditionalDiscount') || 0),
+      laborAmount: currencyInputValue(data.get('laborAmount')),
+      materialAmount: currencyInputValue(data.get('materialAmount')),
+      conditionalDiscount: currencyInputValue(data.get('conditionalDiscount')),
       pisCofinsCst: String(data.get('pisCofinsCst')).trim(),
       pisCofinsWithholdingType: String(data.get('pisCofinsWithholdingType')).trim(),
-      pisCofinsBase: Number(data.get('pisCofinsBase') || 0),
-      pisValue: Number(data.get('pisValue') || 0),
-      cofinsValue: Number(data.get('cofinsValue') || 0),
-      retainedInss: Number(data.get('retainedInss') || 0),
-      retainedIrrf: Number(data.get('retainedIrrf') || 0),
-      retainedCsll: Number(data.get('retainedCsll') || 0),
+      pisCofinsBase: currencyInputValue(data.get('pisCofinsBase')),
+      pisValue: currencyInputValue(data.get('pisValue')),
+      cofinsValue: currencyInputValue(data.get('cofinsValue')),
+      retainedInss: currencyInputValue(data.get('retainedInss')),
+      retainedIrrf: currencyInputValue(data.get('retainedIrrf')),
+      retainedCsll: currencyInputValue(data.get('retainedCsll')),
       approximateSimpleNationalTaxRate: Number(data.get('approximateSimpleNationalTaxRate') || 0),
       approximateFederalTaxRate: Number(data.get('approximateFederalTaxRate') || 0),
       approximateStateTaxRate: Number(data.get('approximateStateTaxRate') || 0),
@@ -716,12 +716,12 @@ export function NationalInvoices() {
             <div className="nfse-form-subtitle"><strong>Valores do serviço</strong><small>Campos com * são obrigatórios</small></div>
             <div className="form-grid form-grid--four">
               <FormField label="Valor do serviço *"><CurrencyInput name="amount" initialValue={formInvoice?.amount || 0} required /></FormField>
-              <FormField label="Desconto incondicionado"><input name="unconditionalDiscount" type="number" min="0" step="0.01" defaultValue={formInvoice?.unconditionalDiscount || 0} /></FormField>
-              <FormField label="Desconto condicionado"><input name="conditionalDiscount" type="number" min="0" step="0.01" defaultValue={formInvoice?.conditionalDiscount || 0} /></FormField>
-              <FormField label="Alíquota ISS (%)" hint={issRateRequirement(integrationQuery.data, issRetained) === 'required' ? `Obrigatória entre ${issRateMinimum(integrationQuery.data, issRetained).toLocaleString('pt-BR')}% e 5%` : 'Não se aplica ao regime e retenção selecionados'}><input name="issRate" type="number" min={issRateMinimum(integrationQuery.data, issRetained)} max="5" step="0.01" required={issRateRequirement(integrationQuery.data, issRetained) === 'required'} disabled={issRateRequirement(integrationQuery.data, issRetained) === 'forbidden'} defaultValue={issRateRequirement(integrationQuery.data, issRetained) === 'required' && formInvoice?.tax ? (formInvoice.tax / Math.max(formInvoice.amount, 1)) * 100 : ''} /></FormField>
+              <FormField label="Desconto incondicionado"><CurrencyInput name="unconditionalDiscount" initialValue={formInvoice?.unconditionalDiscount || 0} /></FormField>
+              <FormField label="Desconto condicionado"><CurrencyInput name="conditionalDiscount" initialValue={formInvoice?.conditionalDiscount || 0} /></FormField>
+              <FormField label="Alíquota ISS (%)" hint={issRateRequirement(integrationQuery.data, issRetained) === 'required' ? `Obrigatória entre ${issRateMinimum(integrationQuery.data, issRetained).toLocaleString('pt-BR')}% e 5%` : 'Não se aplica ao regime e retenção selecionados'}><input name="issRate" type="number" min={issRateMinimum(integrationQuery.data, issRetained)} max="5" step="0.01" required={issRateRequirement(integrationQuery.data, issRetained) === 'required'} disabled={issRateRequirement(integrationQuery.data, issRetained) === 'forbidden'} defaultValue={issRateRequirement(integrationQuery.data, issRetained) === 'required' ? formInvoice?.issRate ?? '' : ''} /></FormField>
               <FormField label="ISS retido"><select name="issRetained" value={String(issRetained)} onChange={(event) => setIssRetained(event.target.value === 'true')}><option value="false">Não</option><option value="true">Sim</option></select></FormField>
-              <FormField label="Mão de obra"><input name="laborAmount" type="number" min="0" step="0.01" defaultValue={formInvoice?.laborAmount || 0} /></FormField>
-              <FormField label="Materiais"><input name="materialAmount" type="number" min="0" step="0.01" defaultValue={formInvoice?.materialAmount || 0} /></FormField>
+              <FormField label="Mão de obra"><CurrencyInput name="laborAmount" initialValue={formInvoice?.laborAmount || 0} /></FormField>
+              <FormField label="Materiais"><CurrencyInput name="materialAmount" initialValue={formInvoice?.materialAmount || 0} /></FormField>
             </div>
             <div className="nfse-form-subtitle"><strong>Tributos aproximados</strong><small>Percentuais da Lei 12.741/2012; confirme os valores com a contabilidade</small></div>
             {!companyProfile?.simei && <div className="form-grid form-grid--four">
@@ -735,12 +735,12 @@ export function NationalInvoices() {
             <div className="form-grid form-grid--four">
               <FormField label="CST PIS/COFINS"><input name="pisCofinsCst" inputMode="numeric" maxLength={2} defaultValue={formInvoice?.pisCofinsCst || ''} /></FormField>
               <FormField label="Tipo de retenção PIS/COFINS"><select name="pisCofinsWithholdingType" defaultValue={formInvoice?.pisCofinsWithholdingType || ''}><option value="">Não informar</option><option value="0">PIS/COFINS/CSLL não retidos</option><option value="1">PIS/COFINS retidos</option><option value="2">PIS/COFINS não retidos</option><option value="3">PIS/COFINS/CSLL retidos</option><option value="4">PIS/COFINS retidos; CSLL não</option><option value="5">Somente PIS retido</option><option value="6">Somente COFINS retido</option><option value="7">COFINS/CSLL retidos</option><option value="8">Somente CSLL retido</option><option value="9">PIS/CSLL retidos</option></select></FormField>
-              <FormField label="Base PIS/COFINS"><input name="pisCofinsBase" type="number" min="0" step="0.01" defaultValue={formInvoice?.pisCofinsBase || 0} /></FormField>
-              <FormField label="PIS"><input name="pisValue" type="number" min="0" step="0.01" defaultValue={formInvoice?.pisValue || 0} /></FormField>
-              <FormField label="COFINS"><input name="cofinsValue" type="number" min="0" step="0.01" defaultValue={formInvoice?.cofinsValue || 0} /></FormField>
-              <FormField label="INSS/CP retido"><input name="retainedInss" type="number" min="0" step="0.01" defaultValue={formInvoice?.retainedInss || 0} /></FormField>
-              <FormField label="IRRF retido"><input name="retainedIrrf" type="number" min="0" step="0.01" defaultValue={formInvoice?.retainedIrrf || 0} /></FormField>
-              <FormField label="CSLL retido"><input name="retainedCsll" type="number" min="0" step="0.01" defaultValue={formInvoice?.retainedCsll || 0} /></FormField>
+              <FormField label="Base PIS/COFINS"><CurrencyInput name="pisCofinsBase" initialValue={formInvoice?.pisCofinsBase || 0} /></FormField>
+              <FormField label="PIS"><CurrencyInput name="pisValue" initialValue={formInvoice?.pisValue || 0} /></FormField>
+              <FormField label="COFINS"><CurrencyInput name="cofinsValue" initialValue={formInvoice?.cofinsValue || 0} /></FormField>
+              <FormField label="INSS/CP retido"><CurrencyInput name="retainedInss" initialValue={formInvoice?.retainedInss || 0} /></FormField>
+              <FormField label="IRRF retido"><CurrencyInput name="retainedIrrf" initialValue={formInvoice?.retainedIrrf || 0} /></FormField>
+              <FormField label="CSLL retido"><CurrencyInput name="retainedCsll" initialValue={formInvoice?.retainedCsll || 0} /></FormField>
               <FormField label="Preparação"><select name="status" defaultValue={formInvoice?.status === 'REJEITADA' ? 'REVISAR' : formInvoice?.status || 'RASCUNHO'}><option value="RASCUNHO">Rascunho</option><option value="REVISAR">Revisar</option><option value="PRONTA">Pronta para emitir</option></select></FormField>
             </div>
           </section>
