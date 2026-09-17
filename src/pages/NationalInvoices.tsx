@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   Building2,
@@ -34,7 +34,6 @@ import type {
   InvoicePayload,
   InvoiceStatus,
   IssuerCompanyProfile,
-  MunicipalServiceValidation,
   NfseCancelPayload,
   NfseIntegrationStatus,
 } from '../types'
@@ -409,14 +408,6 @@ export function NationalInvoices() {
       setFormError('Selecione o código nacional de tributação do serviço prestado.')
       return
     }
-    if (selectedMunicipalValidation && !selectedMunicipalValidation.administered) {
-      setFormError('O código nacional selecionado não é administrado pelo município na competência informada.')
-      return
-    }
-    if (municipalValidationLoading || municipalValidationError || !selectedMunicipalValidation) {
-      setFormError('Aguarde a validação do código nacional nos parâmetros oficiais do município.')
-      return
-    }
     const data = new FormData(event.currentTarget)
     if (data.get('ibsCbsApplicable') === 'true' && !selectedNbsCode) {
       setFormError('Selecione a NBS para informar IBS/CBS.')
@@ -522,26 +513,11 @@ export function NationalInvoices() {
   const integration = integrationQuery.data
   const companyProfile = companyProfileQuery.data
   const fiscalCatalog = fiscalCatalogQuery.data
-  const candidateNationalTaxCodes = useMemo(() => {
+  const availableNationalTaxCodes = useMemo(() => {
     const configuredCodes = new Set(nationalTaxCodesByCnae[selectedIssuerCnae] || [])
     if (selectedNationalTaxCode) configuredCodes.add(selectedNationalTaxCode)
     return (fiscalCatalog?.nationalTaxCodes || []).filter((item) => configuredCodes.has(item.code))
   }, [fiscalCatalog?.nationalTaxCodes, selectedIssuerCnae, selectedNationalTaxCode])
-  const municipalServiceQueries = useQueries({
-    queries: candidateNationalTaxCodes.map((item) => ({
-      queryKey: [...queryKeys.fiscalCatalog, 'municipal-service', serviceCityCode, item.code, competence],
-      queryFn: () => api.fiscalCatalog.validateMunicipalService(serviceCityCode, item.code, competence),
-      enabled: formInvoice !== undefined && /^\d{7}$/.test(serviceCityCode) && Boolean(competence),
-      staleTime: 15 * 60 * 1000,
-      retry: false,
-    })),
-  })
-  const municipalValidationLoading = municipalServiceQueries.some((query) => query.isPending)
-  const municipalValidationError = municipalServiceQueries.some((query) => query.isError)
-  const availableNationalTaxCodes = candidateNationalTaxCodes.filter((_, index) => municipalServiceQueries[index]?.data?.administered)
-  const selectedMunicipalValidation = candidateNationalTaxCodes.reduce((result, item, index) => (
-    item.code === selectedNationalTaxCode ? municipalServiceQueries[index]?.data : result
-  ), undefined as MunicipalServiceValidation | undefined)
   const availableNbsCodes = useMemo(() => {
     const correlated = nbsCodesByLc116Item[selectedNationalTaxCode.slice(0, 4)]
     if (!correlated) return []
@@ -696,12 +672,11 @@ export function NationalInvoices() {
                 {(companyProfile?.secondaryCnaes || []).map((item) => <option key={item.id} value={item.cnaeCode}>{item.cnaeCode} · {item.description}</option>)}
               </select>
             </FormField>
-            <FormField label="Código nacional de tributação *" hint={!selectedIssuerCnae ? 'Selecione primeiro a atividade do prestador' : municipalValidationLoading ? 'Consultando os serviços administrados pelo município...' : municipalValidationError ? 'Não foi possível consultar os parâmetros municipais' : `${availableNationalTaxCodes.length} serviço(s) vigente(s) no município e competência informados`}>
+            <FormField label="Código nacional de tributação *" hint={selectedIssuerCnae ? `${availableNationalTaxCodes.length} serviço(s) relacionados à atividade selecionada` : 'Selecione primeiro a atividade do prestador'}>
               <input type="hidden" name="nationalServiceCode" value={selectedNationalTaxCode} />
               <button type="button" className="nfse-catalog-trigger" disabled={!selectedIssuerCnae || !availableNationalTaxCodes.length} onClick={() => { setCatalogSearch(''); setCatalogPicker('national') }}>
                 <span><strong>{selectedNationalTaxCodeOption ? selectedNationalTaxCodeOption.code : 'Selecionar serviço nacional'}</strong><small>{selectedNationalTaxCodeOption?.description || 'Pesquise pelo código ou pela descrição'}</small></span><ChevronDown size={17} />
               </button>
-              {selectedNationalTaxCode && selectedMunicipalValidation && !selectedMunicipalValidation.administered && <small className="field-error">Este serviço não é administrado pelo município na competência informada. Selecione outro código.</small>}
             </FormField>
             <FormField label="NBS" hint={selectedNationalTaxCode ? `${availableNbsCodes.length} opção(ões) correlacionada(s) no Anexo VIII 1.01.00` : 'Opcional · selecione primeiro o serviço nacional'}>
               <input type="hidden" name="nbsCode" value={selectedNbsCode} />
