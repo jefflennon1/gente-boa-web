@@ -696,6 +696,10 @@ export interface Invoice {
   retainedInss: number
   retainedIrrf: number
   retainedCsll: number
+  approximateSimpleNationalTaxRate: number | null
+  approximateFederalTaxRate: number | null
+  approximateStateTaxRate: number | null
+  approximateMunicipalTaxRate: number | null
   errorCode: string | null
   errorMessage: string | null
   attempts: number
@@ -783,6 +787,10 @@ export interface InvoicePayload {
   retainedInss?: number
   retainedIrrf?: number
   retainedCsll?: number
+  approximateSimpleNationalTaxRate?: number
+  approximateFederalTaxRate?: number
+  approximateStateTaxRate?: number
+  approximateMunicipalTaxRate?: number
   status?: InvoiceStatus
   replacedAccessKey?: string
   replacementReasonCode?: string
@@ -820,6 +828,11 @@ export interface NfseIntegrationStatus {
   environment: NfseEnvironment
   layoutVersion: string
   danfseConfigured: boolean
+  issuerMunicipalRegistrationSent: boolean
+  simpleNationalOption: number | null
+  simpleNationalCalculationRegime: number | null
+  specialTaxRegime: number | null
+  municipalAgreementActive: boolean
   missingConfiguration: string[]
 }
 

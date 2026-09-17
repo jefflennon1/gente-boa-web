@@ -35,6 +35,7 @@ import type {
   InvoiceStatus,
   IssuerCompanyProfile,
   NfseCancelPayload,
+  NfseIntegrationStatus,
 } from '../types'
 import {
   Badge,
@@ -141,6 +142,20 @@ function currencyInputValue(value: FormDataEntryValue | null) {
   return digits ? Number(digits) / 100 : 0
 }
 
+function issRateRequirement(status: NfseIntegrationStatus | undefined, retained: boolean) {
+  if (!status || status.simpleNationalOption === 2 || Number(status.specialTaxRegime || 0) !== 0) return 'forbidden'
+  if (status.simpleNationalOption === 1) return status.municipalAgreementActive ? 'forbidden' : 'required'
+  if (status.simpleNationalCalculationRegime === 1 && status.municipalAgreementActive) return retained ? 'required' : 'forbidden'
+  return status.municipalAgreementActive ? 'forbidden' : 'required'
+}
+
+function issRateMinimum(status: NfseIntegrationStatus | undefined, retained: boolean) {
+  return status?.simpleNationalOption === 3
+    && status.simpleNationalCalculationRegime === 1
+    && status.municipalAgreementActive
+    && retained ? 1.8 : 0.01
+}
+
 function invoiceClient(invoice: Invoice): ClientSearchOption | null {
   if (!invoice.clientId) return null
   return {
@@ -184,6 +199,7 @@ export function NationalInvoices() {
   const [selectedNationalTaxCode, setSelectedNationalTaxCode] = useState('')
   const [selectedNbsCode, setSelectedNbsCode] = useState('')
   const [workIdentificationType, setWorkIdentificationType] = useState<'CNO_CEI' | 'CIB' | 'ADDRESS'>('ADDRESS')
+  const [issRetained, setIssRetained] = useState(false)
   const [catalogPicker, setCatalogPicker] = useState<'national' | 'nbs' | null>(null)
   const [catalogSearch, setCatalogSearch] = useState('')
   const [clientPickerOpen, setClientPickerOpen] = useState(false)
@@ -337,6 +353,7 @@ export function NationalInvoices() {
     setSelectedNationalTaxCode('')
     setSelectedNbsCode('')
     setWorkIdentificationType('ADDRESS')
+    setIssRetained(false)
     setFormInvoice(null)
   }
 
@@ -348,6 +365,7 @@ export function NationalInvoices() {
     setSelectedNationalTaxCode(invoice.nationalServiceCode || '')
     setSelectedNbsCode(invoice.nbsCode || '')
     setWorkIdentificationType(invoice.workIdentificationType || 'ADDRESS')
+    setIssRetained(invoice.issRetained)
     setDetail(null)
     setFormInvoice(invoice)
   }
@@ -385,6 +403,10 @@ export function NationalInvoices() {
       return
     }
     const data = new FormData(event.currentTarget)
+    if (data.get('ibsCbsApplicable') === 'true' && !selectedNbsCode) {
+      setFormError('Selecione a NBS para informar IBS/CBS.')
+      return
+    }
     const workRequired = workRequiredTaxCodes.has(selectedNationalTaxCode)
     if (workRequired && workIdentificationType === 'CNO_CEI' && !String(data.get('workCode') || '').trim()) {
       setFormError('Informe o código CNO/CEI da obra.')
@@ -406,14 +428,14 @@ export function NationalInvoices() {
       competence: String(data.get('competence')),
       amount: currencyInputValue(data.get('amount')),
       unconditionalDiscount: Number(data.get('unconditionalDiscount') || 0),
-      deductionValue: Number(data.get('deductionValue') || 0),
+      deductionValue: 0,
       issRate: Number(data.get('issRate') || 0),
       issRetained: data.get('issRetained') === 'true',
       serviceCityCode: String(data.get('serviceCityCode')).trim(),
       customerCityCode: String(data.get('customerCityCode')).trim(),
       customerDocument: String(data.get('customerDocument') || '').trim(),
       customerName: String(data.get('customerName') || '').trim(),
-      customerMunicipalRegistration: String(data.get('customerMunicipalRegistration') || '').trim(),
+      customerMunicipalRegistration: '',
       customerZipCode: String(data.get('customerZipCode') || '').trim(),
       customerStreet: String(data.get('customerStreet') || '').trim(),
       customerNumber: String(data.get('customerNumber') || '').trim(),
@@ -425,7 +447,7 @@ export function NationalInvoices() {
       customerEmail: String(data.get('customerEmail') || '').trim(),
       issuerCnae: String(data.get('issuerCnae')).trim(),
       nationalServiceCode: String(data.get('nationalServiceCode')).trim(),
-      municipalServiceCode: String(data.get('municipalServiceCode')).trim(),
+      municipalServiceCode: '',
       nbsCode: String(data.get('nbsCode')).replace(/\D/g, ''),
       serviceDescription: String(data.get('serviceDescription')).trim(),
       workIdentificationType: workRequired ? workIdentificationType : '',
@@ -450,6 +472,10 @@ export function NationalInvoices() {
       retainedInss: Number(data.get('retainedInss') || 0),
       retainedIrrf: Number(data.get('retainedIrrf') || 0),
       retainedCsll: Number(data.get('retainedCsll') || 0),
+      approximateSimpleNationalTaxRate: Number(data.get('approximateSimpleNationalTaxRate') || 0),
+      approximateFederalTaxRate: Number(data.get('approximateFederalTaxRate') || 0),
+      approximateStateTaxRate: Number(data.get('approximateStateTaxRate') || 0),
+      approximateMunicipalTaxRate: Number(data.get('approximateMunicipalTaxRate') || 0),
       status: String(data.get('status')) as InvoiceStatus,
       replacedAccessKey: String(data.get('replacedAccessKey')).trim(),
       replacementReasonCode: String(data.get('replacementReasonCode')).trim(),
@@ -646,7 +672,6 @@ export function NationalInvoices() {
                 <span><strong>{selectedNationalTaxCodeOption ? selectedNationalTaxCodeOption.code : 'Selecionar serviço nacional'}</strong><small>{selectedNationalTaxCodeOption?.description || 'Pesquise pelo código ou pela descrição'}</small></span><ChevronDown size={17} />
               </button>
             </FormField>
-            <FormField label="Código de tributação municipal da DPS" hint="Opcional · 3 dígitos"><input name="municipalServiceCode" inputMode="numeric" maxLength={3} defaultValue={formInvoice?.municipalServiceCode || ''} /></FormField>
             <FormField label="NBS" hint={selectedNationalTaxCode ? `${availableNbsCodes.length} opção(ões) correlacionada(s) no Anexo VIII 1.01.00` : 'Opcional · selecione primeiro o serviço nacional'}>
               <input type="hidden" name="nbsCode" value={selectedNbsCode} />
               <button type="button" className="nfse-catalog-trigger" disabled={!selectedNationalTaxCode || !availableNbsCodes.length} onClick={() => { setCatalogSearch(''); setCatalogPicker('nbs') }}>
@@ -691,14 +716,21 @@ export function NationalInvoices() {
             <div className="nfse-form-subtitle"><strong>Valores do serviço</strong><small>Campos com * são obrigatórios</small></div>
             <div className="form-grid form-grid--four">
               <FormField label="Valor do serviço *"><CurrencyInput name="amount" initialValue={formInvoice?.amount || 0} required /></FormField>
-              <FormField label="Dedução"><input name="deductionValue" type="number" min="0" step="0.01" defaultValue={formInvoice?.deductionValue || 0} /></FormField>
               <FormField label="Desconto incondicionado"><input name="unconditionalDiscount" type="number" min="0" step="0.01" defaultValue={formInvoice?.unconditionalDiscount || 0} /></FormField>
               <FormField label="Desconto condicionado"><input name="conditionalDiscount" type="number" min="0" step="0.01" defaultValue={formInvoice?.conditionalDiscount || 0} /></FormField>
-              <FormField label="Alíquota ISS (%)"><input name="issRate" type="number" min="0" step="0.01" defaultValue={formInvoice?.tax ? (formInvoice.tax / Math.max(formInvoice.amount, 1)) * 100 : 0} /></FormField>
-              <FormField label="ISS retido"><select name="issRetained" defaultValue={String(formInvoice?.issRetained || false)}><option value="false">Não</option><option value="true">Sim</option></select></FormField>
+              <FormField label="Alíquota ISS (%)" hint={issRateRequirement(integrationQuery.data, issRetained) === 'required' ? `Obrigatória entre ${issRateMinimum(integrationQuery.data, issRetained).toLocaleString('pt-BR')}% e 5%` : 'Não se aplica ao regime e retenção selecionados'}><input name="issRate" type="number" min={issRateMinimum(integrationQuery.data, issRetained)} max="5" step="0.01" required={issRateRequirement(integrationQuery.data, issRetained) === 'required'} disabled={issRateRequirement(integrationQuery.data, issRetained) === 'forbidden'} defaultValue={issRateRequirement(integrationQuery.data, issRetained) === 'required' && formInvoice?.tax ? (formInvoice.tax / Math.max(formInvoice.amount, 1)) * 100 : ''} /></FormField>
+              <FormField label="ISS retido"><select name="issRetained" value={String(issRetained)} onChange={(event) => setIssRetained(event.target.value === 'true')}><option value="false">Não</option><option value="true">Sim</option></select></FormField>
               <FormField label="Mão de obra"><input name="laborAmount" type="number" min="0" step="0.01" defaultValue={formInvoice?.laborAmount || 0} /></FormField>
               <FormField label="Materiais"><input name="materialAmount" type="number" min="0" step="0.01" defaultValue={formInvoice?.materialAmount || 0} /></FormField>
             </div>
+            <div className="nfse-form-subtitle"><strong>Tributos aproximados</strong><small>Percentuais da Lei 12.741/2012; confirme os valores com a contabilidade</small></div>
+            {!companyProfile?.simei && <div className="form-grid form-grid--four">
+              {companyProfile?.simpleNational ? <FormField label="Total do Simples Nacional (%) *"><input name="approximateSimpleNationalTaxRate" type="number" min="0" max="100" step="0.0001" required defaultValue={formInvoice?.approximateSimpleNationalTaxRate ?? ''} /></FormField> : <>
+                <FormField label="Tributos federais (%) *"><input name="approximateFederalTaxRate" type="number" min="0" max="100" step="0.0001" required defaultValue={formInvoice?.approximateFederalTaxRate ?? ''} /></FormField>
+                <FormField label="Tributos estaduais (%) *"><input name="approximateStateTaxRate" type="number" min="0" max="100" step="0.0001" required defaultValue={formInvoice?.approximateStateTaxRate ?? ''} /></FormField>
+                <FormField label="Tributos municipais (%) *"><input name="approximateMunicipalTaxRate" type="number" min="0" max="100" step="0.0001" required defaultValue={formInvoice?.approximateMunicipalTaxRate ?? ''} /></FormField>
+              </>}
+            </div>}
             <div className="nfse-form-subtitle"><strong>Tributos federais</strong><small>Preencha somente quando aplicável à operação</small></div>
             <div className="form-grid form-grid--four">
               <FormField label="CST PIS/COFINS"><input name="pisCofinsCst" inputMode="numeric" maxLength={2} defaultValue={formInvoice?.pisCofinsCst || ''} /></FormField>
@@ -818,7 +850,6 @@ function ClientInvoiceFields({ client, fallback, invoice, loading }: { client?: 
     <div className="form-grid form-grid--three">
       <FormField label="CPF/CNPJ *"><input name="customerDocument" inputMode="numeric" maxLength={18} required defaultValue={document} /></FormField>
       <FormField label="Nome / razão social *"><input name="customerName" maxLength={150} required defaultValue={legalName} /></FormField>
-      <FormField label="Inscrição municipal"><input name="customerMunicipalRegistration" maxLength={15} defaultValue={invoice?.customerMunicipalRegistration || ''} /></FormField>
       <FormField label="CEP"><input name="customerZipCode" inputMode="numeric" maxLength={9} defaultValue={invoice?.customerZipCode || client?.nrcep || fallback.zipCode || ''} /></FormField>
       <FormField label="Logradouro"><input name="customerStreet" maxLength={255} defaultValue={invoice?.customerStreet || client?.dsender || fallback.street || ''} /></FormField>
       <FormField label="Número"><input name="customerNumber" maxLength={60} defaultValue={invoice?.customerNumber || client?.dscompl || ''} /></FormField>
