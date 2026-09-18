@@ -645,6 +645,8 @@ export interface Invoice {
   tax: number
   issRate: number | null
   issRetained: boolean
+  issTaxation: '1' | '2' | '3' | '4'
+  issImmunityType: '1' | '2' | '3' | '4' | '5' | null
   status: InvoiceStatus
   issuedAt: ISODate | null
   nature: string | null
@@ -677,7 +679,7 @@ export interface Invoice {
   municipalServiceCode: string | null
   nbsCode: string | null
   serviceDescription: string | null
-  workIdentificationType: 'CNO_CEI' | 'CIB' | 'ADDRESS' | null
+  workIdentificationType: 'CNO_CEI' | 'CIB' | 'ADDRESS' | 'FOREIGN_ADDRESS' | null
   workPropertyRegistration: string | null
   workCode: string | null
   workCib: string | null
@@ -686,6 +688,11 @@ export interface Invoice {
   workNumber: string | null
   workComplement: string | null
   workDistrict: string | null
+  workForeignPostalCode: string | null
+  workForeignCity: string | null
+  workForeignRegion: string | null
+  technicalResponsibilityDocument: string | null
+  referenceDocument: string | null
   unconditionalDiscount: number
   conditionalDiscount: number
   deductionValue: number
@@ -747,6 +754,8 @@ export interface InvoicePayload {
   deductionValue?: number
   issRate?: number
   issRetained?: boolean
+  issTaxation?: '1' | '2' | '3' | '4'
+  issImmunityType?: '1' | '2' | '3' | '4' | '5' | ''
   serviceCityCode?: string
   customerCityCode?: string
   customerDocument?: string
@@ -766,7 +775,7 @@ export interface InvoicePayload {
   municipalServiceCode?: string
   nbsCode?: string
   serviceDescription?: string
-  workIdentificationType?: 'CNO_CEI' | 'CIB' | 'ADDRESS' | ''
+  workIdentificationType?: 'CNO_CEI' | 'CIB' | 'ADDRESS' | 'FOREIGN_ADDRESS' | ''
   workPropertyRegistration?: string
   workCode?: string
   workCib?: string
@@ -775,6 +784,11 @@ export interface InvoicePayload {
   workNumber?: string
   workComplement?: string
   workDistrict?: string
+  workForeignPostalCode?: string
+  workForeignCity?: string
+  workForeignRegion?: string
+  technicalResponsibilityDocument?: string
+  referenceDocument?: string
   nature?: string
   notes?: string
   laborAmount?: number
@@ -802,7 +816,6 @@ export interface InvoicePayload {
   ibsCbsDestinationIndicator?: string
   ibsCbsCst?: string
   ibsCbsTaxClassification?: string
-  // Compatibilidade temporaria com a tela fiscal legada.
   clientName?: string
   document?: string
   issuedAt?: ISODate
@@ -868,13 +881,28 @@ export interface FiscalCatalog {
   nbsCodes: FiscalNbsCode[]
 }
 
-export interface MunicipalTaxCodesResult {
-  requestedUrl: string
-  httpStatus: number
-  successful: boolean
-  errorCode: string | null
-  errorMessage: string | null
-  rawBody: string | null
+export interface MunicipalTaxCode {
+  cityCode: string
+  nationalTaxCode: string
+  municipalTaxCode: string
+  fullCode: string
+  description: string
+  validFrom: ISODate | null
+  validUntil: ISODate | null
+  source: string
+}
+
+export interface ServiceIncidence {
+  hasIssIncidence: boolean
+  workActivity: boolean
+  eventActivity: boolean
+  export: boolean
+  customerRequired: boolean
+  municipalityCode: string
+  municipalityName: string
+  agreementActive: boolean
+  municipalTaxCodes: MunicipalTaxCode[]
+  message: string | null
 }
 
 export interface PublicClientSignupPayload {

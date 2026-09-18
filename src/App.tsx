@@ -1,10 +1,11 @@
 import { lazy, Suspense, useEffect } from 'react'
+import type { ComponentType, LazyExoticComponent } from 'react'
 import { useAuth } from './auth'
 import { AppLayout } from './components/AppLayout'
 import { Login } from './pages/Login'
 import { useRouter } from './router'
 
-const pages = {
+const pages: Partial<Record<string, LazyExoticComponent<ComponentType>>> = {
   '/': lazy(() => import('./pages/Dashboard').then((module) => ({ default: module.Dashboard }))),
   '/clientes': lazy(() => import('./pages/Clients').then((module) => ({ default: module.Clients }))),
   '/contratos': lazy(() => import('./pages/Contracts').then((module) => ({ default: module.Contracts }))),
@@ -20,15 +21,15 @@ const pages = {
   '/envio-de-emails': lazy(() => import('./pages/ClientEmails').then((module) => ({ default: module.ClientEmailsPage }))),
 }
 
-const publicPages = {
+const publicPages: Partial<Record<string, LazyExoticComponent<ComponentType>>> = {
   '/cadastro': lazy(() => import('./pages/PublicClientSignup').then((module) => ({ default: module.PublicClientSignup }))),
 }
 
 export default function App() {
   const { pathname, navigate } = useRouter()
   const { isAuthenticated, initializing, user } = useAuth()
-  const Page = pages[pathname as keyof typeof pages]
-  const PublicPage = publicPages[pathname as keyof typeof publicPages]
+  const Page = pages[pathname]
+  const PublicPage = publicPages[pathname]
 
   useEffect(() => {
     if (PublicPage) return

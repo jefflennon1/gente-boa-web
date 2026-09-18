@@ -34,7 +34,6 @@ import type {
   InvoicePayload,
   InvoiceStatus,
   IssuerCompanyProfile,
-  MunicipalTaxCodesResult,
   NfseCancelPayload,
   NfseIntegrationStatus,
 } from '../types'
@@ -70,71 +69,10 @@ const pendingStatuses: InvoiceStatus[] = [
   'CANCELAMENTO_SOLICITADO',
 ]
 
-const nationalTaxCodesByCnae: Record<string, string[]> = {
-  '4329199': ['070201', '070202'],
-  '4211102': ['070202', '071001', '230101', '240102'],
-  '4213800': ['070201', '070202', '071001'],
-  '4222701': ['070201', '070202'],
-  '4222702': ['070201', '070202'],
-  '4321500': ['070201', '070202', '140601', '310102'],
-  '4322301': ['070201', '070202', '070501'],
-  '4322302': ['070201', '070202', '140101', '140601'],
-  '4329104': ['070201', '070202', '140601', '240102'],
-  '4330401': ['070202', '070501'],
-  '4399101': ['070201'],
-  '4399105': ['070201', '070202'],
-  '7319002': ['170601'],
-  '7810800': ['170401', '170501'],
-}
-
-const nbsCodesByLc116Item: Record<string, string[]> = {
-  '0702': ['101011100', '101011200', '101012100', '101012200', '101012900', '101013000', '101021100', '101021200', '101021300', '101022000', '101023100', '101023200', '101023300', '101023400', '101023510', '101023520', '101023530', '101024110', '101024120', '101024190', '101024210', '101024220', '101025100', '101025210', '101025220', '101025310', '101025320', '101026100', '101026900', '101027000', '101028000', '101029000', '101032000', '101033000', '101034100', '101034200', '101040000', '101051100', '101051200', '101052100', '101052200', '101053000', '101054000', '101055000', '101056000', '101059000', '101061100', '101061900', '101062100', '101062200', '101063200', '101064000', '101066000', '101073000', '101074000', '101079000'],
-  '0705': ['101011100', '101011200', '101012100', '101012200', '101012900', '101013000', '101021100', '101021200', '101021300', '101022000', '101023100', '101023200', '101023300', '101023400', '101023510', '101023520', '101023530', '101024110', '101024120', '101024190', '101024210', '101024220', '101025100', '101025210', '101025220', '101025310', '101025320', '101026100', '101026900', '101027000', '101028000', '101029000', '101073000', '101079000'],
-  '0710': ['118031000', '118032200', '118032900', '124051400', '124069000', '124070000'],
-  '1401': ['118032900', '120011000', '120012000', '120013110', '120013120', '120013200', '120013300', '120013410', '120013420', '120013430', '120013500', '120013900', '120014000', '120015000', '120016000', '120017000', '120018100', '120018200', '120018300', '120018900', '120021000', '120022000', '120023000', '120024000', '120029000'],
-  '1406': ['101061200', '101061300', '101061400', '101061900', '101063100', '101063200', '101064000', '101066000', '101069000', '101076000', '120031000', '120032110', '120032190', '120032200', '120032300', '120032400', '120032510', '120032520', '120032610', '120032690', '120032900'],
-  '1704': ['118011100', '118011200'],
-  '1705': ['118012100', '118012200', '118012900'],
-  '1706': ['114061100', '114061200', '114061900', '114070000'],
-  '2301': ['114092100', '114092200', '114092300', '114092400', '114092500', '114092900', '114093000', '114099000'],
-  '2401': ['126060000'],
-  '3101': ['114150000'],
-}
-
 const workRequiredTaxCodes = new Set([
   '070201', '070202', '070401', '070501', '070502', '070601', '070602',
   '070701', '070801', '071701', '071901', '141403', '141404',
 ])
-
-const brazilianCapitals: { uf: string; city: string; cityCode: string }[] = [
-  { uf: 'AC', city: 'Rio Branco', cityCode: '1200401' },
-  { uf: 'AL', city: 'Maceió', cityCode: '2704302' },
-  { uf: 'AP', city: 'Macapá', cityCode: '1600303' },
-  { uf: 'AM', city: 'Manaus', cityCode: '1302603' },
-  { uf: 'BA', city: 'Salvador', cityCode: '2927408' },
-  { uf: 'CE', city: 'Fortaleza', cityCode: '2304400' },
-  { uf: 'DF', city: 'Brasília', cityCode: '5300108' },
-  { uf: 'ES', city: 'Vitória', cityCode: '3205309' },
-  { uf: 'GO', city: 'Goiânia', cityCode: '5208707' },
-  { uf: 'MA', city: 'São Luís', cityCode: '2111300' },
-  { uf: 'MT', city: 'Cuiabá', cityCode: '5103403' },
-  { uf: 'MS', city: 'Campo Grande', cityCode: '5002704' },
-  { uf: 'MG', city: 'Belo Horizonte', cityCode: '3106200' },
-  { uf: 'PA', city: 'Belém', cityCode: '1501402' },
-  { uf: 'PB', city: 'João Pessoa', cityCode: '2507507' },
-  { uf: 'PR', city: 'Curitiba', cityCode: '4106902' },
-  { uf: 'PE', city: 'Recife', cityCode: '2611606' },
-  { uf: 'PI', city: 'Teresina', cityCode: '2211001' },
-  { uf: 'RJ', city: 'Rio de Janeiro', cityCode: '3304557' },
-  { uf: 'RN', city: 'Natal', cityCode: '2408102' },
-  { uf: 'RS', city: 'Porto Alegre', cityCode: '4314902' },
-  { uf: 'RO', city: 'Porto Velho', cityCode: '1100205' },
-  { uf: 'RR', city: 'Boa Vista', cityCode: '1400100' },
-  { uf: 'SC', city: 'Florianópolis', cityCode: '4205407' },
-  { uf: 'SP', city: 'São Paulo', cityCode: '3550308' },
-  { uf: 'SE', city: 'Aracaju', cityCode: '2800308' },
-  { uf: 'TO', city: 'Palmas', cityCode: '1721000' },
-]
 
 function invoiceCode(invoice: Invoice) {
   if (invoice.number) return `NFS-e ${invoice.number}`
@@ -171,6 +109,11 @@ function clientAddress(client: ClientSearchOption) {
 function currencyInputValue(value: FormDataEntryValue | null) {
   const digits = String(value || '').replace(/\D/g, '')
   return digits ? Number(digits) / 100 : 0
+}
+
+function formatNationalTaxCode(value: string) {
+  const digits = value.replace(/\D/g, '')
+  return digits.length === 6 ? `${digits.slice(0, 2)}.${digits.slice(2, 4)}.${digits.slice(4)}` : value
 }
 
 function issRateRequirement(status: NfseIntegrationStatus | undefined, retained: boolean) {
@@ -228,15 +171,17 @@ export function NationalInvoices() {
   const [customerCityCode, setCustomerCityCode] = useState('')
   const [selectedIssuerCnae, setSelectedIssuerCnae] = useState('')
   const [selectedNationalTaxCode, setSelectedNationalTaxCode] = useState('')
+  const [selectedMunicipalTaxCode, setSelectedMunicipalTaxCode] = useState('')
   const [selectedNbsCode, setSelectedNbsCode] = useState('')
   const [competence, setCompetence] = useState(new Date().toISOString().slice(0, 10))
   const [serviceCityCode, setServiceCityCode] = useState('2304400')
-  const [workIdentificationType, setWorkIdentificationType] = useState<'CNO_CEI' | 'CIB' | 'ADDRESS'>('ADDRESS')
+  const [workIdentificationType, setWorkIdentificationType] = useState<'CNO_CEI' | 'CIB' | 'ADDRESS' | 'FOREIGN_ADDRESS'>('ADDRESS')
   const [issRetained, setIssRetained] = useState(false)
+  const [issTaxation, setIssTaxation] = useState<'1' | '2' | '3' | '4'>('1')
+  const [issImmunityType, setIssImmunityType] = useState<'1' | '2' | '3' | '4' | '5' | ''>('')
   const [catalogPicker, setCatalogPicker] = useState<'national' | 'nbs' | null>(null)
   const [catalogSearch, setCatalogSearch] = useState('')
   const [clientPickerOpen, setClientPickerOpen] = useState(false)
-  const [capitalsModalOpen, setCapitalsModalOpen] = useState(false)
   const [clientSearch, setClientSearch] = useState('')
   const [detail, setDetail] = useState<Invoice | null>(null)
   const [toDelete, setToDelete] = useState<Invoice | null>(null)
@@ -246,6 +191,7 @@ export function NationalInvoices() {
   const [toast, setToast] = useState<ToastState>(null)
   const debouncedSearch = useDebouncedValue(search.trim())
   const debouncedClientSearch = useDebouncedValue(clientSearch.trim())
+  const debouncedCatalogSearch = useDebouncedValue(catalogSearch.trim())
   const clientSearchReady = debouncedClientSearch.length >= 2 || /^\d+$/.test(debouncedClientSearch)
 
   const invoicesQuery = useQuery({
@@ -260,9 +206,34 @@ export function NationalInvoices() {
     queryKey: queryKeys.companyProfile,
     queryFn: api.companyProfile.find,
   })
-  const fiscalCatalogQuery = useQuery({
-    queryKey: queryKeys.fiscalCatalog,
-    queryFn: api.fiscalCatalog.find,
+  const serviceIncidenceQuery = useQuery({
+    queryKey: [...queryKeys.fiscalCatalog, 'incidence', serviceCityCode, customerCityCode, selectedNationalTaxCode, selectedMunicipalTaxCode, competence],
+    queryFn: () => api.fiscalCatalog.serviceIncidence({
+      serviceCityCode,
+      customerCityCode,
+      nationalTaxCode: selectedNationalTaxCode,
+      municipalTaxCode: selectedMunicipalTaxCode || undefined,
+      competence,
+    }),
+    enabled: formInvoice !== undefined
+      && /^\d{7}$/.test(serviceCityCode)
+      && /^\d{7}$/.test(customerCityCode)
+      && /^\d{6}$/.test(selectedNationalTaxCode)
+      && /^\d{4}-\d{2}-\d{2}$/.test(competence),
+  })
+  const nationalSearchTerm = catalogPicker === 'national' ? debouncedCatalogSearch || '%' : selectedNationalTaxCode
+  const nationalTaxSearchQuery = useQuery({
+    queryKey: [...queryKeys.fiscalCatalog, 'national-search', nationalSearchTerm],
+    queryFn: () => api.fiscalCatalog.searchNationalTaxCodes(nationalSearchTerm),
+    enabled: (catalogPicker === 'national' && (debouncedCatalogSearch.length === 0 || debouncedCatalogSearch.length >= 3))
+      || Boolean(selectedNationalTaxCode),
+  })
+  const nbsSearchTerm = catalogPicker === 'nbs' ? debouncedCatalogSearch || '%' : selectedNbsCode
+  const nbsSearchQuery = useQuery({
+    queryKey: [...queryKeys.fiscalCatalog, 'nbs-search', nbsSearchTerm],
+    queryFn: () => api.fiscalCatalog.searchNbsCodes(nbsSearchTerm),
+    enabled: (catalogPicker === 'nbs' && (debouncedCatalogSearch.length === 0 || debouncedCatalogSearch.length >= 3))
+      || Boolean(selectedNbsCode),
   })
   const clientOptionsQuery = useQuery({
     queryKey: [...queryKeys.clients, 'search', debouncedClientSearch],
@@ -373,14 +344,6 @@ export function NationalInvoices() {
     onError: (error) => showToast(apiErrorMessage(error), 'error'),
   })
 
-  const municipalTaxCodesMutation = useMutation({
-    mutationFn: ({ cityCode, servico }: { cityCode: string; servico: string }) => api.fiscalCatalog.municipalTaxCodesHistorico(cityCode, servico),
-  })
-
-  const municipalConvenioMutation = useMutation({
-    mutationFn: (cityCode: string) => api.fiscalCatalog.municipalConvenio(cityCode),
-  })
-
   const invoices = invoicesQuery.data?.content ?? []
   const filtered = useMemo(() => invoices.filter((invoice) => matchesTab(invoice, tab)), [invoices, tab])
   const issuable = filtered.filter((invoice) => issuableStatuses.includes(invoice.status))
@@ -393,11 +356,14 @@ export function NationalInvoices() {
     setCustomerCityCode('')
     setSelectedIssuerCnae(companyProfileQuery.data?.primaryCnae || '')
     setSelectedNationalTaxCode('')
+    setSelectedMunicipalTaxCode('')
     setSelectedNbsCode('')
     setCompetence(new Date().toISOString().slice(0, 10))
     setServiceCityCode(companyProfileQuery.data?.cityCode || '2304400')
     setWorkIdentificationType('ADDRESS')
     setIssRetained(false)
+    setIssTaxation('1')
+    setIssImmunityType('')
     setFormInvoice(null)
   }
 
@@ -407,11 +373,14 @@ export function NationalInvoices() {
     setCustomerCityCode(invoice.customerCityCode || '')
     setSelectedIssuerCnae(invoice.issuerCnae || '')
     setSelectedNationalTaxCode(invoice.nationalServiceCode || '')
+    setSelectedMunicipalTaxCode(invoice.municipalServiceCode || '')
     setSelectedNbsCode(invoice.nbsCode || '')
     setCompetence(toDateInput(invoice.competence) || new Date().toISOString().slice(0, 10))
     setServiceCityCode(invoice.serviceCityCode || companyProfileQuery.data?.cityCode || '2304400')
     setWorkIdentificationType(invoice.workIdentificationType || 'ADDRESS')
     setIssRetained(invoice.issRetained)
+    setIssTaxation(invoice.issTaxation || '1')
+    setIssImmunityType(invoice.issImmunityType || '')
     setDetail(null)
     setFormInvoice(invoice)
   }
@@ -449,20 +418,37 @@ export function NationalInvoices() {
       return
     }
     const data = new FormData(event.currentTarget)
-    const municipalServiceCode = String(data.get('municipalServiceCode') || '').replace(/\D/g, '')
-    if (serviceCityCode === '2304400' && municipalServiceCode.length !== 3) {
-      setFormError('Informe o código municipal de tributação de Fortaleza com 3 dígitos.')
+    const municipalServiceCode = selectedMunicipalTaxCode.replace(/\D/g, '')
+    if (serviceIncidenceQuery.isLoading) {
+      setFormError('Aguarde o carregamento dos códigos complementares do município.')
       return
     }
-    if (municipalServiceCode && municipalServiceCode.length !== 3) {
-      setFormError('O código municipal de tributação deve possuir 3 dígitos.')
+    if (serviceIncidenceQuery.isError) {
+      setFormError('Não foi possível carregar os códigos complementares do município. Tente novamente.')
       return
     }
-    if (data.get('ibsCbsApplicable') === 'true' && !selectedNbsCode) {
-      setFormError('Selecione a NBS para informar IBS/CBS.')
+    if ((serviceIncidenceQuery.data?.municipalTaxCodes.length || 0) > 0
+      && !serviceIncidenceQuery.data?.municipalTaxCodes.some((item) => item.municipalTaxCode === municipalServiceCode)) {
+      setFormError('Selecione o código complementar municipal do serviço.')
       return
     }
-    const workRequired = workRequiredTaxCodes.has(selectedNationalTaxCode)
+    if (!selectedNbsCode) {
+      setFormError('Selecione o item da NBS correspondente ao serviço prestado.')
+      return
+    }
+    if (issTaxation === '2' && !issImmunityType) {
+      setFormError('Selecione o tipo de imunidade do ISSQN.')
+      return
+    }
+    if (issTaxation === '3' && !serviceIncidenceQuery.data?.export) {
+      setFormError('O cenário consultado não permite exportação de serviço.')
+      return
+    }
+    if (issTaxation === '4' && serviceIncidenceQuery.data?.hasIssIncidence && selectedNationalTaxCode !== '990101') {
+      setFormError('Não incidência não é permitida para o serviço e município selecionados.')
+      return
+    }
+    const workRequired = serviceIncidenceQuery.data?.workActivity ?? workRequiredTaxCodes.has(selectedNationalTaxCode)
     if (workRequired && workIdentificationType === 'CNO_CEI' && !String(data.get('workCode') || '').trim()) {
       setFormError('Informe o código CNO/CEI da obra.')
       return
@@ -478,6 +464,17 @@ export function NationalInvoices() {
         return
       }
     }
+    if (workRequired && workIdentificationType === 'FOREIGN_ADDRESS') {
+      if (!String(data.get('workForeignPostalCode') || '').trim()
+        || !String(data.get('workForeignCity') || '').trim()
+        || !String(data.get('workForeignRegion') || '').trim()
+        || !String(data.get('workStreet') || '').trim()
+        || !String(data.get('workNumber') || '').trim()
+        || !String(data.get('workDistrict') || '').trim()) {
+        setFormError('Preencha código postal, cidade, região e endereço completo da obra no exterior.')
+        return
+      }
+    }
     const payload: InvoicePayload = {
       clientId: selectedClient.id,
       competence: String(data.get('competence')),
@@ -486,6 +483,8 @@ export function NationalInvoices() {
       deductionValue: 0,
       issRate: Number(data.get('issRate') || 0),
       issRetained: data.get('issRetained') === 'true',
+      issTaxation,
+      issImmunityType: issTaxation === '2' ? issImmunityType : '',
       serviceCityCode: String(data.get('serviceCityCode')).trim(),
       customerCityCode: String(data.get('customerCityCode')).trim(),
       customerDocument: String(data.get('customerDocument') || '').trim(),
@@ -510,10 +509,15 @@ export function NationalInvoices() {
       workCode: workRequired && workIdentificationType === 'CNO_CEI' ? String(data.get('workCode') || '').trim() : '',
       workCib: workRequired && workIdentificationType === 'CIB' ? String(data.get('workCib') || '').trim() : '',
       workZipCode: workRequired && workIdentificationType === 'ADDRESS' ? String(data.get('workZipCode') || '').trim() : '',
-      workStreet: workRequired && workIdentificationType === 'ADDRESS' ? String(data.get('workStreet') || '').trim() : '',
-      workNumber: workRequired && workIdentificationType === 'ADDRESS' ? String(data.get('workNumber') || '').trim() : '',
-      workComplement: workRequired && workIdentificationType === 'ADDRESS' ? String(data.get('workComplement') || '').trim() : '',
-      workDistrict: workRequired && workIdentificationType === 'ADDRESS' ? String(data.get('workDistrict') || '').trim() : '',
+      workStreet: workRequired && ['ADDRESS', 'FOREIGN_ADDRESS'].includes(workIdentificationType) ? String(data.get('workStreet') || '').trim() : '',
+      workNumber: workRequired && ['ADDRESS', 'FOREIGN_ADDRESS'].includes(workIdentificationType) ? String(data.get('workNumber') || '').trim() : '',
+      workComplement: workRequired && ['ADDRESS', 'FOREIGN_ADDRESS'].includes(workIdentificationType) ? String(data.get('workComplement') || '').trim() : '',
+      workDistrict: workRequired && ['ADDRESS', 'FOREIGN_ADDRESS'].includes(workIdentificationType) ? String(data.get('workDistrict') || '').trim() : '',
+      workForeignPostalCode: workRequired && workIdentificationType === 'FOREIGN_ADDRESS' ? String(data.get('workForeignPostalCode') || '').trim() : '',
+      workForeignCity: workRequired && workIdentificationType === 'FOREIGN_ADDRESS' ? String(data.get('workForeignCity') || '').trim() : '',
+      workForeignRegion: workRequired && workIdentificationType === 'FOREIGN_ADDRESS' ? String(data.get('workForeignRegion') || '').trim() : '',
+      technicalResponsibilityDocument: String(data.get('technicalResponsibilityDocument') || '').trim(),
+      referenceDocument: String(data.get('referenceDocument') || '').trim(),
       nature: String(data.get('nature')).trim(),
       notes: String(data.get('notes')).trim(),
       laborAmount: currencyInputValue(data.get('laborAmount')),
@@ -561,23 +565,12 @@ export function NationalInvoices() {
 
   const integration = integrationQuery.data
   const companyProfile = companyProfileQuery.data
-  const fiscalCatalog = fiscalCatalogQuery.data
-  const availableNationalTaxCodes = useMemo(() => {
-    const configuredCodes = new Set(nationalTaxCodesByCnae[selectedIssuerCnae] || [])
-    if (selectedNationalTaxCode) configuredCodes.add(selectedNationalTaxCode)
-    return (fiscalCatalog?.nationalTaxCodes || []).filter((item) => configuredCodes.has(item.code))
-  }, [fiscalCatalog?.nationalTaxCodes, selectedIssuerCnae, selectedNationalTaxCode])
-  const availableNbsCodes = useMemo(() => {
-    const correlated = nbsCodesByLc116Item[selectedNationalTaxCode.slice(0, 4)]
-    if (!correlated) return []
-    const allowed = new Set(correlated)
-    if (selectedNbsCode) allowed.add(selectedNbsCode.replace(/\D/g, ''))
-    return (fiscalCatalog?.nbsCodes || []).filter((item) => allowed.has(item.code))
-  }, [fiscalCatalog?.nbsCodes, selectedNationalTaxCode, selectedNbsCode])
-  const selectedNationalTaxCodeOption = fiscalCatalog?.nationalTaxCodes.find((item) => item.code === selectedNationalTaxCode)
-  const selectedNbsCodeOption = fiscalCatalog?.nbsCodes.find((item) => item.code === selectedNbsCode.replace(/\D/g, ''))
+  const selectedNationalTaxCodeOption = nationalTaxSearchQuery.data?.find((item) => item.code === selectedNationalTaxCode)
+  const selectedNbsCodeOption = nbsSearchQuery.data?.find((item) => item.code === selectedNbsCode.replace(/\D/g, ''))
   const normalizedCatalogSearch = catalogSearch.trim().toLocaleLowerCase('pt-BR')
-  const catalogPickerOptions = (catalogPicker === 'national' ? availableNationalTaxCodes : availableNbsCodes).filter((item) => {
+  const catalogPickerOptions = (catalogPicker === 'national'
+    ? nationalTaxSearchQuery.data || []
+    : nbsSearchQuery.data || []).filter((item) => {
     if (!normalizedCatalogSearch) return true
     const code = catalogPicker === 'nbs' && 'formattedCode' in item ? `${item.code} ${item.formattedCode}` : item.code
     return `${code} ${item.description}`.toLocaleLowerCase('pt-BR').includes(normalizedCatalogSearch)
@@ -704,34 +697,8 @@ export function NationalInvoices() {
           <section className="nfse-form-section">
             <div className="form-section-title"><span>3</span><div><strong>Dados do serviço</strong><small>Tributação, descrição, valores e demais informações do serviço prestado</small></div></div>
             <div className="form-grid form-grid--two">
-              <FormField label="Competência *"><input name="competence" type="date" required value={competence} onChange={(event) => { setCompetence(event.target.value); setSelectedNationalTaxCode(''); setSelectedNbsCode('') }} /></FormField>
-              <FormField label="Município da prestação (IBGE) *" hint="Fortaleza: 2304400"><input name="serviceCityCode" inputMode="numeric" maxLength={7} required value={serviceCityCode} onChange={(event) => { setServiceCityCode(event.target.value.replace(/\D/g, '').slice(0, 7)); setSelectedNationalTaxCode(''); setSelectedNbsCode('') }} /></FormField>
-            </div>
-            <div className="nfse-tax-diagnostic">
-              <div className="nfse-tax-diagnostic__row">
-                <div>
-                  <strong>Códigos de tributação administrados pelo município</strong>
-                  <small>Consulta ao vivo na SEFIN/ADN Nacional (GET /parametrizacao/{'{'}município{'}'}/{'{'}nacional+municipal, 9 dígitos{'}'}/historicoaliquotas), ambiente {integrationLabel}</small>
-                </div>
-                <div className="nfse-tax-diagnostic__actions">
-                  <Button type="button" variant="secondary" onClick={() => setCapitalsModalOpen(true)}>Consultar todas as capitais</Button>
-                  <Button type="button" variant="secondary" onClick={() => municipalConvenioMutation.mutate(serviceCityCode)} disabled={!/^\d{7}$/.test(serviceCityCode) || municipalConvenioMutation.isPending}>
-                    {municipalConvenioMutation.isPending ? 'Consultando...' : 'Consultar convênio'}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={!/^\d{7}$/.test(serviceCityCode) || !/^\d{6}$/.test(selectedNationalTaxCode) || municipalTaxCodesMutation.isPending}
-                    onClick={() => municipalTaxCodesMutation.mutate({ cityCode: serviceCityCode, servico: `${selectedNationalTaxCode}000` })}
-                  >
-                    {municipalTaxCodesMutation.isPending ? 'Consultando...' : `Consultar alíquotas de ${selectedNationalTaxCode || '(selecione o código nacional)'}000`}
-                  </Button>
-                </div>
-              </div>
-              {municipalConvenioMutation.isError && <p className="nfse-tax-diagnostic__error">Convênio: {apiErrorMessage(municipalConvenioMutation.error)}</p>}
-              {municipalConvenioMutation.data && <div><small>Resposta de <strong>/convenio</strong>:</small><MunicipalTaxCodesPanel result={municipalConvenioMutation.data} /></div>}
-              {municipalTaxCodesMutation.isError && <p className="nfse-tax-diagnostic__error">Alíquotas: {apiErrorMessage(municipalTaxCodesMutation.error)}</p>}
-              {municipalTaxCodesMutation.data && <div><small>Resposta de <strong>/{selectedNationalTaxCode}000/historicoaliquotas</strong>:</small><MunicipalTaxCodesPanel result={municipalTaxCodesMutation.data} /></div>}
+              <FormField label="Competência *"><input name="competence" type="date" required value={competence} onChange={(event) => { setCompetence(event.target.value); setSelectedMunicipalTaxCode('') }} /></FormField>
+              <FormField label="Município da prestação (IBGE) *" hint="Fortaleza: 2304400"><input name="serviceCityCode" inputMode="numeric" maxLength={7} required value={serviceCityCode} onChange={(event) => { setServiceCityCode(event.target.value.replace(/\D/g, '').slice(0, 7)); setSelectedMunicipalTaxCode('') }} /></FormField>
             </div>
             <div className="nfse-form-subtitle"><strong>Classificação tributária</strong><small>Atividade da empresa e códigos fiscais do serviço</small></div>
             <div className="form-grid form-grid--two">
@@ -739,48 +706,81 @@ export function NationalInvoices() {
               <select name="issuerCnae" required value={selectedIssuerCnae} disabled={!companyProfile} onChange={(event) => {
                 const cnae = event.target.value
                 setSelectedIssuerCnae(cnae)
-                setSelectedNationalTaxCode('')
-                setSelectedNbsCode('')
               }}>
                 <option value="">Selecione o CNAE</option>
                 {companyProfile && <option value={companyProfile.primaryCnae}>{companyProfile.primaryCnae} · {companyProfile.primaryActivityDescription} (principal)</option>}
                 {(companyProfile?.secondaryCnaes || []).map((item) => <option key={item.id} value={item.cnaeCode}>{item.cnaeCode} · {item.description}</option>)}
               </select>
             </FormField>
-            <FormField label="Código nacional de tributação *" hint={selectedIssuerCnae ? `${availableNationalTaxCodes.length} serviço(s) relacionados à atividade selecionada` : 'Selecione primeiro a atividade do prestador'}>
+            <FormField label="Código nacional de tributação *" hint="Selecione de acordo com o serviço efetivamente prestado">
               <input type="hidden" name="nationalServiceCode" value={selectedNationalTaxCode} />
-              <button type="button" className="nfse-catalog-trigger" disabled={!selectedIssuerCnae || !availableNationalTaxCodes.length} onClick={() => { setCatalogSearch(''); setCatalogPicker('national') }}>
-                <span><strong>{selectedNationalTaxCodeOption ? selectedNationalTaxCodeOption.code : 'Selecionar serviço nacional'}</strong><small>{selectedNationalTaxCodeOption?.description || 'Pesquise pelo código ou pela descrição'}</small></span><ChevronDown size={17} />
+              <button type="button" className="nfse-catalog-trigger" disabled={!selectedIssuerCnae} onClick={() => { setCatalogSearch(''); setCatalogPicker('national') }}>
+                <span><strong>{selectedNationalTaxCodeOption ? formatNationalTaxCode(selectedNationalTaxCodeOption.code) : 'Selecionar serviço nacional'}</strong><small>{selectedNationalTaxCodeOption?.description || 'Pesquise pelo código ou pela descrição'}</small></span><ChevronDown size={17} />
               </button>
             </FormField>
-            <FormField label={`Código municipal de tributação${serviceCityCode === '2304400' ? ' *' : ''}`} hint={serviceCityCode === '2304400' ? 'Fortaleza sem desdobramento adicional: 000' : 'Complemento municipal com 3 dígitos'}>
-              <input
+            <FormField label={`Código complementar municipal${(serviceIncidenceQuery.data?.municipalTaxCodes.length || 0) > 0 ? ' *' : ''}`} hint="Opções válidas para município, competência e código nacional selecionados">
+              <select
                 name="municipalServiceCode"
-                inputMode="numeric"
-                pattern="[0-9]{3}"
-                minLength={3}
-                maxLength={3}
-                required={serviceCityCode === '2304400'}
-                defaultValue={formInvoice?.municipalServiceCode || (serviceCityCode === '2304400' ? '000' : '')}
-                onInput={(event) => { event.currentTarget.value = event.currentTarget.value.replace(/\D/g, '').slice(0, 3) }}
-              />
+                value={selectedMunicipalTaxCode}
+                disabled={!selectedNationalTaxCode || serviceIncidenceQuery.isLoading || serviceIncidenceQuery.isError || !serviceIncidenceQuery.data?.municipalTaxCodes.length}
+                required={(serviceIncidenceQuery.data?.municipalTaxCodes.length || 0) > 0}
+                onChange={(event) => { setSelectedMunicipalTaxCode(event.target.value); setSelectedNbsCode('') }}
+              >
+                <option value="">{serviceIncidenceQuery.isLoading ? 'Verificando incidência...' : serviceIncidenceQuery.isError ? 'Não foi possível verificar' : serviceIncidenceQuery.data?.municipalTaxCodes.length ? 'Selecione o código municipal' : 'Sem complemento municipal configurado'}</option>
+                {(serviceIncidenceQuery.data?.municipalTaxCodes || []).map((item) => <option key={item.fullCode} value={item.municipalTaxCode}>{formatNationalTaxCode(item.nationalTaxCode)}.{item.municipalTaxCode} · {item.description}</option>)}
+              </select>
             </FormField>
-            <FormField label="NBS" hint={selectedNationalTaxCode ? `${availableNbsCodes.length} opção(ões) correlacionada(s) no Anexo VIII 1.01.00` : 'Opcional · selecione primeiro o serviço nacional'}>
+            <FormField label="O serviço é caso de imunidade, exportação ou não incidência do ISSQN? *">
+              <select disabled={serviceIncidenceQuery.isLoading || serviceIncidenceQuery.isError || !serviceIncidenceQuery.data || ((serviceIncidenceQuery.data?.municipalTaxCodes.length || 0) > 0 && !selectedMunicipalTaxCode)} value={issTaxation === '1' ? 'no' : 'yes'} onChange={(event) => {
+                if (event.target.value === 'no') {
+                  setIssTaxation('1')
+                  setIssImmunityType('')
+                } else {
+                  setIssTaxation('2')
+                }
+              }}>
+                <option value="no">Não</option>
+                <option value="yes">Sim</option>
+              </select>
+            </FormField>
+            {issTaxation !== '1' && <FormField label="Motivo da não tributação do ISSQN *">
+              <select value={issTaxation} onChange={(event) => {
+                const value = event.target.value as '2' | '3' | '4'
+                setIssTaxation(value)
+                if (value !== '2') setIssImmunityType('')
+              }}>
+                <option value="2">Imunidade</option>
+                <option value="3" disabled={!serviceIncidenceQuery.data?.export}>Exportação de serviço</option>
+                <option value="4" disabled={Boolean(serviceIncidenceQuery.data?.hasIssIncidence && selectedNationalTaxCode !== '990101')}>Não incidência</option>
+              </select>
+            </FormField>}
+            {issTaxation === '2' && <FormField label="Tipo de imunidade *">
+              <select required value={issImmunityType} onChange={(event) => setIssImmunityType(event.target.value as typeof issImmunityType)}>
+                <option value="">Selecione</option>
+                <option value="1">Patrimônio, renda ou serviços, uns dos outros</option>
+                <option value="2">Templos de qualquer culto</option>
+                <option value="3">Partidos, sindicatos e instituições sem fins lucrativos</option>
+                <option value="4">Livros, jornais, periódicos e papel para impressão</option>
+                <option value="5">Fonogramas e videofonogramas musicais brasileiros</option>
+              </select>
+            </FormField>}
+            <FormField label="Item da NBS correspondente ao serviço *" hint="Pesquise no catálogo nacional pelo código ou descrição">
               <input type="hidden" name="nbsCode" value={selectedNbsCode} />
-              <button type="button" className="nfse-catalog-trigger" disabled={!selectedNationalTaxCode || !availableNbsCodes.length} onClick={() => { setCatalogSearch(''); setCatalogPicker('nbs') }}>
+              <button type="button" className="nfse-catalog-trigger" disabled={!selectedNationalTaxCode || serviceIncidenceQuery.isLoading || serviceIncidenceQuery.isError || ((serviceIncidenceQuery.data?.municipalTaxCodes.length || 0) > 0 && !selectedMunicipalTaxCode)} onClick={() => { setCatalogSearch(''); setCatalogPicker('nbs') }}>
                 <span><strong>{selectedNbsCodeOption ? selectedNbsCodeOption.formattedCode : 'Selecionar NBS'}</strong><small>{selectedNbsCodeOption?.description || 'Pesquise pelo código ou pela descrição'}</small></span><ChevronDown size={17} />
               </button>
             </FormField>
             </div>
             <FormField label="Discriminação do serviço *"><textarea name="serviceDescription" rows={4} maxLength={2000} required defaultValue={formInvoice?.serviceDescription || ''} /></FormField>
-            {workRequiredTaxCodes.has(selectedNationalTaxCode) && <div className="nfse-work-fields" key={`${selectedNationalTaxCode}-${selectedClient?.id || 'none'}-${formInvoice?.id || 'new'}`}>
+            {(serviceIncidenceQuery.data?.workActivity ?? workRequiredTaxCodes.has(selectedNationalTaxCode)) && <div className="nfse-work-fields" key={`${selectedNationalTaxCode}-${selectedClient?.id || 'none'}-${formInvoice?.id || 'new'}`}>
               <div className="nfse-form-subtitle"><strong>Informações da obra *</strong><small>Obrigatórias para o código nacional selecionado</small></div>
               <div className="form-grid form-grid--two">
                 <FormField label="Identificação da obra *">
-                  <select value={workIdentificationType} onChange={(event) => setWorkIdentificationType(event.target.value as 'CNO_CEI' | 'CIB' | 'ADDRESS')}>
-                    <option value="ADDRESS">Endereço da obra</option>
-                    <option value="CNO_CEI">CNO/CEI</option>
-                    <option value="CIB">CIB</option>
+                  <select value={workIdentificationType} onChange={(event) => setWorkIdentificationType(event.target.value as typeof workIdentificationType)}>
+                    <option value="CNO_CEI">Código de obra (CNO/CEI)</option>
+                    <option value="CIB">Cadastro Imobiliário Brasileiro (CIB)</option>
+                    <option value="ADDRESS">Endereço no Brasil</option>
+                    <option value="FOREIGN_ADDRESS">Endereço no exterior</option>
                   </select>
                 </FormField>
                 <FormField label="Inscrição imobiliária fiscal" hint="Opcional"><input name="workPropertyRegistration" maxLength={30} defaultValue={formInvoice?.workPropertyRegistration || ''} /></FormField>
@@ -794,7 +794,21 @@ export function NationalInvoices() {
                 <FormField label="Complemento"><input name="workComplement" maxLength={156} defaultValue={formInvoice?.workComplement || formInvoice?.customerComplement || selectedClient?.complement || ''} /></FormField>
                 <FormField label="Bairro da obra *"><input name="workDistrict" maxLength={60} required defaultValue={formInvoice?.workDistrict || formInvoice?.customerDistrict || selectedClientDetailsQuery.data?.dsbairr || selectedClient?.district || ''} /></FormField>
               </div>}
+              {workIdentificationType === 'FOREIGN_ADDRESS' && <div className="form-grid form-grid--three">
+                <FormField label="Código postal *"><input name="workForeignPostalCode" maxLength={11} required defaultValue={formInvoice?.workForeignPostalCode || ''} /></FormField>
+                <FormField label="Cidade *"><input name="workForeignCity" maxLength={60} required defaultValue={formInvoice?.workForeignCity || ''} /></FormField>
+                <FormField label="Estado, província ou região *"><input name="workForeignRegion" maxLength={60} required defaultValue={formInvoice?.workForeignRegion || ''} /></FormField>
+                <FormField label="Logradouro *"><input name="workStreet" maxLength={255} required defaultValue={formInvoice?.workStreet || ''} /></FormField>
+                <FormField label="Número *"><input name="workNumber" maxLength={60} required defaultValue={formInvoice?.workNumber || ''} /></FormField>
+                <FormField label="Complemento"><input name="workComplement" maxLength={156} defaultValue={formInvoice?.workComplement || ''} /></FormField>
+                <FormField label="Bairro *"><input name="workDistrict" maxLength={60} required defaultValue={formInvoice?.workDistrict || ''} /></FormField>
+              </div>}
             </div>}
+            <div className="nfse-form-subtitle"><strong>Informações complementares do serviço</strong><small>Campos opcionais transmitidos na DPS quando preenchidos</small></div>
+            <div className="form-grid form-grid--two">
+              <FormField label="Documento de responsabilidade técnica"><input name="technicalResponsibilityDocument" maxLength={40} defaultValue={formInvoice?.technicalResponsibilityDocument || ''} /></FormField>
+              <FormField label="Documento de referência"><input name="referenceDocument" maxLength={255} defaultValue={formInvoice?.referenceDocument || ''} /></FormField>
+            </div>
             <div className="form-grid form-grid--two">
             <FormField label="Natureza da operação"><input name="nature" maxLength={100} defaultValue={formInvoice?.nature || ''} /></FormField>
             <FormField label="Observações internas"><textarea name="notes" rows={2} maxLength={2000} defaultValue={formInvoice?.notes || ''} /></FormField>
@@ -854,18 +868,23 @@ export function NationalInvoices() {
         onClose={() => setCatalogPicker(null)}
         title={catalogPicker === 'nbs' ? 'Selecionar NBS' : 'Selecionar código nacional de tributação'}
         description={catalogPicker === 'nbs'
-          ? 'Opções correlacionadas ao serviço nacional conforme o Anexo VIII 1.01.00.'
-          : 'Serviços nacionais configurados para a atividade CNAE selecionada.'}
+          ? 'Catálogo nacional da NBS habilitado após a classificação do serviço.'
+          : 'Lista oficial de serviços nacionais; digite ao menos 3 caracteres para refinar.'}
         size="large"
       >
         <div className="modal__body nfse-catalog-picker">
           <div className="search-box nfse-catalog-picker__search"><Search size={18} /><input autoFocus value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} placeholder="Pesquisar por código ou descrição..." /></div>
           <div className="nfse-catalog-picker__results">
-            {catalogPicker === 'nbs' && !normalizedCatalogSearch && <button type="button" className={!selectedNbsCode ? 'is-selected' : ''} onClick={() => { setSelectedNbsCode(''); setCatalogPicker(null); setCatalogSearch('') }}><span><strong>Não informar NBS</strong><small>Deixar o campo opcional sem preenchimento</small></span>{!selectedNbsCode && <Check size={18} />}</button>}
-            {catalogPickerOptions.length === 0
+            {catalogSearch.trim().length > 0 && catalogSearch.trim().length < 3
+              ? <EmptyState title="Continue digitando" description="Informe ao menos 3 caracteres para pesquisar." />
+              : (catalogPicker === 'national' ? nationalTaxSearchQuery.isLoading : nbsSearchQuery.isLoading)
+                ? <LoadingState label="Consultando catálogo local..." />
+                : (catalogPicker === 'national' ? nationalTaxSearchQuery.isError : nbsSearchQuery.isError)
+                  ? <ErrorState message={apiErrorMessage(catalogPicker === 'national' ? nationalTaxSearchQuery.error : nbsSearchQuery.error)} onRetry={() => catalogPicker === 'national' ? nationalTaxSearchQuery.refetch() : nbsSearchQuery.refetch()} />
+                  : catalogPickerOptions.length === 0
               ? <EmptyState title="Nenhuma opção encontrada" description="Altere a pesquisa ou confira a classificação selecionada anteriormente." />
               : catalogPickerOptions.map((item) => {
-                const displayCode = 'formattedCode' in item ? String(item.formattedCode) : item.code
+                const displayCode = 'formattedCode' in item ? String(item.formattedCode) : formatNationalTaxCode(item.code)
                 const selected = catalogPicker === 'nbs' ? item.code === selectedNbsCode.replace(/\D/g, '') : item.code === selectedNationalTaxCode
                 return <button type="button" key={item.code} className={selected ? 'is-selected' : ''} onClick={() => {
                   if (catalogPicker === 'nbs') {
@@ -873,19 +892,16 @@ export function NationalInvoices() {
                   } else {
                     if (item.code !== selectedNationalTaxCode) setSelectedNbsCode('')
                     setSelectedNationalTaxCode(item.code)
+                    setSelectedMunicipalTaxCode('')
+                    setIssTaxation('1')
+                    setIssImmunityType('')
                   }
                   setCatalogPicker(null)
                   setCatalogSearch('')
                 }}><span><strong>{displayCode}</strong><small>{item.description}</small></span>{selected && <Check size={18} />}</button>
               })}
           </div>
-          {catalogPicker === 'nbs' && <p className="nfse-catalog-picker__notice">A correlação é orientativa. Confirme a classificação fiscal adequada ao serviço efetivamente prestado.</p>}
-        </div>
-      </Modal>
-
-      <Modal open={capitalsModalOpen} onClose={() => setCapitalsModalOpen(false)} title="Códigos administrados por capital" description={`Consulta ao vivo na SEFIN/ADN Nacional (convênio e histórico de alíquotas de ${selectedNationalTaxCode || '070201'}000), uma capital por vez.`} size="large">
-        <div className="modal__body nfse-capitals-list">
-          {brazilianCapitals.map((capital) => <CapitalRow key={capital.cityCode} capital={capital} servico={`${selectedNationalTaxCode || '070201'}000`} />)}
+          {catalogPicker === 'nbs' && <p className="nfse-catalog-picker__notice">O Emissor Nacional apresenta o catálogo completo da NBS nesta etapa. Selecione o item correspondente ao serviço efetivamente prestado.</p>}
         </div>
       </Modal>
 
@@ -916,7 +932,7 @@ function InvoiceDetail({ invoice }: { invoice: Invoice }) {
     <div className="detail-sections-grid">
       <section className="drawer-section"><h3>Identificação nacional</h3><dl><div><dt>Número da NFS-e</dt><dd>{invoice.number || 'Ainda não autorizado'}</dd></div><div><dt>Chave de acesso</dt><dd className="nfse-long-value">{invoice.accessKey || 'Não disponível'}</dd></div><div><dt>DPS</dt><dd>{invoice.dpsId || 'Ainda não numerada'}</dd></div><div><dt>Ambiente / layout</dt><dd>{invoice.environment ? `${enumLabel(invoice.environment)} · ${invoice.layoutVersion}` : 'Registro legado'}</dd></div></dl></section>
       <section className="drawer-section"><h3>Tributação do serviço</h3><dl><div><dt>CNAE do prestador</dt><dd>{invoice.issuerCnae || 'Não informado'}</dd></div><div><dt>Código nacional</dt><dd>{invoice.nationalServiceCode || 'Não informado'}</dd></div><div><dt>Código municipal da DPS</dt><dd>{invoice.municipalServiceCode || 'Não informado'}</dd></div><div><dt>NBS</dt><dd>{invoice.nbsCode || 'Não informada'}</dd></div><div><dt>Município da prestação</dt><dd>{invoice.serviceCityCode || 'Não informado'}</dd></div><div><dt>ISS retido</dt><dd>{invoice.issRetained ? 'Sim' : 'Não'}</dd></div></dl></section>
-      {invoice.workIdentificationType && <section className="drawer-section"><h3>Informações da obra</h3><dl><div><dt>Identificação</dt><dd>{invoice.workIdentificationType === 'ADDRESS' ? 'Endereço' : invoice.workIdentificationType === 'CNO_CEI' ? 'CNO/CEI' : 'CIB'}</dd></div><div><dt>Código</dt><dd>{invoice.workCode || invoice.workCib || 'Identificada pelo endereço'}</dd></div><div><dt>Inscrição imobiliária</dt><dd>{invoice.workPropertyRegistration || 'Não informada'}</dd></div><div><dt>Endereço</dt><dd>{[invoice.workStreet, invoice.workNumber, invoice.workComplement, invoice.workDistrict, invoice.workZipCode].filter(Boolean).join(' · ') || 'Não se aplica'}</dd></div></dl></section>}
+      {invoice.workIdentificationType && <section className="drawer-section"><h3>Informações da obra</h3><dl><div><dt>Identificação</dt><dd>{invoice.workIdentificationType === 'ADDRESS' ? 'Endereço no Brasil' : invoice.workIdentificationType === 'FOREIGN_ADDRESS' ? 'Endereço no exterior' : invoice.workIdentificationType === 'CNO_CEI' ? 'Código de obra (CNO/CEI)' : 'CIB'}</dd></div><div><dt>Código</dt><dd>{invoice.workCode || invoice.workCib || 'Identificada pelo endereço'}</dd></div><div><dt>Inscrição imobiliária</dt><dd>{invoice.workPropertyRegistration || 'Não informada'}</dd></div><div><dt>Endereço</dt><dd>{[invoice.workStreet, invoice.workNumber, invoice.workComplement, invoice.workDistrict, invoice.workZipCode || invoice.workForeignPostalCode, invoice.workForeignCity, invoice.workForeignRegion].filter(Boolean).join(' · ') || 'Não se aplica'}</dd></div></dl></section>}
       {invoice.ibsCbsApplicable && <section className="drawer-section"><h3>IBS/CBS</h3><dl><div><dt>Indicador da operação</dt><dd>{invoice.ibsCbsOperationIndicator}</dd></div><div><dt>CST</dt><dd>{invoice.ibsCbsCst}</dd></div><div><dt>Classificação tributária</dt><dd>{invoice.ibsCbsTaxClassification}</dd></div><div><dt>Consumidor final</dt><dd>{invoice.ibsCbsFinalConsumer === '1' ? 'Sim' : 'Não'}</dd></div></dl></section>}
       <section className="drawer-section drawer-section--wide"><h3>Serviço</h3><p className="drawer-section__text">{invoice.serviceDescription || invoice.notes || 'Descrição não informada.'}</p>{invoice.address && <p className="drawer-section__text detail-text-spaced"><strong>Tomador:</strong> {invoice.address}</p>}</section>
     </div>
@@ -938,69 +954,6 @@ function CurrencyInput({ name, initialValue, required = false }: { name: string;
       setValue(digits ? Number(digits) / 100 : 0)
     }}
   />
-}
-
-function CapitalRow({ capital, servico }: { capital: { uf: string; city: string; cityCode: string }; servico: string }) {
-  const convenioMutation = useMutation({ mutationFn: () => api.fiscalCatalog.municipalConvenio(capital.cityCode) })
-  const aliquotasMutation = useMutation({ mutationFn: () => api.fiscalCatalog.municipalTaxCodesHistorico(capital.cityCode, servico) })
-  const pending = convenioMutation.isPending || aliquotasMutation.isPending
-
-  function summarize(mutation: typeof convenioMutation) {
-    if (mutation.isError) return <span className="nfse-capital-row__badge is-error">Erro: {apiErrorMessage(mutation.error)}</span>
-    if (!mutation.data) return null
-    if (!mutation.data.successful) return <span className="nfse-capital-row__badge is-error">HTTP {mutation.data.httpStatus}</span>
-    return <span className="nfse-capital-row__badge is-ok">HTTP {mutation.data.httpStatus}</span>
-  }
-
-  return <div className="nfse-capital-row">
-    <div className="nfse-capital-row__heading">
-      <strong>{capital.city} · {capital.uf}</strong>
-      <small>{capital.cityCode}</small>
-    </div>
-    <div className="nfse-capital-row__actions">
-      {summarize(convenioMutation)}<span className="nfse-capital-row__label">convênio</span>
-      {summarize(aliquotasMutation)}<span className="nfse-capital-row__label">alíquotas {servico}</span>
-      <Button type="button" variant="secondary" disabled={pending} onClick={() => { convenioMutation.mutate(); aliquotasMutation.mutate() }}>
-        {pending ? 'Consultando...' : 'Consultar'}
-      </Button>
-    </div>
-    {convenioMutation.data && <div><small>Convênio:</small><MunicipalTaxCodesPanel result={convenioMutation.data} /></div>}
-    {aliquotasMutation.data && <div><small>Alíquotas:</small><MunicipalTaxCodesPanel result={aliquotasMutation.data} /></div>}
-  </div>
-}
-
-function MunicipalTaxCodesPanel({ result }: { result: MunicipalTaxCodesResult }) {
-  let parsed: unknown = null
-  let parseFailed = false
-  if (result.rawBody) {
-    try {
-      parsed = JSON.parse(result.rawBody)
-    } catch {
-      parseFailed = true
-    }
-  }
-  const items = Array.isArray(parsed) ? parsed : parsed && typeof parsed === 'object' ? Object.values(parsed as Record<string, unknown>) : []
-
-  if (!result.successful) {
-    return <div className="nfse-tax-diagnostic__result is-error">
-      <p><strong>HTTP {result.httpStatus}{result.errorCode ? ` · ${result.errorCode}` : ''}</strong> — {result.errorMessage || 'A ADN Nacional rejeitou a consulta.'}</p>
-      <p className="nfse-tax-diagnostic__url">{result.requestedUrl}</p>
-      {result.rawBody && <pre>{result.rawBody}</pre>}
-    </div>
-  }
-
-  if (!items.length) {
-    return <div className="nfse-tax-diagnostic__result is-empty">
-      <p><strong>Nenhum código de tributação administrado</strong> foi retornado pela ADN Nacional para este município nesta consulta.</p>
-      <p className="nfse-tax-diagnostic__url">{result.requestedUrl}</p>
-      {result.rawBody && <pre>{result.rawBody}</pre>}
-    </div>
-  }
-
-  return <div className="nfse-tax-diagnostic__result">
-    <p>{items.length} código(s) administrado(s) retornado(s) pela ADN Nacional:</p>
-    <pre>{parseFailed ? result.rawBody : JSON.stringify(parsed, null, 2)}</pre>
-  </div>
 }
 
 function ClientInvoiceFields({ client, fallback, invoice, loading }: { client?: Client; fallback: ClientSearchOption; invoice: Invoice | null | undefined; loading: boolean }) {

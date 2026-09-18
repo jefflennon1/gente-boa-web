@@ -24,7 +24,10 @@ import type {
   InvoicePayload,
   IssuerCompanyProfile,
   FiscalCatalog,
-  MunicipalTaxCodesResult,
+  FiscalNationalTaxCode,
+  FiscalNbsCode,
+  MunicipalTaxCode,
+  ServiceIncidence,
   PublicClientSignupPayload,
   PublicClientSignupResponse,
   NfseCancelPayload,
@@ -383,20 +386,32 @@ export const api = {
       const { data } = await http.get<FiscalCatalog>('/fiscal-catalog')
       return data
     },
-    async municipalTaxCodes(cityCode: string, servico: string, competencia: string) {
-      const { data } = await http.get<MunicipalTaxCodesResult>(`/fiscal-catalog/municipal-tax-codes/${cityCode}`, { params: { servico, competencia } })
+    async municipalTaxCodes(cityCode: string, nationalTaxCode: string, competence: string) {
+      const { data } = await http.get<MunicipalTaxCode[]>(`/fiscal-catalog/municipal-tax-codes/${cityCode}`, {
+        params: { nationalTaxCode, competence },
+      })
       return data
     },
-    async municipalTaxCodesHistorico(cityCode: string, servico: string) {
-      const { data } = await http.get<MunicipalTaxCodesResult>(`/fiscal-catalog/municipal-tax-codes/${cityCode}/historico`, { params: { servico } })
+    async searchNationalTaxCodes(term = '%') {
+      const { data } = await http.get<FiscalNationalTaxCode[]>('/fiscal-catalog/national-tax-codes/search', {
+        params: { term },
+      })
       return data
     },
-    async municipalConvenio(cityCode: string) {
-      const { data } = await http.get<MunicipalTaxCodesResult>(`/fiscal-catalog/municipal-tax-codes/${cityCode}/convenio`)
+    async searchNbsCodes(term = '%') {
+      const { data } = await http.get<FiscalNbsCode[]>('/fiscal-catalog/nbs/search', {
+        params: { term },
+      })
       return data
     },
-    async municipalCustomResource(cityCode: string, resource: string) {
-      const { data } = await http.get<MunicipalTaxCodesResult>(`/fiscal-catalog/municipal-tax-codes/${cityCode}/custom`, { params: { resource } })
+    async serviceIncidence(params: {
+      serviceCityCode: string
+      customerCityCode: string
+      nationalTaxCode: string
+      municipalTaxCode?: string
+      competence: string
+    }) {
+      const { data } = await http.get<ServiceIncidence>('/fiscal-catalog/service-incidence', { params })
       return data
     },
   },
