@@ -69,6 +69,13 @@ const pendingStatuses: InvoiceStatus[] = [
   'CANCELAMENTO_SOLICITADO',
 ]
 
+const defaultInvoiceCnae = '4329104'
+const defaultInvoiceCnaeDescription = 'MONTAGEM E INSTALAÇÃO DE SISTEMAS E EQUIPAMENTOS DE ILUMINAÇÃO E SINALIZAÇÃO EM VIAS PÚBLICAS, PORTOS E AEROPORTOS'
+const viaSulClientId = 9135
+const viaSulDocument = '54122933000776'
+const viaSulInvoiceCnae = '4321500'
+const viaSulInvoiceCnaeDescription = 'INSTALAÇÃO ELÉTRICA'
+
 const workRequiredTaxCodes = new Set([
   '070201', '070202', '070401', '070501', '070502', '070601', '070602',
   '070701', '070801', '071701', '071901', '141403', '141404',
@@ -109,6 +116,11 @@ function clientAddress(client: ClientSearchOption) {
 function currencyInputValue(value: FormDataEntryValue | null) {
   const digits = String(value || '').replace(/\D/g, '')
   return digits ? Number(digits) / 100 : 0
+}
+
+function initialCnaeForClient(client: ClientSearchOption) {
+  const document = String(client.document || '').replace(/\D/g, '')
+  return client.id === viaSulClientId || document === viaSulDocument ? viaSulInvoiceCnae : defaultInvoiceCnae
 }
 
 function formatNationalTaxCode(value: string) {
@@ -354,7 +366,7 @@ export function NationalInvoices() {
     setFormError('')
     setSelectedClient(null)
     setCustomerCityCode('')
-    setSelectedIssuerCnae(companyProfileQuery.data?.primaryCnae || '')
+    setSelectedIssuerCnae(defaultInvoiceCnae)
     setSelectedNationalTaxCode('')
     setSelectedMunicipalTaxCode('')
     setSelectedNbsCode('')
@@ -392,6 +404,7 @@ export function NationalInvoices() {
 
   function selectClient(client: ClientSearchOption) {
     setSelectedClient(client)
+    if (formInvoice === null) setSelectedIssuerCnae(initialCnaeForClient(client))
     setCustomerCityCode('')
     setClientPickerOpen(false)
     setClientSearch('')
@@ -567,6 +580,10 @@ export function NationalInvoices() {
   const companyProfile = companyProfileQuery.data
   const selectedNationalTaxCodeOption = nationalTaxSearchQuery.data?.find((item) => item.code === selectedNationalTaxCode)
   const selectedNbsCodeOption = nbsSearchQuery.data?.find((item) => item.code === selectedNbsCode.replace(/\D/g, ''))
+  const configuredIssuerCnaes = new Set([
+    companyProfile?.primaryCnae,
+    ...(companyProfile?.secondaryCnaes || []).map((item) => item.cnaeCode),
+  ].filter(Boolean))
   const normalizedCatalogSearch = catalogSearch.trim().toLocaleLowerCase('pt-BR')
   const catalogPickerOptions = (catalogPicker === 'national'
     ? nationalTaxSearchQuery.data || []
@@ -710,6 +727,8 @@ export function NationalInvoices() {
                 <option value="">Selecione o CNAE</option>
                 {companyProfile && <option value={companyProfile.primaryCnae}>{companyProfile.primaryCnae} · {companyProfile.primaryActivityDescription} (principal)</option>}
                 {(companyProfile?.secondaryCnaes || []).map((item) => <option key={item.id} value={item.cnaeCode}>{item.cnaeCode} · {item.description}</option>)}
+                {!configuredIssuerCnaes.has(defaultInvoiceCnae) && <option value={defaultInvoiceCnae}>{defaultInvoiceCnae} · {defaultInvoiceCnaeDescription}</option>}
+                {!configuredIssuerCnaes.has(viaSulInvoiceCnae) && <option value={viaSulInvoiceCnae}>{viaSulInvoiceCnae} · {viaSulInvoiceCnaeDescription}</option>}
               </select>
             </FormField>
             <FormField label="Código nacional de tributação *" hint="Selecione de acordo com o serviço efetivamente prestado">
