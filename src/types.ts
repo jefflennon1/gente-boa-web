@@ -522,6 +522,8 @@ export interface ServiceOrderServiceItem {
   totalValue?: number | null
   minimumValue?: number | null
   minuteValue?: number | null
+  extraValue?: number | null
+  oneOffValue?: number | null
 }
 
 export interface ServiceOrderTracking {

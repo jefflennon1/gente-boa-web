@@ -674,40 +674,6 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   const minimumMinutes = orderOrigin === 'C'
     ? systemParametersQuery.data?.contractMinimumMinutes ?? 20
     : systemParametersQuery.data?.oneOffMinimumMinutes ?? 30
-  const officialMinutesByService = useMemo(() => {
-    const totals = new Map<number, number>()
-    schedules.forEach((schedule) => {
-      if (!schedule.serviceId) return
-      const realized = minutesFromTime(schedule.actualDuration) || durationMinutes(schedule.actualStart, schedule.actualEnd)
-      if (realized > 0) totals.set(schedule.serviceId, (totals.get(schedule.serviceId) ?? 0) + Math.max(realized, minimumMinutes))
-    })
-    return totals
-  }, [minimumMinutes, schedules])
-  const scheduledServiceIds = useMemo(() => new Set(schedules.map((schedule) => schedule.serviceId).filter((id): id is number => Boolean(id))), [schedules])
-  const pricedServiceItems = useMemo(() => serviceItems.map((item) => {
-    const serviceMinutes = officialMinutesByService.get(item.serviceId) ?? 0
-    const minuteValue = numberValue(item.minuteValue)
-    const quantity = Math.max(1, numberValue(item.quantity))
-    const unitValue = minuteValue > 0 && serviceMinutes > 0
-      ? Math.max(numberValue(item.minimumValue), serviceMinutes * minuteValue)
-      : numberValue(item.unitValue)
-    return {
-      ...item,
-      quantity,
-      hours: scheduledServiceIds.has(item.serviceId) ? asDuration(serviceMinutes) : item.hours,
-      unitValue: currencyValue(unitValue),
-      totalValue: currencyValue(quantity * unitValue),
-    }
-  }), [officialMinutesByService, scheduledServiceIds, serviceItems])
-  const serviceSubtotal = pricedServiceItems.reduce((sum, item) => sum + numberValue(item.totalValue), 0)
-  const materialGross = materialItems.reduce((sum, item) => sum + numberValue(item.quantity) * numberValue(item.unitValue), 0)
-  const materialDiscountValue = materialGross * Math.min(100, numberValue(purchaseDiscount)) / 100
-  const materialFob = Math.max(0, materialGross - materialDiscountValue)
-  const materialCif = materialFob + numberValue(purchaseFreight) + numberValue(purchaseInsurance)
-  const materialAmount = materialCif + numberValue(purchaseStandard) + numberValue(purchaseGbMargin) + numberValue(purchaseRental)
-  const discountAmount = serviceSubtotal * numberValue(discount) / 100
-  const total = serviceSubtotal + materialAmount + numberValue(ticketFee) + numberValue(transport) + numberValue(rental) - discountAmount
-  const totalMinutes = schedules.reduce((sum, item) => sum + (minutesFromTime(item.expectedDuration) || durationMinutes(item.expectedStart, item.expectedEnd)), 0)
   const actualMinutes = schedules.reduce((sum, item) => sum + (minutesFromTime(item.actualDuration) || durationMinutes(item.actualStart, item.actualEnd)), 0)
   const billableMinutes = schedules.reduce((sum, item) => {
     const realized = minutesFromTime(item.actualDuration) || durationMinutes(item.actualStart, item.actualEnd)
@@ -721,6 +687,65 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     ? minutesFromTime(selected.qthorac)
     : 0
   const balanceBeforeThisOrder = (contractBalance?.balanceMinutes ?? 0) + previouslyAccountedMinutes
+  const officialMinutesByService = useMemo(() => {
+    const totals = new Map<number, number>()
+    schedules.forEach((schedule) => {
+      if (!schedule.serviceId) return
+      const realized = minutesFromTime(schedule.actualDuration) || durationMinutes(schedule.actualStart, schedule.actualEnd)
+      if (realized > 0) totals.set(schedule.serviceId, (totals.get(schedule.serviceId) ?? 0) + Math.max(realized, minimumMinutes))
+    })
+    return totals
+  }, [minimumMinutes, schedules])
+  const overageMinutesByService = useMemo(() => {
+    const totals = new Map<number, { regular: number; extra: number }>()
+    let remainingContractMinutes = orderOrigin === 'C' ? balanceBeforeThisOrder : 0
+    schedules.forEach((schedule) => {
+      if (!schedule.serviceId) return
+      const realized = minutesFromTime(schedule.actualDuration) || durationMinutes(schedule.actualStart, schedule.actualEnd)
+      if (realized <= 0) return
+      const accounted = Math.max(realized, minimumMinutes)
+      const overage = Math.max(0, realized - minimumMinutes)
+      const current = totals.get(schedule.serviceId) ?? { regular: 0, extra: 0 }
+      if (orderOrigin === 'C') {
+        const balanceAfterMinimum = Math.max(0, remainingContractMinutes - minimumMinutes)
+        const regular = Math.min(overage, balanceAfterMinimum)
+        totals.set(schedule.serviceId, { regular: current.regular + regular, extra: current.extra + overage - regular })
+        remainingContractMinutes = Math.max(0, remainingContractMinutes - accounted)
+      } else {
+        totals.set(schedule.serviceId, { regular: current.regular + overage, extra: current.extra })
+      }
+    })
+    return totals
+  }, [balanceBeforeThisOrder, minimumMinutes, orderOrigin, schedules])
+  const scheduledServiceIds = useMemo(() => new Set(schedules.map((schedule) => schedule.serviceId).filter((id): id is number => Boolean(id))), [schedules])
+  const pricedServiceItems = useMemo(() => serviceItems.map((item) => {
+    const serviceMinutes = officialMinutesByService.get(item.serviceId) ?? 0
+    const quantity = Math.max(1, numberValue(item.quantity))
+    const overage = overageMinutesByService.get(item.serviceId) ?? { regular: 0, extra: 0 }
+    const overageValue = orderOrigin === 'C'
+      ? overage.regular * numberValue(item.minuteValue) + overage.extra * numberValue(item.extraValue ?? item.minuteValue)
+      : overage.regular * numberValue(item.oneOffValue ?? item.minuteValue)
+    const totalValue = serviceMinutes > 0
+      ? numberValue(item.minimumValue) * quantity + overageValue
+      : quantity * numberValue(item.unitValue)
+    const unitValue = totalValue / quantity
+    return {
+      ...item,
+      quantity,
+      hours: scheduledServiceIds.has(item.serviceId) ? asDuration(serviceMinutes) : item.hours,
+      unitValue: currencyValue(unitValue),
+      totalValue: currencyValue(totalValue),
+    }
+  }), [officialMinutesByService, orderOrigin, overageMinutesByService, scheduledServiceIds, serviceItems])
+  const serviceSubtotal = pricedServiceItems.reduce((sum, item) => sum + numberValue(item.totalValue), 0)
+  const materialGross = materialItems.reduce((sum, item) => sum + numberValue(item.quantity) * numberValue(item.unitValue), 0)
+  const materialDiscountValue = materialGross * Math.min(100, numberValue(purchaseDiscount)) / 100
+  const materialFob = Math.max(0, materialGross - materialDiscountValue)
+  const materialCif = materialFob + numberValue(purchaseFreight) + numberValue(purchaseInsurance)
+  const materialAmount = materialCif + numberValue(purchaseStandard) + numberValue(purchaseGbMargin) + numberValue(purchaseRental)
+  const discountAmount = serviceSubtotal * numberValue(discount) / 100
+  const total = serviceSubtotal + materialAmount + numberValue(ticketFee) + numberValue(transport) + numberValue(rental) - discountAmount
+  const totalMinutes = schedules.reduce((sum, item) => sum + (minutesFromTime(item.expectedDuration) || durationMinutes(item.expectedStart, item.expectedEnd)), 0)
   const projectedBalanceMinutes = Math.max(0, balanceBeforeThisOrder - billableMinutes)
   const operationalRule = orderOrigin === 'C'
     ? systemParametersQuery.data?.contractRules || `Cada atendimento desconta no mínimo ${minimumMinutes} minutos das horas contratadas.`
@@ -962,7 +987,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       const date = toDateInput(item.expectedDate) || requestDate
       return { ...persisted, serviceOrderId: selected?.id ?? null, scheduleId: item.scheduleId ?? index + 1, expectedDate: dateTime(date), expectedStart: item.expectedStart || null, expectedEnd: item.expectedEnd || null, expectedDuration: item.expectedDuration || asDuration(durationMinutes(item.expectedStart, item.expectedEnd)), actualDuration: item.actualDuration || asDuration(durationMinutes(item.actualStart, item.actualEnd)), employeeId: item.employeeId ? Number(item.employeeId) : null, urgentFlag: urgent ? 'S' : 'N', scheduledTimeFlag: hourMarked ? 'S' : 'N', startedFlag: item.startedFlag || 'N', finishedFlag: item.finishedFlag || 'N', routedFlag: item.routedFlag || 'N', serviceType }
     })
-    const normalizedServices: ServiceOrderServiceItem[] = pricedServiceItems.map(({ rowKey: _rowKey, ...item }) => ({ ...item, serviceOrderId: selected?.id ?? null, quantity: Math.max(1, numberValue(item.quantity)), unitValue: currencyValue(numberValue(item.unitValue)), totalValue: currencyValue(numberValue(item.totalValue)), minimumValue: numberValue(item.minimumValue), minuteValue: numberValue(item.minuteValue) }))
+    const normalizedServices: ServiceOrderServiceItem[] = pricedServiceItems.map(({ rowKey: _rowKey, ...item }) => ({ ...item, serviceOrderId: selected?.id ?? null, quantity: Math.max(1, numberValue(item.quantity)), unitValue: currencyValue(numberValue(item.unitValue)), totalValue: currencyValue(numberValue(item.totalValue)), minimumValue: numberValue(item.minimumValue), minuteValue: numberValue(item.minuteValue), extraValue: numberValue(item.extraValue ?? item.minuteValue), oneOffValue: numberValue(item.oneOffValue ?? item.minuteValue) }))
     const normalizedMaterials: ServiceOrderMaterialItem[] = materialItems.map(({ rowKey: _rowKey, ...item }, index) => ({ ...item, itemId: index + 1, purchaseOrderId: selected?.materialOrder?.id ?? null, quantity: Math.max(1, numberValue(item.quantity)), unitValue: numberValue(item.unitValue), totalValue: Math.max(1, numberValue(item.quantity)) * numberValue(item.unitValue) }))
     const materialOrder: ServiceOrderMaterialOrder | null = materialItems.length > 0 || selected?.materialOrder ? {
       ...selected?.materialOrder,
@@ -1192,7 +1217,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
 
 function serviceDraft(service: ServiceCatalogItem): ServiceDraft {
   const unitValue = numberValue(service.defaultPrice ?? service.defaultValue)
-  return { rowKey: `service-new-${service.id}-${Date.now()}`, serviceId: service.id, quantity: 1, hours: '00:00', unitValue, totalValue: unitValue, minimumValue: numberValue(service.minimumValue), minuteValue: numberValue(service.legacyMinuteValue) }
+  return { rowKey: `service-new-${service.id}-${Date.now()}`, serviceId: service.id, quantity: 1, hours: '00:00', unitValue, totalValue: unitValue, minimumValue: numberValue(service.minimumValue), minuteValue: numberValue(service.legacyMinuteValue), extraValue: numberValue(service.extraValue ?? service.legacyMinuteValue), oneOffValue: numberValue(service.oneOffValue ?? service.legacyMinuteValue) }
 }
 
 function materialDraft(material: Material): MaterialDraft {
