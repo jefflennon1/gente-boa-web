@@ -75,9 +75,21 @@ export interface SystemParameters {
   oneOffRules: string | null
   minimumTermEmailSubject: string | null
   minimumTermEmailBody: string | null
+  serviceAdjustmentEnabled?: boolean
+  serviceAdjustmentPercentage?: number | null
+  serviceAdjustmentDate?: ISODate | null
+  serviceAdjustmentAppliedAt?: ISODateTime | null
+  serviceAdjustmentAppliedDate?: ISODate | null
+  serviceAdjustmentAffectedServices?: number | null
 }
 
 export type SystemParametersPayload = SystemParameters
+
+export interface ServicePriceAdjustmentPayload {
+  enabled: boolean
+  percentage: number | null
+  scheduledDate: ISODate | null
+}
 
 export interface ClientEmailDraft {
   clientId: number

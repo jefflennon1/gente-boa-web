@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, CalendarClock, Clock3, FolderOpen, Landmark, LoaderCircle, Mail, Percent, Save, Settings2, Trash2 } from 'lucide-react'
+import { Building2, CalendarCheck2, CalendarClock, Clock3, FolderOpen, Landmark, LoaderCircle, Mail, Percent, Save, Settings2, TrendingUp, Trash2 } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import type { SystemParametersPayload } from '../types'
 import { Button, ConfirmDialog, ErrorState, FormError, FormField, LoadingState, PageHeader, Toast } from '../components/ui'
+import { formatDate } from '../lib/format'
 
 function textValue(data: FormData, field: string) {
   return String(data.get(field) ?? '').trim()
@@ -30,6 +31,8 @@ export function SystemParametersPage() {
   const [formError, setFormError] = useState('')
   const [deleteError, setDeleteError] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [section, setSection] = useState<'general' | 'adjustment'>('general')
+  const [adjustmentEnabled, setAdjustmentEnabled] = useState(false)
 
   const parametersQuery = useQuery({
     queryKey: queryKeys.systemParameters,
@@ -57,7 +60,22 @@ export function SystemParametersPage() {
     onError: (error) => setDeleteError(apiErrorMessage(error)),
   })
 
+  const adjustmentMutation = useMutation({
+    mutationFn: api.systemParameters.updateServiceAdjustment,
+    onSuccess: async (updated, payload) => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.systemParameters })
+      setFormError('')
+      const appliedNow = updated.serviceAdjustmentAppliedDate === payload.scheduledDate
+      showToast(appliedNow ? `Reajuste aplicado em ${updated.serviceAdjustmentAffectedServices ?? 0} serviços.` : 'Agendamento de reajuste atualizado.')
+    },
+    onError: (error) => setFormError(apiErrorMessage(error)),
+  })
+
   const parameters = parametersQuery.data
+
+  useEffect(() => {
+    setAdjustmentEnabled(Boolean(parameters?.serviceAdjustmentEnabled))
+  }, [parameters?.serviceAdjustmentEnabled])
 
   function showToast(message: string) {
     setToast(message)
@@ -96,6 +114,19 @@ export function SystemParametersPage() {
     saveMutation.mutate({ payload, exists: Boolean(parameters) })
   }
 
+  function submitAdjustment(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setFormError('')
+    const data = new FormData(event.currentTarget)
+    const percentage = nullableNumber(data, 'serviceAdjustmentPercentage') ?? parameters?.serviceAdjustmentPercentage ?? null
+    const scheduledDate = textValue(data, 'serviceAdjustmentDate') || parameters?.serviceAdjustmentDate || null
+    if (adjustmentEnabled && (percentage === null || !scheduledDate)) {
+      setFormError('Informe o percentual e a data para ativar o reajuste.')
+      return
+    }
+    adjustmentMutation.mutate({ enabled: adjustmentEnabled, percentage, scheduledDate })
+  }
+
   return (
     <>
       <PageHeader
@@ -104,7 +135,12 @@ export function SystemParametersPage() {
         subtitle="Configurações globais usadas pelos cadastros de clientes e contratos. Acesso restrito a administradores."
       />
 
-      {parametersQuery.isLoading ? <section className="panel"><LoadingState label="Carregando parâmetros do sistema..." /></section> : parametersQuery.isError ? <section className="panel"><ErrorState message={apiErrorMessage(parametersQuery.error)} onRetry={() => parametersQuery.refetch()} /></section> : (
+      <nav className="system-parameters-menu" aria-label="Seções dos parâmetros">
+        <button type="button" className={section === 'general' ? 'active' : ''} onClick={() => { setSection('general'); setFormError('') }}><Settings2 size={16} />Parâmetros gerais</button>
+        <button type="button" className={section === 'adjustment' ? 'active' : ''} onClick={() => { setSection('adjustment'); setFormError('') }}><TrendingUp size={16} />Reajuste de serviços</button>
+      </nav>
+
+      {section === 'general' && (parametersQuery.isLoading ? <section className="panel"><LoadingState label="Carregando parâmetros do sistema..." /></section> : parametersQuery.isError ? <section className="panel"><ErrorState message={apiErrorMessage(parametersQuery.error)} onRetry={() => parametersQuery.refetch()} /></section> : (
         <form className="panel system-parameters-form" key={parameters?.nmempre ?? 'new-system-parameters'} onSubmit={submit}>
           
 
@@ -170,7 +206,44 @@ export function SystemParametersPage() {
             <Button type="submit" icon={saveMutation.isPending ? <LoaderCircle className="api-state__spinner" size={16} /> : <Save size={17} />} disabled={saveMutation.isPending}>{saveMutation.isPending ? 'Salvando...' : parameters ? 'Salvar alterações' : 'Cadastrar parâmetros'}</Button>
           </footer>
         </form>
-      )}
+      ))}
+
+      {section === 'adjustment' && (parametersQuery.isLoading ? <section className="panel"><LoadingState label="Carregando reajuste dos serviços..." /></section> : parametersQuery.isError ? <section className="panel"><ErrorState message={apiErrorMessage(parametersQuery.error)} onRetry={() => parametersQuery.refetch()} /></section> : !parameters ? <section className="panel"><ErrorState message="Cadastre os parâmetros gerais antes de configurar o reajuste dos serviços." /></section> : (
+        <form className="panel system-parameters-form service-adjustment-form" key={`${parameters.nmempre}-${parameters.serviceAdjustmentDate ?? 'new'}`} onSubmit={submitAdjustment}>
+          <header className="system-parameters-form__header">
+            <span className="system-parameters-form__icon"><TrendingUp size={21} /></span>
+            <div><span>Automação financeira</span><h2>Reajuste dos serviços</h2><p>Programa a atualização percentual dos valores cadastrados na tabela de serviços.</p></div>
+            <label className={`service-adjustment-toggle ${adjustmentEnabled ? 'service-adjustment-toggle--active' : ''}`}>
+              <input type="checkbox" checked={adjustmentEnabled} onChange={(event) => setAdjustmentEnabled(event.target.checked)} />
+              <span aria-hidden="true"><i /></span><strong>{adjustmentEnabled ? 'Ativado' : 'Desativado'}</strong>
+            </label>
+          </header>
+          <div className="system-parameters-form__body">
+            <FormError message={formError} />
+            <div className="service-adjustment-intro"><CalendarCheck2 size={20} /><span><strong>Aplicação única na data programada</strong>
+              {/* <small>O percentual será aplicado uma única vez, inclusive se a API reiniciar. Depois da execução, o agendamento será desativado automaticamente.</small> */}
+            </span></div>
+            <div className="form-grid form-grid--two system-parameters-financial">
+              <FormField label="Percentual de reajuste (%)" hint="Exemplo: informe 6 para aumentar os valores em 6%"><input name="serviceAdjustmentPercentage" type="number" min="0.01" max="100" step="0.0001" required={adjustmentEnabled} disabled={!adjustmentEnabled} defaultValue={parameters.serviceAdjustmentPercentage ?? ''} /></FormField>
+              <FormField label="Data de aplicação" hint="Se a data for hoje, o reajuste será aplicado ao salvar"><input name="serviceAdjustmentDate" type="date" required={adjustmentEnabled} disabled={!adjustmentEnabled} defaultValue={parameters.serviceAdjustmentDate ?? ''} /></FormField>
+            </div>
+            {/* <section className="service-adjustment-scope">
+              <strong>Valores que serão reajustados</strong>
+              <div><span>Valor minuto</span><span>Valor contrato</span><span>Valor mínimo</span><span>Valor extra</span><span>Valor avulso</span></div>
+              <small>Todos os valores serão arredondados para duas casas decimais.</small>
+            </section> */}
+            <section className="service-adjustment-history">
+              <span><small>Última data processada</small><strong>{formatDate(parameters.serviceAdjustmentAppliedDate)}</strong></span>
+              <span><small>Executado em</small><strong>{formatDate(parameters.serviceAdjustmentAppliedAt, true)}</strong></span>
+              <span><small>Serviços reajustados</small><strong>{parameters.serviceAdjustmentAffectedServices ?? 'Nenhuma execução'}</strong></span>
+            </section>
+          </div>
+          <footer className="system-parameters-form__footer">
+            <span>{adjustmentEnabled ? 'O agendamento será executado automaticamente na data informada.' : 'Ative a configuração para programar um novo reajuste.'}</span>
+            <Button type="submit" icon={adjustmentMutation.isPending ? <LoaderCircle className="api-state__spinner" size={16} /> : <Save size={17} />} disabled={adjustmentMutation.isPending}>{adjustmentMutation.isPending ? 'Salvando...' : 'Salvar reajuste'}</Button>
+          </footer>
+        </form>
+      ))}
 
       <ConfirmDialog
         open={deleteOpen}

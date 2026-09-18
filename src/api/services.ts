@@ -49,6 +49,7 @@ import type {
   SortDirection,
   SystemParameters,
   SystemParametersPayload,
+  ServicePriceAdjustmentPayload,
   Supplier,
   SupplierPayload,
   UpdateUserPayload,
@@ -183,6 +184,10 @@ export const api = {
     },
     async update(payload: SystemParametersPayload) {
       const { data } = await http.put<SystemParameters>('/system-parameters', payload)
+      return data
+    },
+    async updateServiceAdjustment(payload: ServicePriceAdjustmentPayload) {
+      const { data } = await http.put<SystemParameters>('/system-parameters/service-adjustment', payload)
       return data
     },
     async remove() {
