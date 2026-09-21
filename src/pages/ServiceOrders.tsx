@@ -484,11 +484,22 @@ export function ServiceOrders() {
         {stages.map((stage) => {
           const stageOrders = orders.filter((order) => order.status === stage)
           return <section className={`kanban-column kanban-column--${stage.toLowerCase()}`} key={stage}><header><span><i />{enumLabel(stage)}</span><b>{stageOrders.length}</b></header><div className="kanban-column__body">
-            {stageOrders.map((order) => <article className="os-card" key={order.id} onClick={() => setDetailId(order.id)}>
-              <div className="os-card__top"><span>OS-{order.id}</span>{order.priority === 'URGENTE' && <Badge tone="red">Urgente</Badge>}</div>
-              <h3>{order.clientTradeName || order.clientName || 'Cliente não identificado'}</h3>{order.clientTradeName && order.clientName && <small className="os-card__company-name">{order.clientName}</small>}<p>{order.description || 'Descrição não informada'}</p>
+            {stageOrders.map((order) => <article className={`os-card ${order.scheduledTime ? 'os-card--scheduled' : ''}`} key={order.id} onClick={() => setDetailId(order.id)}>
+              <div className="os-card__top"><span>OS-{order.id}</span><div>{order.priority === 'URGENTE' && <Badge tone="red">Urgente</Badge>}<span className="os-card__origin">{order.origin === 'C' ? 'Contrato' : 'Avulsa'}</span></div></div>
+              {order.scheduledTime && <div className="os-card__appointment"><Clock3 size={16} /><span><strong>Hora marcada</strong><small>{order.scheduledAt ? formatDate(order.scheduledAt) : formatDate(order.orderedAt)}{order.scheduledStart ? ` às ${order.scheduledStart}` : ''}{order.scheduledEnd ? `–${order.scheduledEnd}` : ''}</small></span></div>}
+              <h3>{order.clientTradeName || order.clientName || 'Cliente não identificado'}</h3>{order.clientTradeName && order.clientName && <small className="os-card__company-name">{order.clientName}</small>}
+              <div className="os-card__client-summary"><span>Cliente #{order.clientId || '—'}</span><span>{order.completedAttendances || 0} {(order.completedAttendances || 0) === 1 ? 'atendimento concluído' : 'atendimentos concluídos'}</span></div>
+              <dl className="os-card__details">
+                <div><dt><UserRound size={13} />Solicitante</dt><dd>{order.requester || 'Não informado'}</dd></div>
+                <div><dt><MapPin size={13} />Endereço</dt><dd>{order.serviceAddress || 'Não informado'}</dd></div>
+                <div><dt><Wrench size={13} />Descrição</dt><dd>{order.description || 'Não informada'}</dd></div>
+                {order.orderNotes && <div><dt>Obs. atendimento</dt><dd>{order.orderNotes}</dd></div>}
+                {order.referencePoint && <div><dt>Ponto de referência</dt><dd>{order.referencePoint}</dd></div>}
+                {order.clientNotes && <div><dt>Obs. cliente</dt><dd>{order.clientNotes}</dd></div>}
+                {order.searchTarget && <div><dt>Procurar por</dt><dd>{order.searchTarget}</dd></div>}
+              </dl>
               <div className={`os-card__services ${order.serviceDescriptions.length === 0 ? 'os-card__services--empty' : ''}`}><strong>Serviços</strong><span>{order.serviceDescriptions.length ? order.serviceDescriptions.join(' · ') : 'NENHUM SERVIÇO VINCULADO'}</span></div>
-              <div className="os-meta"><span><CalendarDays size={14} />{formatDate(order.orderedAt)}</span><span><UserRound size={14} />{order.requester || 'Sem solicitante'}</span></div>
+              <div className="os-meta"><span><CalendarDays size={14} />Abertura: {formatDate(order.orderedAt)}</span></div>
               {order.tracking?.startTime && <div className={`os-timer-status ${order.tracking.running ? 'os-timer-status--running' : ''}`}><Clock3 size={14} /><span><strong>{order.tracking.running ? <>Em andamento · <LiveElapsed startedAt={order.tracking.startedAt} /></> : `Atendimento realizado: ${order.tracking.duration || '00:00'}`}</strong><small>{order.tracking.employeeName}{order.tracking.running ? ` · Início ${order.tracking.startTime}` : ''}</small></span></div>}
               {!['FINALIZADA', 'CANCELADA'].includes(stage) ? <div className="os-card__actions"><button type="button" className={`os-timer-button ${order.tracking?.running ? 'os-timer-button--stop' : ''}`} disabled={order.serviceDescriptions.length === 0 || timerLoadingId === order.id || trackingMutation.isPending} title={order.serviceDescriptions.length === 0 ? 'Nenhum serviço vinculado à ordem de serviço' : undefined} onClick={(event) => { event.preventDefault(); event.stopPropagation(); openTimer(order) }}>{order.tracking?.running ? <><Square size={14} /> Parar</> : <><Play size={14} /> Iniciar</>}</button><button type="button" disabled={advanceMutation.isPending} onClick={(event) => { event.preventDefault(); event.stopPropagation(); advance(order) }}>Finalizar OS <CheckCircle2 size={15} /></button></div> : <span className="os-complete"><CheckCircle2 size={15} /> {stage === 'FINALIZADA' ? 'Atendimento concluído' : 'Atendimento cancelado'}</span>}
             </article>)}

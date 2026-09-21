@@ -566,6 +566,18 @@ export interface ServiceOrderListItem {
   description: string | null
   totalValue: number | null
   priority: Priority
+  origin: ServiceOrderOrigin
+  attendanceLocationId: number | null
+  completedAttendances: number
+  serviceAddress: string | null
+  referencePoint: string | null
+  orderNotes: string | null
+  clientNotes: string | null
+  searchTarget: string | null
+  scheduledTime: boolean
+  scheduledAt: ISODateTime | null
+  scheduledStart: string | null
+  scheduledEnd: string | null
   tracking?: ServiceOrderTracking | null
   serviceDescriptions: string[]
 }
