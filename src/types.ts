@@ -578,6 +578,13 @@ export interface ServiceOrderListItem {
   scheduledAt: ISODateTime | null
   scheduledStart: string | null
   scheduledEnd: string | null
+  forecastAt: ISODateTime | null
+  forecastStart: string | null
+  forecastEnd: string | null
+  professionalNames: string[]
+  routed: boolean
+  started: boolean
+  finished: boolean
   tracking?: ServiceOrderTracking | null
   serviceDescriptions: string[]
 }

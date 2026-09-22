@@ -27,6 +27,14 @@ const serviceTypes = [
   // { value: 'O', label: 'Outros' },
 ]
 
+const waitingEmployee = {
+  employeeId: 1,
+  employeeName: 'AGUARDANDO',
+  employeeNickname: 'AAGUARDANDO',
+  employeePosition: null,
+  employeePhone: null,
+}
+
 const statusTone: Record<ServiceOrderStatus, 'orange' | 'blue' | 'purple' | 'green' | 'neutral' | 'red'> = {
   ABERTA: 'orange', ENCAMINHADA: 'blue', AGENDADA: 'purple', EM_ATENDIMENTO: 'green', FINALIZADA: 'neutral', CANCELADA: 'red',
 }
@@ -34,7 +42,8 @@ const statusTone: Record<ServiceOrderStatus, 'orange' | 'blue' | 'purple' | 'gre
 type ScheduleDraft = ServiceOrderSchedule & { rowKey: string }
 type ServiceDraft = ServiceOrderServiceItem & { rowKey: string }
 type MaterialDraft = ServiceOrderMaterialItem & { rowKey: string }
-type DateFilterMode = 'none' | 'date' | 'range' | 'month' | 'week'
+type DateFilterMode = 'none' | 'day' | 'range' | 'month' | 'week'
+type ServiceOrderFilter = 'Todas' | 'Urgentes' | 'ABERTA' | 'FINALIZADA' | 'CANCELADA'
 
 type DateBounds = {
   startDate?: string
@@ -78,7 +87,7 @@ function shiftDate(value: string, days: number) {
 }
 
 function resolveDateBounds(mode: DateFilterMode, date: string, rangeStart: string, rangeEnd: string, month: string, weekDate: string): DateBounds {
-  if (mode === 'date' && date) return { startDate: date, endDate: date }
+  if (mode === 'day' && date) return { startDate: date, endDate: date }
   if (mode === 'range') return { startDate: rangeStart || undefined, endDate: rangeEnd || undefined }
   if (mode === 'month' && month) {
     const [year, monthNumber] = month.split('-').map(Number)
@@ -157,7 +166,11 @@ function employeeDisplay(employee: Employee) {
 }
 
 function scheduleEmployeeDisplay(schedule: ServiceOrderSchedule) {
-  return schedule.employeeName || schedule.employeeNickname || (schedule.employeeId ? `Funcionário #${schedule.employeeId}` : 'Selecionar funcionário')
+  return schedule.employeeName || schedule.employeeNickname || (schedule.employeeId && schedule.employeeId !== 1 ? `Funcionário #${schedule.employeeId}` : 'AGUARDANDO')
+}
+
+function OperationalSeal({ active, label, tone }: { active: boolean; label: string; tone: 'red' | 'orange' | 'blue' | 'green' | 'purple' }) {
+  return active ? <span className={`os-operational-seal os-operational-seal--${tone}`} aria-label={label} title={label}><CheckCircle2 size={16} strokeWidth={2.5} /></span> : <span className="os-operational-empty">—</span>
 }
 
 function finalizationError(
@@ -189,17 +202,17 @@ function attendanceLocationDisplay(location: AttendanceLocation) {
 
 export function ServiceOrders() {
   const queryClient = useQueryClient()
-  const [view, setView] = useState<'kanban' | 'list'>('kanban')
+  const [view, setView] = useState<'kanban' | 'list'>('list')
   const [search, setSearch] = useState('')
-  const [priority, setPriority] = useState<'Todas' | 'Urgentes'>('Todas')
-  const [dateFilterMode, setDateFilterMode] = useState<DateFilterMode>('none')
-  const [date, setDate] = useState('')
+  const [orderFilter, setOrderFilter] = useState<ServiceOrderFilter>('Todas')
+  const [dateFilterMode, setDateFilterMode] = useState<DateFilterMode>('day')
+  const [date, setDate] = useState(localToday())
   const [rangeStart, setRangeStart] = useState('')
   const [rangeEnd, setRangeEnd] = useState('')
   const [month, setMonth] = useState('')
   const [weekDate, setWeekDate] = useState(localToday())
   const [page, setPage] = useState(0)
-  const [pageSize, setPageSize] = useState(20)
+  const pageSize = 10
   const [modalOpen, setModalOpen] = useState(false)
   const [selected, setSelected] = useState<ServiceOrder | null>(null)
   const [formKey, setFormKey] = useState(0)
@@ -225,7 +238,7 @@ export function ServiceOrders() {
     debouncedSearch,
     dateBounds.startDate ?? '',
     dateBounds.endDate ?? '',
-    priority,
+    orderFilter,
     page,
     pageSize,
   ] as const
@@ -236,7 +249,8 @@ export function ServiceOrders() {
       query: debouncedSearch || undefined,
       startDate: dateBounds.startDate,
       endDate: dateBounds.endDate,
-      urgentOnly: priority === 'Urgentes' || undefined,
+      urgentOnly: orderFilter === 'Urgentes' || undefined,
+      status: orderFilter === 'ABERTA' || orderFilter === 'FINALIZADA' || orderFilter === 'CANCELADA' ? orderFilter : undefined,
       page,
       size: pageSize,
     }),
@@ -327,7 +341,7 @@ export function ServiceOrders() {
   function changeDateFilterMode(mode: DateFilterMode) {
     const today = localToday()
     setDateFilterMode(mode)
-    if (mode === 'date' && !date) setDate(today)
+    if (mode === 'day' && !date) setDate(today)
     if (mode === 'range') {
       if (!rangeStart) setRangeStart(today)
       if (!rangeEnd) setRangeEnd(today)
@@ -466,9 +480,9 @@ export function ServiceOrders() {
     <section className="panel data-panel os-panel">
       <div className="data-toolbar data-toolbar--orders">
         <div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); resetPage() }} placeholder="Buscar por código, cliente, solicitante ou descrição..." /></div>
-        <div className="segmented-control"><button className={priority === 'Todas' ? 'active' : ''} onClick={() => { setPriority('Todas'); resetPage() }}>Todas</button><button className={priority === 'Urgentes' ? 'active' : ''} onClick={() => { setPriority('Urgentes'); resetPage() }}>Urgentes</button></div>
-        <label className="toolbar-select toolbar-select--compact os-period-mode"><span>Período</span><select value={dateFilterMode} onChange={(event) => changeDateFilterMode(event.target.value as DateFilterMode)}><option value="none">Todas as datas</option><option value="date">Data específica</option><option value="range">Entre datas</option><option value="month">Mês</option><option value="week">Semana</option></select></label>
-        {dateFilterMode === 'date' && <label className="os-date-field"><span>Data</span><div><CalendarDays size={15} /><input type="date" value={date} onChange={(event) => { setDate(event.target.value); resetPage() }} aria-label="Filtrar por data específica" /></div></label>}
+        <div className="segmented-control os-status-filter"><button className={orderFilter === 'Todas' ? 'active' : ''} onClick={() => { setOrderFilter('Todas'); resetPage() }}>Todas</button><button className={orderFilter === 'Urgentes' ? 'active' : ''} onClick={() => { setOrderFilter('Urgentes'); resetPage() }}>Urgentes</button><button className={orderFilter === 'ABERTA' ? 'active' : ''} onClick={() => { setOrderFilter('ABERTA'); resetPage() }}>Abertas</button><button className={orderFilter === 'FINALIZADA' ? 'active' : ''} onClick={() => { setOrderFilter('FINALIZADA'); resetPage() }}>Finalizadas</button><button className={orderFilter === 'CANCELADA' ? 'active' : ''} onClick={() => { setOrderFilter('CANCELADA'); resetPage() }}>Canceladas</button></div>
+        <label className="toolbar-select toolbar-select--compact os-period-mode"><span>Período</span><select value={dateFilterMode} onChange={(event) => changeDateFilterMode(event.target.value as DateFilterMode)}><option value="day">Dia</option><option value="range">Entre datas</option><option value="week">Semana</option><option value="month">Mês</option><option value="none">Todas as datas</option></select></label>
+        {dateFilterMode === 'day' && <label className="os-date-field"><span>Dia</span><div><CalendarDays size={15} /><input type="date" value={date} onChange={(event) => { setDate(event.target.value); resetPage() }} aria-label="Filtrar por dia" /></div></label>}
         {dateFilterMode === 'range' && <div className="os-period-fields">
           <label className="os-date-field"><span>De</span><div><CalendarDays size={15} /><input type="date" value={rangeStart} max={rangeEnd || undefined} onChange={(event) => { setRangeStart(event.target.value); resetPage() }} /></div></label>
           <label className="os-date-field"><span>Até</span><div><CalendarDays size={15} /><input type="date" value={rangeEnd} min={rangeStart || undefined} onChange={(event) => { setRangeEnd(event.target.value); resetPage() }} /></div></label>
@@ -506,13 +520,36 @@ export function ServiceOrders() {
             {stageOrders.length === 0 && <div className="kanban-empty">Nenhuma OS nesta etapa.</div>}
           </div></section>
         })}
-      </div> : <div className={`table-wrap ${ordersQuery.isFetching ? 'table-wrap--refreshing' : ''}`}><table className="data-table os-table"><thead><tr><th>OS / Cliente</th><th>Atendimento / Serviços</th><th>Data</th><th>Categoria</th><th>Valor</th><th>Status</th><th /></tr></thead><tbody>{orders.map((order) => <tr key={order.id} onClick={() => setDetailId(order.id)}><td><strong>OS-{order.id}</strong><small className="table-secondary">{order.clientTradeName || order.clientName || 'Cliente não identificado'}</small></td><td><strong className="table-primary">{order.description || 'Não informado'}</strong><small className={`table-secondary ${order.serviceDescriptions.length === 0 ? 'service-description-empty' : ''}`}>{order.serviceDescriptions.length ? order.serviceDescriptions.join(' · ') : 'NENHUM SERVIÇO VINCULADO'}</small></td><td>{formatDate(order.orderedAt)}</td><td>{enumLabel(order.category)}</td><td>{money(order.totalValue)}</td><td><Badge tone={statusTone[order.status]}>{enumLabel(order.status)}</Badge></td><td><button className="row-action" aria-label={`Visualizar OS-${order.id}`}><ChevronRight size={18} /></button></td></tr>)}</tbody></table></div>}
+      </div> : <div className={`table-wrap ${ordersQuery.isFetching ? 'table-wrap--refreshing' : ''}`}><table className="data-table os-table"><thead><tr><th>OS</th><th>Cliente</th><th>Solicitante</th><th>Descrição / Serviço</th><th>Abertura</th><th>Profissional</th><th>Dt. prevista</th><th>H. inicial</th><th>H. final</th><th>Tipo</th><th>Valor</th><th>Situação</th><th className="os-status-heading">Urgente</th><th className="os-status-heading">Hora marcada</th><th className="os-status-heading">Encaminhada</th><th className="os-status-heading">Iniciada</th><th className="os-status-heading">Finalizada</th><th /></tr></thead><tbody>{orders.map((order) => {
+        const professionals = order.professionalNames?.length ? order.professionalNames : ['AGUARDANDO']
+        const waitingProfessional = professionals.some((name) => name.trim().toUpperCase().includes('AGUARDANDO'))
+        return <tr key={order.id} onClick={() => setDetailId(order.id)}>
+          <td><strong>OS-{order.id}</strong></td>
+          <td><strong className="table-primary">{order.clientTradeName || order.clientName || 'Cliente não identificado'}</strong><small className="table-secondary">Cliente #{order.clientId || '—'}</small></td>
+          <td>{order.requester || '—'}</td>
+          <td><strong className="table-primary">{order.description || 'Não informado'}</strong><small className={`table-secondary ${order.serviceDescriptions.length === 0 ? 'service-description-empty' : ''}`}>{order.serviceDescriptions.length ? order.serviceDescriptions.join(' · ') : 'NENHUM SERVIÇO VINCULADO'}</small></td>
+          <td>{formatDate(order.orderedAt)}</td>
+          <td><span className={waitingProfessional ? 'os-professional os-professional--waiting' : 'os-professional'} title={professionals.join(', ')}>{professionals.join(', ')}</span></td>
+          <td>{order.forecastAt ? formatDate(order.forecastAt) : '—'}</td>
+          <td>{order.forecastStart || '—'}</td>
+          <td>{order.forecastEnd || '—'}</td>
+          <td>{order.origin === 'C' ? 'Contrato' : 'Avulsa'}</td>
+          <td>{money(order.totalValue)}</td>
+          <td><Badge tone={statusTone[order.status]}>{enumLabel(order.status)}</Badge></td>
+          <td className="os-status-cell"><OperationalSeal active={order.priority === 'URGENTE'} label="Urgente" tone="red" /></td>
+          <td className="os-status-cell"><OperationalSeal active={order.scheduledTime} label="Marcada" tone="orange" /></td>
+          <td className="os-status-cell"><OperationalSeal active={order.routed} label="Encaminhada" tone="blue" /></td>
+          <td className="os-status-cell"><OperationalSeal active={order.started} label="Iniciada" tone="purple" /></td>
+          <td className="os-status-cell"><OperationalSeal active={order.finished} label="Finalizada" tone="green" /></td>
+          <td><button className="row-action" aria-label={`Visualizar OS-${order.id}`}><ChevronRight size={18} /></button></td>
+        </tr>
+      })}</tbody></table></div>}
       <footer className="table-footer table-footer--pagination">
         <span>Mostrando <strong>{firstResult}–{lastResult}</strong> de <strong>{total.toLocaleString('pt-BR')}</strong> ordens</span>
         <div className="os-pagination-area">
           {dateFilterMode !== 'none' && <button className="table-link" onClick={clearPeriod}>Limpar período</button>}
           <div className="pagination-controls">
-            <label>Por página <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); resetPage() }}><option value={10}>10</option><option value={20}>20</option><option value={50}>50</option><option value={100}>100</option></select></label>
+            <span>10 por página</span>
             <button disabled={page === 0 || ordersQuery.isFetching} onClick={() => setPage((value) => Math.max(0, value - 1))} aria-label="Página anterior"><ChevronLeft size={16} /></button>
             <span>Página <strong>{totalPages ? page + 1 : 0}</strong> de <strong>{totalPages}</strong></span>
             <button disabled={page + 1 >= totalPages || ordersQuery.isFetching} onClick={() => setPage((value) => value + 1)} aria-label="Próxima página"><ChevronRight size={16} /></button>
@@ -599,8 +636,8 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   const [scheduleError, setScheduleError] = useState('')
   const initialSingleServiceId = selected?.serviceItems?.length === 1 ? selected.serviceItems[0].serviceId : null
   const [schedules, setSchedules] = useState<ScheduleDraft[]>(() => selected?.schedules?.length
-    ? selected.schedules.map((item, index) => ({ ...item, serviceId: item.serviceId ?? initialSingleServiceId, rowKey: `schedule-${item.scheduleId ?? index}` }))
-    : [{ rowKey: 'schedule-new-0', expectedDate: dateTime(initialDate), expectedStart: '', expectedEnd: '', expectedDuration: '00:00', employeeId: null, serviceId: initialSingleServiceId }])
+    ? selected.schedules.map((item, index) => ({ ...item, ...(!item.employeeId ? waitingEmployee : {}), serviceId: item.serviceId ?? initialSingleServiceId, rowKey: `schedule-${item.scheduleId ?? index}` }))
+    : [{ rowKey: 'schedule-new-0', expectedDate: dateTime(initialDate), expectedStart: '', expectedEnd: '', expectedDuration: '00:00', ...waitingEmployee, serviceId: initialSingleServiceId }])
   const [serviceItems, setServiceItems] = useState<ServiceDraft[]>(() => selected?.serviceItems?.map((item, index) => ({ ...item, rowKey: `service-${item.serviceId}-${index}` })) ?? [])
   const [materialItems, setMaterialItems] = useState<MaterialDraft[]>(() => selected?.materialOrder?.items?.map((item, index) => ({ ...item, rowKey: `material-${item.materialId}-${index}` })) ?? [])
 
@@ -861,18 +898,12 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   }
 
   function clearEmployee(index: number) {
-    updateSchedule(index, {
-      employeeId: null,
-      employeeName: null,
-      employeeNickname: null,
-      employeePosition: null,
-      employeePhone: null,
-    })
+    updateSchedule(index, waitingEmployee)
   }
 
   function addSchedule() {
     const onlyServiceId = serviceItems.length === 1 ? serviceItems[0].serviceId : null
-    setSchedules((current) => [...current, { rowKey: `schedule-new-${Date.now()}`, expectedDate: dateTime(requestDate), expectedStart: '', expectedEnd: '', expectedDuration: '00:00', employeeId: null, serviceId: onlyServiceId }])
+    setSchedules((current) => [...current, { rowKey: `schedule-new-${Date.now()}`, expectedDate: dateTime(requestDate), expectedStart: '', expectedEnd: '', expectedDuration: '00:00', ...waitingEmployee, serviceId: onlyServiceId }])
     setScheduleError('')
   }
 
@@ -996,7 +1027,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     const normalizedSchedules: ServiceOrderSchedule[] = schedules.map((item, index) => {
       const { rowKey: _rowKey, ...persisted } = item
       const date = toDateInput(item.expectedDate) || requestDate
-      return { ...persisted, serviceOrderId: selected?.id ?? null, scheduleId: item.scheduleId ?? index + 1, expectedDate: dateTime(date), expectedStart: item.expectedStart || null, expectedEnd: item.expectedEnd || null, expectedDuration: item.expectedDuration || asDuration(durationMinutes(item.expectedStart, item.expectedEnd)), actualDuration: item.actualDuration || asDuration(durationMinutes(item.actualStart, item.actualEnd)), employeeId: item.employeeId ? Number(item.employeeId) : null, urgentFlag: urgent ? 'S' : 'N', scheduledTimeFlag: hourMarked ? 'S' : 'N', startedFlag: item.startedFlag || 'N', finishedFlag: item.finishedFlag || 'N', routedFlag: item.routedFlag || 'N', serviceType }
+      return { ...persisted, serviceOrderId: selected?.id ?? null, scheduleId: item.scheduleId ?? index + 1, expectedDate: dateTime(date), expectedStart: item.expectedStart || null, expectedEnd: item.expectedEnd || null, expectedDuration: item.expectedDuration || asDuration(durationMinutes(item.expectedStart, item.expectedEnd)), actualDuration: item.actualDuration || asDuration(durationMinutes(item.actualStart, item.actualEnd)), employeeId: item.employeeId ? Number(item.employeeId) : waitingEmployee.employeeId, urgentFlag: urgent ? 'S' : 'N', scheduledTimeFlag: hourMarked ? 'S' : 'N', startedFlag: item.startedFlag || 'N', finishedFlag: item.finishedFlag || 'N', routedFlag: item.routedFlag || 'N', serviceType }
     })
     const normalizedServices: ServiceOrderServiceItem[] = pricedServiceItems.map(({ rowKey: _rowKey, ...item }) => ({ ...item, serviceOrderId: selected?.id ?? null, quantity: Math.max(1, numberValue(item.quantity)), unitValue: currencyValue(numberValue(item.unitValue)), totalValue: currencyValue(numberValue(item.totalValue)), minimumValue: numberValue(item.minimumValue), minuteValue: numberValue(item.minuteValue), extraValue: numberValue(item.extraValue ?? item.minuteValue), oneOffValue: numberValue(item.oneOffValue ?? item.minuteValue) }))
     const normalizedMaterials: ServiceOrderMaterialItem[] = materialItems.map(({ rowKey: _rowKey, ...item }, index) => ({ ...item, itemId: index + 1, purchaseOrderId: selected?.materialOrder?.id ?? null, quantity: Math.max(1, numberValue(item.quantity)), unitValue: numberValue(item.unitValue), totalValue: Math.max(1, numberValue(item.quantity)) * numberValue(item.unitValue) }))
@@ -1111,7 +1142,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
             <td><input type="time" value={item.expectedStart || ''} onChange={(event) => updateSchedule(index, { expectedStart: event.target.value })} /></td>
             <td><input type="time" value={item.expectedEnd || ''} onChange={(event) => updateSchedule(index, { expectedEnd: event.target.value })} /></td>
             <td><input value={item.expectedDuration || '00:00'} readOnly /></td>
-            <td><div className="os-employee-cell"><button type="button" className="os-employee-picker-trigger" onClick={() => openEmployeePicker(index)} title="Buscar funcionário"><Search size={14} /><span><strong>{scheduleEmployeeDisplay(item)}</strong>{item.employeeId && <small>{[item.employeePosition, item.employeePhone, `#${item.employeeId}`].filter(Boolean).join(' · ')}</small>}</span></button>{item.employeeId && <button type="button" className="os-employee-clear" onClick={() => clearEmployee(index)} aria-label={`Remover ${scheduleEmployeeDisplay(item)} do agendamento`}><X size={13} /></button>}</div></td>
+            <td><div className="os-employee-cell"><button type="button" className="os-employee-picker-trigger" onClick={() => openEmployeePicker(index)} title="Buscar funcionário"><Search size={14} /><span><strong>{scheduleEmployeeDisplay(item)}</strong>{item.employeeId && item.employeeId !== waitingEmployee.employeeId && <small>{[item.employeePosition, item.employeePhone, `#${item.employeeId}`].filter(Boolean).join(' · ')}</small>}</span></button>{item.employeeId && item.employeeId !== waitingEmployee.employeeId && <button type="button" className="os-employee-clear" onClick={() => clearEmployee(index)} aria-label={`Remover ${scheduleEmployeeDisplay(item)} do agendamento`}><X size={13} /></button>}</div></td>
             <td><select value={item.serviceId ?? ''} onChange={(event) => selectScheduleService(index, event.target.value ? Number(event.target.value) : null)} disabled={!catalog.length} required={serviceItems.length > 0}><option value="">{catalog.length ? 'Selecione um serviço' : 'Nenhum serviço cadastrado'}</option>{catalog.map((service) => <option key={service.id} value={service.id}>{service.description || `Serviço #${service.id}`}</option>)}</select></td>
             <td><input type="date" value={toDateInput(item.actualDate)} onChange={(event) => updateSchedule(index, { actualDate: event.target.value ? dateTime(event.target.value) : null })} required={actualRequired} /></td>
             <td><input type="time" value={item.actualStart || ''} onChange={(event) => updateSchedule(index, { actualStart: event.target.value })} required={actualRequired} /></td>

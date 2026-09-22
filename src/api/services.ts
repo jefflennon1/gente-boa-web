@@ -88,6 +88,7 @@ export type ServiceOrderListParams = {
   startDate?: string
   endDate?: string
   urgentOnly?: boolean
+  status?: ServiceOrderStatus
   page?: number
   size?: number
 }
