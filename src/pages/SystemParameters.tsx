@@ -31,12 +31,19 @@ export function SystemParametersPage() {
   const [formError, setFormError] = useState('')
   const [deleteError, setDeleteError] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [section, setSection] = useState<'general' | 'adjustment'>('general')
+  const [section, setSection] = useState<'general' | 'adjustment' | 'bill-email'>('general')
   const [adjustmentEnabled, setAdjustmentEnabled] = useState(false)
+  const [billEmailAllClients, setBillEmailAllClients] = useState(false)
 
   const parametersQuery = useQuery({
     queryKey: queryKeys.systemParameters,
     queryFn: api.systemParameters.get,
+  })
+
+  const billEmailSettingsQuery = useQuery({
+    queryKey: [...queryKeys.systemParameters, 'bill-email'],
+    queryFn: api.systemParameters.getBillEmailSettings,
+    enabled: section === 'bill-email' && Boolean(parametersQuery.data),
   })
 
   const saveMutation = useMutation({
@@ -71,11 +78,27 @@ export function SystemParametersPage() {
     onError: (error) => setFormError(apiErrorMessage(error)),
   })
 
+  const billEmailMutation = useMutation({
+    mutationFn: api.systemParameters.updateBillEmailSettings,
+    onSuccess: async (updated) => {
+      queryClient.setQueryData([...queryKeys.systemParameters, 'bill-email'], updated)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.systemParameters })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.clients })
+      setFormError('')
+      showToast('Configuração de envio dos boletos atualizada.')
+    },
+    onError: (error) => setFormError(apiErrorMessage(error)),
+  })
+
   const parameters = parametersQuery.data
 
   useEffect(() => {
     setAdjustmentEnabled(Boolean(parameters?.serviceAdjustmentEnabled))
   }, [parameters?.serviceAdjustmentEnabled])
+
+  useEffect(() => {
+    setBillEmailAllClients(Boolean(billEmailSettingsQuery.data?.enableForAllActiveClients))
+  }, [billEmailSettingsQuery.data?.enableForAllActiveClients])
 
   function showToast(message: string) {
     setToast(message)
@@ -110,6 +133,8 @@ export function SystemParametersPage() {
       oneOffRules: textValue(data, 'oneOffRules') || null,
       minimumTermEmailSubject: textValue(data, 'minimumTermEmailSubject') || null,
       minimumTermEmailBody: textValue(data, 'minimumTermEmailBody') || null,
+      billEmailDaysBeforeDue: parameters?.billEmailDaysBeforeDue ?? 5,
+      billEmailAllActiveClients: parameters?.billEmailAllActiveClients ?? false,
     }
     saveMutation.mutate({ payload, exists: Boolean(parameters) })
   }
@@ -127,6 +152,24 @@ export function SystemParametersPage() {
     adjustmentMutation.mutate({ enabled: adjustmentEnabled, percentage, scheduledDate })
   }
 
+  function submitBillEmail(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setFormError('')
+    const data = new FormData(event.currentTarget)
+    const daysBeforeDue = nullableNumber(data, 'billEmailDaysBeforeDue')
+    if (daysBeforeDue === null || daysBeforeDue < 0 || daysBeforeDue > 90) {
+      setFormError('Informe uma antecedência entre 0 e 90 dias.')
+      return
+    }
+    const subject = textValue(data, 'billEmailSubject')
+    const body = textValue(data, 'billEmailBody')
+    if (!subject || !body) {
+      setFormError('Informe o assunto e a descrição do e-mail.')
+      return
+    }
+    billEmailMutation.mutate({ daysBeforeDue, enableForAllActiveClients: billEmailAllClients, subject, body })
+  }
+
   return (
     <>
       <PageHeader
@@ -138,6 +181,7 @@ export function SystemParametersPage() {
       <nav className="system-parameters-menu" aria-label="Seções dos parâmetros">
         <button type="button" className={section === 'general' ? 'active' : ''} onClick={() => { setSection('general'); setFormError('') }}><Settings2 size={16} />Parâmetros gerais</button>
         <button type="button" className={section === 'adjustment' ? 'active' : ''} onClick={() => { setSection('adjustment'); setFormError('') }}><TrendingUp size={16} />Reajuste de serviços</button>
+        <button type="button" className={section === 'bill-email' ? 'active' : ''} onClick={() => { setSection('bill-email'); setFormError('') }}><Mail size={16} />Envio de boletos</button>
       </nav>
 
       {section === 'general' && (parametersQuery.isLoading ? <section className="panel"><LoadingState label="Carregando parâmetros do sistema..." /></section> : parametersQuery.isError ? <section className="panel"><ErrorState message={apiErrorMessage(parametersQuery.error)} onRetry={() => parametersQuery.refetch()} /></section> : (
@@ -241,6 +285,35 @@ export function SystemParametersPage() {
           <footer className="system-parameters-form__footer">
             <span>{adjustmentEnabled ? 'O agendamento será executado automaticamente na data informada.' : 'Ative a configuração para programar um novo reajuste.'}</span>
             <Button type="submit" icon={adjustmentMutation.isPending ? <LoaderCircle className="api-state__spinner" size={16} /> : <Save size={17} />} disabled={adjustmentMutation.isPending}>{adjustmentMutation.isPending ? 'Salvando...' : 'Salvar reajuste'}</Button>
+          </footer>
+        </form>
+      ))}
+
+      {section === 'bill-email' && (parametersQuery.isLoading || billEmailSettingsQuery.isLoading ? <section className="panel"><LoadingState label="Carregando configuração de e-mail..." /></section> : parametersQuery.isError || billEmailSettingsQuery.isError ? <section className="panel"><ErrorState message={apiErrorMessage(parametersQuery.error || billEmailSettingsQuery.error)} onRetry={() => { void parametersQuery.refetch(); void billEmailSettingsQuery.refetch() }} /></section> : !parameters ? <section className="panel"><ErrorState message="Cadastre os parâmetros gerais antes de configurar o envio de boletos." /></section> : (
+        <form className="panel system-parameters-form service-adjustment-form" key={`${parameters.nmempre}-${billEmailSettingsQuery.data?.subject ?? 'bill-email'}`} onSubmit={submitBillEmail}>
+          <header className="system-parameters-form__header">
+            <span className="system-parameters-form__icon"><Mail size={21} /></span>
+            <div><span>Automação financeira</span><h2>Envio de boleto por e-mail</h2><p>Define quando o PDF será enviado e permite habilitar a preferência dos clientes com contrato ativo.</p></div>
+          </header>
+          <div className="system-parameters-form__body">
+            <FormError message={formError} />
+            <div className="service-adjustment-intro"><CalendarClock size={20} /><span><strong>Envio automático com controle contra duplicidade</strong><small>Cada boleto elegível é enviado uma única vez. Falhas ficam registradas para novas tentativas controladas.</small></span></div>
+            <div className="form-grid form-grid--two system-parameters-financial">
+              <FormField label="Dias antes do vencimento" hint="Informe 0 para enviar no próprio dia do vencimento."><input name="billEmailDaysBeforeDue" type="number" min="0" max="90" step="1" required defaultValue={billEmailSettingsQuery.data?.daysBeforeDue ?? 5} /></FormField>
+              <div className="bill-email-toggle-field">
+                <div><strong>Habilitar para todos os clientes ativos?</strong><label className={`service-adjustment-toggle ${billEmailAllClients ? 'service-adjustment-toggle--active' : ''}`}><input type="checkbox" checked={billEmailAllClients} onChange={(event) => setBillEmailAllClients(event.target.checked)} /><span aria-hidden="true"><i /></span><strong>{billEmailAllClients ? 'Ativado' : 'Desativado'}</strong></label></div>
+                <small>Ao ativar e salvar, o sistema marca a preferência individual dos clientes com contrato ativo. Desativar esta opção não remove escolhas individuais já salvas.</small>
+              </div>
+            </div>
+            <div className="form-section-title"><span><Mail size={14} /></span><div><strong>Conteúdo do e-mail</strong><small>Modelo utilizado nos envios automáticos e manuais</small></div></div>
+            <div className="form-grid">
+              <FormField label="Assunto" hint="Variáveis: {cliente}, {boleto}, {vencimento}, {valor} e {os}"><input name="billEmailSubject" required maxLength={250} defaultValue={billEmailSettingsQuery.data?.subject ?? ''} /></FormField>
+              <FormField label="Descrição do e-mail" hint="O PDF do boleto será anexado automaticamente."><textarea name="billEmailBody" required rows={8} defaultValue={billEmailSettingsQuery.data?.body ?? ''} /></FormField>
+            </div>
+          </div>
+          <footer className="system-parameters-form__footer">
+            <span>O processamento automático ocorre diariamente e respeita a antecedência configurada.</span>
+            <Button type="submit" icon={billEmailMutation.isPending ? <LoaderCircle className="api-state__spinner" size={16} /> : <Save size={17} />} disabled={billEmailMutation.isPending}>{billEmailMutation.isPending ? 'Salvando...' : 'Salvar configuração'}</Button>
           </footer>
         </form>
       ))}

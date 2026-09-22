@@ -1,194 +1,145 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowDownCircle, ArrowUpCircle, ChevronRight, Edit3, Landmark, Plus, Search, Trash2, WalletCards } from 'lucide-react'
+import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, FileText, Landmark, Mail, ReceiptText, Search, Send, WalletCards } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
-import { formatDate, money, toDateTimeInput } from '../lib/format'
-import type { Statement, StatementPayload } from '../types'
-import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
-
-type FlowFilter = 'Todos' | 'Créditos' | 'Débitos'
-
-function statementPayload(statement: Statement): StatementPayload {
-  const { id: _id, code: _code, amount: _amount, status: _status, ...persisted } = statement
-  return {
-    ...persisted,
-    clientName: statement.clientName || '',
-    dsmovim: statement.clientName || '',
-    sentAt: statement.sentAt || new Date().toISOString(),
-    dtinici: statement.sentAt || new Date().toISOString(),
-  }
-}
+import { enumLabel, formatDate, money } from '../lib/format'
+import type { BillDetail, BillListItem } from '../types'
+import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, LoadingState, PageHeader, StatCard, Toast } from '../components/ui'
 
 export function Statements() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<FlowFilter>('Todos')
-  const [modalOpen, setModalOpen] = useState(false)
-  const [selected, setSelected] = useState<Statement | null>(null)
-  const [detail, setDetail] = useState<Statement | null>(null)
-  const [statementToDelete, setStatementToDelete] = useState<Statement | null>(null)
+  const [page, setPage] = useState(0)
+  const [detailId, setDetailId] = useState<number | null>(null)
+  const [visualPaid, setVisualPaid] = useState<Record<number, boolean>>({})
   const [toast, setToast] = useState('')
-  const [formError, setFormError] = useState('')
+  const [emailTarget, setEmailTarget] = useState<BillDetail | null>(null)
+  const [emailError, setEmailError] = useState('')
   const debouncedSearch = useDebouncedValue(search)
+  const pageSize = 20
 
-  const statementsQuery = useQuery({ queryKey: [...queryKeys.statements, debouncedSearch], queryFn: () => api.statements.list({ query: debouncedSearch || undefined }) })
-
-  const saveMutation = useMutation({
-    mutationFn: ({ id, payload }: { id?: number; payload: StatementPayload }) => id ? api.statements.update(id, payload) : api.statements.create(payload),
-    onSuccess: async (_, variables) => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.statements })
-      setModalOpen(false)
-      setSelected(null)
-      showToast(variables.id ? 'Movimento atualizado.' : 'Movimento cadastrado no extrato.')
+  const billsQuery = useQuery({ queryKey: [...queryKeys.bills, debouncedSearch, page, pageSize], queryFn: () => api.bills.list({ query: debouncedSearch || undefined, page, size: pageSize }) })
+  const detailQuery = useQuery({ queryKey: [...queryKeys.bills, 'detail', detailId], queryFn: () => api.bills.find(detailId!), enabled: detailId !== null })
+  const pdfMutation = useMutation({
+    mutationFn: async (bill: Pick<BillListItem, 'id' | 'number'>) => ({ bill, blob: await api.bills.pdf(bill.id) }),
+    onSuccess: ({ bill, blob }) => {
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `boleto-${bill.number || bill.id}.pdf`
+      link.click()
+      URL.revokeObjectURL(url)
     },
-    onError: (error) => setFormError(apiErrorMessage(error)),
+    onError: (error) => showToast(apiErrorMessage(error, 'Não foi possível gerar o PDF do boleto.')),
+  })
+  const emailMutation = useMutation({
+    mutationFn: (bill: BillDetail) => api.bills.sendEmail(bill.id),
+    onSuccess: async (response) => {
+      setEmailTarget(null)
+      setEmailError('')
+      await queryClient.invalidateQueries({ queryKey: queryKeys.bills })
+      showToast(`Boleto enviado para ${response.recipient}.`)
+    },
+    onError: (error) => setEmailError(apiErrorMessage(error, 'Não foi possível enviar o boleto por e-mail.')),
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => api.statements.remove(id),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.statements })
-      setStatementToDelete(null)
-      setModalOpen(false)
-      setDetail(null)
-      showToast('Movimento removido.')
-    },
-    onError: (error) => { setStatementToDelete(null); showToast(apiErrorMessage(error)) },
-  })
+  const bills = billsQuery.data?.content ?? []
+  const total = billsQuery.data?.total ?? 0
+  const totalPages = billsQuery.data?.totalPages ?? 0
+  const pageAmount = useMemo(() => bills.reduce((sum, bill) => sum + Number(bill.amount || 0), 0), [bills])
+  const pending = bills.filter((bill) => !isPaid(bill)).length
+  const paid = bills.length - pending
+  const firstResult = total === 0 ? 0 : page * pageSize + 1
+  const lastResult = Math.min((page + 1) * pageSize, total)
+  const detail = detailQuery.data
 
-  const statements = statementsQuery.data?.content ?? []
-  const filtered = useMemo(() => statements.filter((statement) => filter === 'Todos' || (filter === 'Créditos' ? statement.amount >= 0 : statement.amount < 0)), [filter, statements])
-  const credits = statements.reduce((sum, statement) => sum + Number(statement.qtcredi ?? 0), 0)
-  const debits = statements.reduce((sum, statement) => sum + Number(statement.qtdebit ?? 0), 0)
-  const balance = statements.reduce((sum, statement) => sum + Number(statement.amount ?? 0), 0)
+  function isPaid(bill: Pick<BillListItem, 'id' | 'paidAt'>) {
+    return visualPaid[bill.id] ?? Boolean(bill.paidAt)
+  }
+
+  function togglePaid(event: React.MouseEvent, bill: BillListItem) {
+    event.stopPropagation()
+    setVisualPaid((current) => ({ ...current, [bill.id]: !isPaid(bill) }))
+  }
 
   function showToast(message: string) {
     setToast(message)
     window.setTimeout(() => setToast(''), 3200)
   }
 
-  function openNew() {
-    setSelected(null)
-    setFormError('')
-    setModalOpen(true)
+  function downloadPdf(bill: Pick<BillListItem, 'id' | 'number'>) {
+    pdfMutation.mutate(bill)
   }
 
-  function openEdit(statement: Statement) {
-    setDetail(null)
-    setSelected(statement)
-    setFormError('')
-    setModalOpen(true)
-  }
+  return <>
+    <PageHeader eyebrow="Financeiro" title="Boletos e extratos" subtitle="Cobranças geradas automaticamente na finalização das ordens de serviço." />
+    <section className="stats-grid stats-grid--four statement-stats">
+      <StatCard label="Boletos" value={String(total)} helper="Registros encontrados" icon={<WalletCards />} tone="blue" />
+      <StatCard label="Valor nesta página" value={money(pageAmount)} helper={`${bills.length} cobranças exibidas`} icon={<Landmark />} tone="purple" />
+      <StatCard label="Pendentes nesta página" value={String(pending)} helper="Controle visual" icon={<Clock3 />} tone="orange" />
+      <StatCard label="Pagos nesta página" value={String(paid)} helper="Controle visual" icon={<CheckCircle2 />} tone="green" />
+    </section>
 
-  function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setFormError('')
-    const data = new FormData(event.currentTarget)
-    const description = String(data.get('description')).trim()
-    const sentAt = String(data.get('date'))
-    const payload: StatementPayload = {
-      ...(selected ? statementPayload(selected) : {} as StatementPayload),
-      clientName: description,
-      dsmovim: description,
-      sentAt,
-      dtinici: sentAt,
-      vlinici: Number(data.get('initialBalance') || 0),
-      qtcredi: Number(data.get('credits') || 0),
-      qtdebit: Number(data.get('debits') || 0),
-      qtbolet: Number(data.get('slips') || 0),
-      qtdepos: Number(data.get('deposits') || 0),
-      qttrans: Number(data.get('transfers') || 0),
-      qtresga: Number(data.get('withdrawals') || 0),
-      qtoutro: Number(data.get('others') || 0),
-      qtchequ: Number(data.get('checks') || 0),
-      nrbanco: String(data.get('bank')).trim(),
-      nragenc: String(data.get('agency')).trim(),
-      nrconta: String(data.get('account')).trim(),
-    }
-    saveMutation.mutate({ id: selected?.id, payload })
-  }
+    <section className="panel data-panel bill-panel">
+      <div className="data-toolbar"><div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }} placeholder="Buscar cliente, CPF/CNPJ, boleto ou OS..." /></div></div>
+      {billsQuery.isLoading ? <LoadingState label="Carregando boletos..." /> : billsQuery.isError ? <ErrorState message={apiErrorMessage(billsQuery.error)} onRetry={() => billsQuery.refetch()} /> : bills.length === 0 ? <EmptyState title="Nenhum boleto encontrado" description="Os boletos serão gerados quando uma ordem de serviço for finalizada." /> : <div className="table-wrap"><table className="data-table bill-table"><thead><tr><th>Boleto</th><th>OS</th><th>Cliente</th><th>Contrato</th><th>Data cadastro</th><th>Processamento</th><th>Vencimento</th><th>Valor</th><th>Enviado e-mail</th><th>Pagamento</th><th>PDF</th><th /></tr></thead><tbody>{bills.map((bill) => <tr key={bill.id} onClick={() => setDetailId(bill.id)}>
+        <td><strong>#{bill.number || bill.id}</strong><small className="table-secondary">Registro {bill.id}</small></td>
+        <td><strong>{bill.serviceOrderId || '—'}</strong></td>
+        <td><strong className="table-primary">{bill.clientTradeName || bill.clientName || `Cliente #${bill.clientId}`}</strong><small className="table-secondary">{bill.clientTradeName && bill.clientName ? bill.clientName : `Código ${bill.clientId || '—'}`}</small></td>
+        <td>{bill.contractId ? `#${bill.contractId}` : 'Avulso'}</td>
+        <td>{formatDate(bill.serviceOrderDate)}</td><td>{formatDate(bill.processedAt, true)}</td><td>{formatDate(bill.dueAt)}</td><td><strong>{money(bill.amount)}</strong></td>
+        <td><Badge tone={bill.emailSent ? 'green' : 'neutral'}>{bill.emailSent ? 'Sim' : 'Não'}</Badge>{bill.emailSentAt && <small className="table-secondary">{formatDate(bill.emailSentAt, true)}</small>}</td>
+        <td><button type="button" className={`bill-paid-toggle ${isPaid(bill) ? 'bill-paid-toggle--on' : ''}`} role="switch" aria-checked={isPaid(bill)} onClick={(event) => togglePaid(event, bill)}><span /><strong>{isPaid(bill) ? 'Pago' : 'Pendente'}</strong></button></td>
+        <td><button type="button" className="bill-pdf-button" disabled={pdfMutation.isPending} onClick={(event) => { event.stopPropagation(); downloadPdf(bill) }} aria-label={`Baixar PDF do boleto ${bill.number || bill.id}`}><Download size={16} /></button></td>
+        <td><button className="row-action" aria-label={`Visualizar boleto ${bill.number || bill.id}`}><ChevronRight size={18} /></button></td>
+      </tr>)}</tbody></table></div>}
+      <footer className="table-footer table-footer--pagination"><span>Mostrando <strong>{firstResult}–{lastResult}</strong> de <strong>{total.toLocaleString('pt-BR')}</strong> boletos</span><div className="pagination-controls"><button disabled={page === 0 || billsQuery.isFetching} onClick={() => setPage((value) => Math.max(0, value - 1))} aria-label="Página anterior"><ChevronLeft size={16} /></button><span>Página <strong>{totalPages ? page + 1 : 0}</strong> de <strong>{totalPages}</strong></span><button disabled={page + 1 >= totalPages || billsQuery.isFetching} onClick={() => setPage((value) => value + 1)} aria-label="Próxima página"><ChevronRight size={16} /></button></div></footer>
+    </section>
 
-  return (
-    <>
-      <PageHeader eyebrow="Financeiro" title="Extratos e movimentos" subtitle="Movimentações financeiras conforme o modelo Statement da API." actions={<Button icon={<Plus size={18} />} onClick={openNew}>Novo movimento</Button>} />
-      <section className="stats-grid stats-grid--four statement-stats">
-        <StatCard label="Movimentos" value={String(statementsQuery.data?.total ?? 0)} helper="Registros encontrados" icon={<WalletCards />} tone="blue" />
-        <StatCard label="Créditos" value={money(credits)} helper="Total no retorno atual" icon={<ArrowUpCircle />} tone="green" />
-        <StatCard label="Débitos" value={money(debits)} helper="Total no retorno atual" icon={<ArrowDownCircle />} tone="orange" />
-        <StatCard label="Saldo movimentado" value={money(balance)} helper="Créditos menos débitos" icon={<Landmark />} tone="purple" />
-      </section>
-
-      <section className="panel data-panel">
-        <div className="data-toolbar"><div className="segmented-control">{(['Todos', 'Créditos', 'Débitos'] as const).map((item) => <button key={item} className={filter === item ? 'active' : ''} onClick={() => setFilter(item)}>{item}</button>)}</div><div className="search-box search-box--push"><Search size={18} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar descrição ou código..." /></div></div>
-
-        {statementsQuery.isLoading ? <LoadingState label="Carregando extratos..." /> : statementsQuery.isError ? <ErrorState message={apiErrorMessage(statementsQuery.error)} onRetry={() => statementsQuery.refetch()} /> : filtered.length === 0 ? <EmptyState title="Nenhum movimento encontrado" description="Altere os filtros ou registre um movimento." /> : (
-          <div className="table-wrap"><table className="data-table statement-table"><thead><tr><th>Código / Descrição</th><th>Data</th><th>Banco</th><th>Agência / Conta</th><th>Créditos</th><th>Débitos</th><th>Saldo</th><th /></tr></thead><tbody>{filtered.map((statement) => (
-            <tr key={statement.id} onClick={() => setDetail(statement)}>
-              <td><strong>EXT-{statement.id}</strong><small className="table-secondary">{statement.clientName || 'Sem descrição'}</small></td>
-              <td>{formatDate(statement.sentAt, true)}</td>
-              <td>{statement.nrbanco || 'Não informado'}</td>
-              <td>{[statement.nragenc, statement.nrconta].filter(Boolean).join(' / ') || 'Não informado'}</td>
-              <td><strong className="positive-value">{money(statement.qtcredi)}</strong></td>
-              <td><strong className="negative-value">{money(statement.qtdebit)}</strong></td>
-              <td><Badge tone={statement.amount >= 0 ? 'green' : 'red'}>{money(statement.amount)}</Badge></td>
-              <td><button className="row-action" aria-label={`Visualizar EXT-${statement.id}`}><ChevronRight size={18} /></button></td>
-            </tr>
-          ))}</tbody></table></div>
-        )}
-        <footer className="table-footer"><span><strong>{filtered.length}</strong> de {statementsQuery.data?.total ?? 0} movimentos</span><span>Saldo calculado pela API</span></footer>
-      </section>
-
-      <DetailModal
-        open={Boolean(detail)}
-        onClose={() => setDetail(null)}
-        title={detail ? `Movimento EXT-${detail.id}` : 'Detalhes do movimento'}
-        description="Identificação bancária, composição financeira e saldo do registro."
-        size="large"
-        actions={detail ? <><Button variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending} onClick={() => setStatementToDelete(detail)}>Excluir</Button><Button icon={<Edit3 size={16} />} onClick={() => openEdit(detail)}>Editar movimento</Button></> : undefined}
-      >
-        {detail && <StatementDetail statement={detail} />}
-      </DetailModal>
-
-      <Modal open={modalOpen} onClose={() => !saveMutation.isPending && setModalOpen(false)} title={selected ? `Editar EXT-${selected.id}` : 'Novo movimento'} description="Campos financeiros do modelo Statement." size="large">
-        <ModalForm onSubmit={submit} onCancel={() => setModalOpen(false)} submitting={saveMutation.isPending} submitLabel={saveMutation.isPending ? 'Salvando...' : selected ? 'Salvar alterações' : 'Registrar movimento'}>
-          <FormError message={formError} />
-          <div className="form-grid form-grid--two">
-            <FormField label="Descrição / cliente"><input name="description" maxLength={100} required defaultValue={selected?.clientName ?? ''} /></FormField>
-            <FormField label="Data e hora"><input name="date" type="datetime-local" required defaultValue={toDateTimeInput(selected?.sentAt)} /></FormField>
-            <FormField label="Banco"><input name="bank" maxLength={50} defaultValue={selected?.nrbanco ?? ''} /></FormField>
-            <FormField label="Agência"><input name="agency" maxLength={50} defaultValue={selected?.nragenc ?? ''} /></FormField>
-            <FormField label="Conta"><input name="account" maxLength={50} defaultValue={selected?.nrconta ?? ''} /></FormField>
-            <FormField label="Saldo inicial"><input name="initialBalance" type="number" step="0.01" defaultValue={selected?.vlinici ?? 0} /></FormField>
-          </div>
-          <div className="form-section-title"><span>2</span><div><strong>Movimentação</strong><small>Totais por meio de pagamento</small></div></div>
-          <div className="form-grid form-grid--four">
-            <FormField label="Créditos"><input name="credits" type="number" min="0" step="0.01" defaultValue={selected?.qtcredi ?? 0} /></FormField>
-            <FormField label="Débitos"><input name="debits" type="number" min="0" step="0.01" defaultValue={selected?.qtdebit ?? 0} /></FormField>
-            <FormField label="Boletos"><input name="slips" type="number" min="0" step="0.01" defaultValue={selected?.qtbolet ?? 0} /></FormField>
-            <FormField label="Depósitos"><input name="deposits" type="number" min="0" step="0.01" defaultValue={selected?.qtdepos ?? 0} /></FormField>
-            <FormField label="Transferências"><input name="transfers" type="number" min="0" step="0.01" defaultValue={selected?.qttrans ?? 0} /></FormField>
-            <FormField label="Resgates"><input name="withdrawals" type="number" min="0" step="0.01" defaultValue={selected?.qtresga ?? 0} /></FormField>
-            <FormField label="Cheques"><input name="checks" type="number" min="0" step="0.01" defaultValue={selected?.qtchequ ?? 0} /></FormField>
-            <FormField label="Outros"><input name="others" type="number" min="0" step="0.01" defaultValue={selected?.qtoutro ?? 0} /></FormField>
-          </div>
-          {selected && <div className="destructive-row"><span><strong>Excluir movimento</strong><small>Remove definitivamente o registro da API.</small></span><Button type="button" variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending} onClick={() => setStatementToDelete(selected)}>Excluir</Button></div>}
-        </ModalForm>
-      </Modal>
-      <ConfirmDialog open={Boolean(statementToDelete)} title={`Excluir EXT-${statementToDelete?.id}?`} description="O movimento financeiro será removido permanentemente. Esta ação não poderá ser desfeita." confirmLabel="Excluir movimento" busy={deleteMutation.isPending} onCancel={() => setStatementToDelete(null)} onConfirm={() => statementToDelete && !deleteMutation.isPending && deleteMutation.mutate(statementToDelete.id)} />
-      {toast && <Toast message={toast} onClose={() => setToast('')} />}
-    </>
-  )
+    <DetailModal open={detailId !== null} onClose={() => setDetailId(null)} title={detail ? `Boleto #${detail.number || detail.id}` : 'Detalhes do boleto'} description="Cliente, composição da cobrança e atendimentos vinculados." size="xlarge" actions={detail ? <><Button variant="secondary" icon={<Mail size={16} />} disabled={emailMutation.isPending} onClick={() => { setEmailError(''); setEmailTarget(detail) }}>{detail.emailSent ? 'Reenviar e-mail' : 'Enviar por e-mail'}</Button><Button icon={<Download size={16} />} disabled={pdfMutation.isPending} onClick={() => downloadPdf(detail)}>{pdfMutation.isPending ? 'Gerando PDF...' : 'Baixar PDF'}</Button></> : undefined}>
+      {detailQuery.isLoading ? <LoadingState label="Carregando boleto..." /> : detailQuery.isError ? <ErrorState message={apiErrorMessage(detailQuery.error)} onRetry={() => detailQuery.refetch()} /> : detail ? <BillDetails bill={detail} paid={isPaid(detail)} /> : null}
+    </DetailModal>
+    <ConfirmDialog
+      open={emailTarget !== null}
+      title={emailTarget?.emailSent ? 'Reenviar este boleto por e-mail?' : 'Enviar este boleto por e-mail?'}
+      description={`O PDF será enviado para ${emailTarget?.clientEmail || 'o e-mail principal do cliente'}. Confirme somente depois de conferir o destinatário.`}
+      confirmLabel={emailTarget?.emailSent ? 'Reenviar boleto' : 'Enviar boleto'}
+      busyLabel="Enviando..."
+      eyebrow="Envio por e-mail"
+      icon={<Send size={24} />}
+      variant="primary"
+      busy={emailMutation.isPending}
+      error={emailError}
+      onCancel={() => { if (!emailMutation.isPending) { setEmailTarget(null); setEmailError('') } }}
+      onConfirm={() => emailTarget && !emailMutation.isPending && emailMutation.mutate(emailTarget)}
+    />
+    {toast && <Toast message={toast} onClose={() => setToast('')} />}
+  </>
 }
 
-function StatementDetail({ statement }: { statement: Statement }) {
-  return <div className="detail-modal-content">
-    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><Landmark /></span><div><span>EXT-{statement.id}</span><h2>{statement.clientName || 'Movimento sem descrição'}</h2><p>{formatDate(statement.sentAt, true)}</p></div></div><Badge tone={statement.amount >= 0 ? 'green' : 'red'}>{money(statement.amount)}</Badge></div>
-    <div className="detail-metrics"><span><small>Saldo inicial</small><strong>{money(statement.vlinici)}</strong></span><span><small>Créditos</small><strong className="positive-value">{money(statement.qtcredi)}</strong></span><span><small>Débitos</small><strong className="negative-value">{money(statement.qtdebit)}</strong></span><span><small>Saldo movimentado</small><strong>{money(statement.amount)}</strong></span></div>
+function BillDetails({ bill, paid }: { bill: BillDetail; paid: boolean }) {
+  return <div className="detail-modal-content bill-detail">
+    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><ReceiptText /></span><div><span>Boleto #{bill.number || bill.id}{bill.serviceOrderId ? ` · OS-${bill.serviceOrderId}` : ' · Registro legado'}</span><h2>{bill.clientTradeName || bill.clientName || `Cliente #${bill.clientId}`}</h2><p>Vencimento em {formatDate(bill.dueAt)}</p></div></div><Badge tone={paid ? 'green' : 'orange'}>{paid ? 'Pago' : 'Pendente'}</Badge></div>
+    <div className="detail-metrics bill-detail__metrics"><span><small>Valor total</small><strong>{money(bill.amount)}</strong></span><span><small>Serviços</small><strong>{money(bill.serviceAmount)}</strong></span><span><small>Materiais</small><strong>{money(bill.materialAmount)}</strong></span><span><small>Tempo realizado</small><strong>{bill.actualHours || '00:00'}</strong></span></div>
     <div className="detail-sections-grid">
-      <section className="drawer-section"><h3>Dados bancários</h3><dl><div><dt>Banco</dt><dd>{statement.nrbanco || 'Não informado'}</dd></div><div><dt>Agência</dt><dd>{statement.nragenc || 'Não informada'}</dd></div><div><dt>Conta</dt><dd>{statement.nrconta || 'Não informada'}</dd></div><div><dt>Data do movimento</dt><dd>{formatDate(statement.sentAt, true)}</dd></div></dl></section>
-      <section className="drawer-section"><h3>Meios de movimentação</h3><dl><div><dt>Boletos</dt><dd>{money(statement.qtbolet)}</dd></div><div><dt>Depósitos</dt><dd>{money(statement.qtdepos)}</dd></div><div><dt>Transferências</dt><dd>{money(statement.qttrans)}</dd></div><div><dt>Resgates</dt><dd>{money(statement.qtresga)}</dd></div><div><dt>Cheques</dt><dd>{money(statement.qtchequ)}</dd></div><div><dt>Outros</dt><dd>{money(statement.qtoutro)}</dd></div></dl></section>
+      <section className="drawer-section"><h3>Cliente</h3><dl><div><dt>Código</dt><dd>{bill.clientId || '—'}</dd></div><div><dt>Razão social</dt><dd>{bill.clientName || 'Não informada'}</dd></div><div><dt>Nome fantasia</dt><dd>{bill.clientTradeName || 'Não informado'}</dd></div><div><dt>CPF / CNPJ</dt><dd>{bill.clientDocument || 'Não informado'}</dd></div><div><dt>Telefone</dt><dd>{bill.clientPhone || 'Não informado'}</dd></div><div><dt>E-mail</dt><dd>{bill.clientEmail || 'Não informado'}</dd></div><div className="drawer-section__wide"><dt>Endereço</dt><dd>{bill.clientAddress || 'Não informado'}</dd></div></dl></section>
+      <section className="drawer-section"><h3>Ordem de serviço</h3><dl><div><dt>OS</dt><dd>{bill.serviceOrderId ? `OS-${bill.serviceOrderId}` : 'Vínculo não disponível'}</dd></div><div><dt>Contrato</dt><dd>{bill.contractId ? `#${bill.contractId}` : bill.serviceOrderId ? 'Atendimento avulso' : 'Não disponível'}</dd></div><div><dt>Data</dt><dd>{formatDate(bill.serviceOrderDate)}</dd></div><div><dt>Origem</dt><dd>{enumLabel(bill.serviceOrderOrigin)}</dd></div><div><dt>Categoria</dt><dd>{enumLabel(bill.serviceOrderCategory)}</dd></div><div><dt>Tempo cobrado</dt><dd>{bill.billableHours || '00:00'}</dd></div><div className="drawer-section__wide"><dt>Descrição</dt><dd>{bill.serviceOrderDescription || 'Não informada'}</dd></div></dl></section>
     </div>
+    <section className="drawer-section bill-composition"><h3>Composição da cobrança</h3><div className="bill-composition__grid"><Value label="Serviços e minutos extras" value={bill.serviceAmount} /><Value label="Materiais" value={bill.materialAmount} /><Value label="Taxa do boleto" value={bill.billFeeAmount} /><Value label="Transporte" value={bill.transportAmount} /><Value label="Aluguel" value={bill.rentalAmount} /><Value label="Outros" value={bill.otherAmount} /><Value label="Desconto" value={-bill.discountAmount} /><Value label="Total" value={bill.amount} total /></div></section>
+    <DetailTable title="Serviços cobrados" empty="Nenhum serviço vinculado." headers={['Código', 'Descrição', 'Qtd.', 'Tempo', 'Valor mínimo', 'Minuto', 'Extra', 'Avulso', 'Total']} rows={bill.services.map((item) => [item.serviceId, item.description || 'Não informado', item.quantity || 0, item.hours || '00:00', money(item.minimumAmount), money(item.minuteAmount), money(item.extraMinuteAmount), money(item.oneOffMinuteAmount), money(item.totalAmount)])} />
+    <DetailTable title="Materiais utilizados" empty="Nenhum material cobrado." headers={['Código', 'Material', 'Unidade', 'Marca', 'Qtd.', 'Unitário', 'Total']} rows={bill.materials.map((item) => [item.materialId, item.description || 'Não informado', item.unit || '—', item.brand || '—', item.quantity || 0, money(item.unitAmount), money(item.totalAmount)])} />
+    <DetailTable title="Atendimentos realizados" empty="Nenhum atendimento vinculado." headers={['Agenda', 'Data', 'Início', 'Fim', 'Duração', 'Profissional']} rows={bill.attendances.map((item) => [item.scheduleId, formatDate(item.date), item.start || '—', item.end || '—', item.duration || '00:00', item.professional || 'Não informado'])} />
+    {bill.serviceOrderNotes && <section className="drawer-section"><h3>Observações</h3><p>{bill.serviceOrderNotes}</p></section>}
+    <div className="bill-detail__dates"><span><CalendarDays size={15} /> Processado em {formatDate(bill.processedAt, true)}</span><span><FileText size={15} /> Vencimento em {formatDate(bill.dueAt)}</span><span><Mail size={15} /> E-mail: {bill.emailSentAt ? `enviado em ${formatDate(bill.emailSentAt, true)}` : 'ainda não enviado'}</span></div>
   </div>
+}
+
+function Value({ label, value, total = false }: { label: string; value: number; total?: boolean }) {
+  return <span className={total ? 'bill-composition__total' : ''}><small>{label}</small><strong>{money(value)}</strong></span>
+}
+
+function DetailTable({ title, empty, headers, rows }: { title: string; empty: string; headers: string[]; rows: Array<Array<string | number>> }) {
+  return <section className="drawer-section bill-detail-table"><h3>{title}</h3>{rows.length === 0 ? <p>{empty}</p> : <div className="table-wrap"><table className="data-table"><thead><tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={`${title}-${index}`}>{row.map((value, cell) => <td key={`${index}-${cell}`}>{value}</td>)}</tr>)}</tbody></table></div>}</section>
 }

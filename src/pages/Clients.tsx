@@ -145,6 +145,7 @@ export function Clients() {
   const [formError, setFormError] = useState('')
   const [referralDescription, setReferralDescription] = useState('')
   const [issRetentionFlag, setIssRetentionFlag] = useState<'0' | '1'>('0')
+  const [billEmailEnabled, setBillEmailEnabled] = useState(false)
   const [referralModalOpen, setReferralModalOpen] = useState(false)
   const [newReferralDescription, setNewReferralDescription] = useState('')
   const [referralFormError, setReferralFormError] = useState('')
@@ -305,6 +306,7 @@ export function Clients() {
     setSelected(null)
     setReferralDescription('')
     setIssRetentionFlag('0')
+    setBillEmailEnabled(false)
     setAddressFields(emptyAddressFields)
     setAdditionalAddresses([])
     setCepLookupValue(null)
@@ -316,6 +318,7 @@ export function Clients() {
     setSelected(client)
     setReferralDescription(client.dsindic?.trim() ?? '')
     setIssRetentionFlag(flagIsOn(client.fliss) ? '1' : '0')
+    setBillEmailEnabled(Boolean(client.billEmailEnabled))
     setAddressFields(addressFieldsFrom(client))
     setAdditionalAddresses((client.addresses ?? []).map(clientAddressRowFrom))
     setCepLookupValue(null)
@@ -464,6 +467,7 @@ export function Clients() {
       flaniv: textValue(data, 'flaniv'),
       flenvioboleto: textValue(data, 'flenvioboleto'),
       flenvioextrato: textValue(data, 'flenvioextrato'),
+      billEmailEnabled,
       dsobser: textValue(data, 'dsobser'),
       idtabel: selected?.idtabel ?? null,
       dtliber: selected?.dtliber ?? null,
@@ -607,6 +611,12 @@ export function Clients() {
             <FormField label="Enviar felicitação de aniversário"><select name="flaniv" defaultValue={selected?.flaniv || 'N'}><option value="N">Não</option><option value="S">Sim</option></select></FormField>
             <FormField label="Tipo de envio do boleto"><select name="flenvioboleto" defaultValue={selected?.flenvioboleto || 'E-mail'}><option value="E-mail">E-mail</option><option value="Cobrança">Cobrança</option></select></FormField>
             <FormField label="Envio de extrato"><select name="flenvioextrato" defaultValue={selected?.flenvioextrato || 'NÃO'}><option value="NÃO">Não</option><option value="SIM">Sim</option></select></FormField>
+            <FormField label="Enviar boleto por e-mail" hint="Autoriza o envio automático do PDF para o e-mail principal deste cliente.">
+              <label className={`service-adjustment-toggle ${billEmailEnabled ? 'service-adjustment-toggle--active' : ''}`}>
+                <input type="checkbox" checked={billEmailEnabled} onChange={(event) => setBillEmailEnabled(event.target.checked)} />
+                <span aria-hidden="true"><i /></span><strong>{billEmailEnabled ? 'Ativado' : 'Desativado'}</strong>
+              </label>
+            </FormField>
           </div>
 
           <div className="form-section-title"><span>6</span><div><strong>Observações</strong><small>Informações complementares do cliente</small></div></div>
@@ -694,6 +704,7 @@ function ClientDetail({ client }: { client: Client }) {
       <div><dt>Retém ISS</dt><dd>{yesNo(client.fliss)}{client.vliss != null ? ` · ${money(client.vliss)}` : ''}</dd></div>
       <div><dt>Retém INSS</dt><dd>{yesNo(client.flinss)}{client.vlinss != null ? ` · ${money(client.vlinss)}` : ''}</dd></div>
       <div><dt>Envio de boleto</dt><dd>{client.flenvioboleto || 'Não informado'}</dd></div>
+      <div><dt>Boleto automático por e-mail</dt><dd>{client.billEmailEnabled ? 'Sim' : 'Não'}</dd></div>
       <div><dt>Envio de extrato</dt><dd>{client.flenvioextrato || 'Não informado'}</dd></div>
       <div><dt>Comunicações habilitadas</dt><dd>{yesNo(client.flenvio)}</dd></div>
     </dl></section>

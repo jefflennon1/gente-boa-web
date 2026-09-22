@@ -15,14 +15,14 @@ const nav = [
   { to: '/materiais', label: 'Materiais', icon: Boxes },
   { to: '/funcionarios', label: 'Funcionários', icon: UserRoundCog },
   { to: '/notas-fiscais', label: 'Notas fiscais', icon: ReceiptText },
-  { to: '/extratos', label: 'Extratos', icon: FileText },
+  { to: '/extratos', label: 'Boletos e extratos', icon: FileText },
   { to: '/relatorios', label: 'Relatórios', icon: FileBarChart },
   { to: '/parametros-do-sistema', label: 'Parâmetros do sistema', icon: Settings, adminOnly: true },
   { to: '/envio-de-emails', label: 'Notificações', icon: Bell, adminOnly: true },
 ]
 
 const routeNames: Record<string, string> = {
-  '/': 'Visão geral', '/clientes': 'Clientes', '/contratos': 'Contratos', '/ordens-de-servico': 'Ordens de serviço', '/servicos': 'Serviços', '/materiais': 'Materiais', '/funcionarios': 'Funcionários', '/notas-fiscais': 'Notas fiscais', '/extratos': 'Extratos', '/relatorios': 'Relatórios', '/usuarios': 'Usuários', '/parametros-do-sistema': 'Parâmetros do sistema', '/envio-de-emails': 'Notificações',
+  '/': 'Visão geral', '/clientes': 'Clientes', '/contratos': 'Contratos', '/ordens-de-servico': 'Ordens de serviço', '/servicos': 'Serviços', '/materiais': 'Materiais', '/funcionarios': 'Funcionários', '/notas-fiscais': 'Notas fiscais', '/extratos': 'Boletos e extratos', '/relatorios': 'Relatórios', '/usuarios': 'Usuários', '/parametros-do-sistema': 'Parâmetros do sistema', '/envio-de-emails': 'Notificações',
 }
 
 export function AppLayout({ children }: { children: ReactNode }) {

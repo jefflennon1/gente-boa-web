@@ -31,11 +31,12 @@ function buildCashFlow(invoices: Invoice[]) {
 export function Dashboard() {
   const { navigate } = useRouter()
   const { user } = useAuth()
-  const [clientStatisticsQuery, ordersQuery, invoicesQuery, statementsQuery] = useQueries({ queries: [
+  const [clientStatisticsQuery, ordersQuery, invoicesQuery, statementsQuery, billsQuery] = useQueries({ queries: [
     { queryKey: [...queryKeys.clients, 'statistics'], queryFn: () => api.clients.statistics() },
     { queryKey: queryKeys.serviceOrders, queryFn: () => api.serviceOrders.list() },
     { queryKey: queryKeys.invoices, queryFn: () => api.invoices.list() },
     { queryKey: queryKeys.statements, queryFn: () => api.statements.list() },
+    { queryKey: queryKeys.bills, queryFn: () => api.bills.list({ page: 0, size: 1 }) },
   ] })
 
   const orders = ordersQuery.data?.content ?? []
@@ -49,11 +50,11 @@ export function Dashboard() {
   const readyInvoices = invoices.filter((invoice) => invoice.status === 'PRONTA')
   const cashFlow = useMemo(() => buildCashFlow(invoices), [invoices])
   const activity = useMemo(() => [...orders].filter((order) => !['FINALIZADA', 'CANCELADA'].includes(order.status)).sort((a, b) => (a.orderedAt || '').localeCompare(b.orderedAt || '')).slice(0, 4), [orders])
-  const isLoading = clientStatisticsQuery.isLoading || ordersQuery.isLoading || invoicesQuery.isLoading || statementsQuery.isLoading
-  const failedQuery = [clientStatisticsQuery, ordersQuery, invoicesQuery, statementsQuery].find((query) => query.isError)
+  const isLoading = clientStatisticsQuery.isLoading || ordersQuery.isLoading || invoicesQuery.isLoading || statementsQuery.isLoading || billsQuery.isLoading
+  const failedQuery = [clientStatisticsQuery, ordersQuery, invoicesQuery, statementsQuery, billsQuery].find((query) => query.isError)
 
   if (isLoading) return <LoadingState label="Montando visão geral..." />
-  if (failedQuery) return <ErrorState message={apiErrorMessage(failedQuery.error)} onRetry={() => { clientStatisticsQuery.refetch(); ordersQuery.refetch(); invoicesQuery.refetch(); statementsQuery.refetch() }} />
+  if (failedQuery) return <ErrorState message={apiErrorMessage(failedQuery.error)} onRetry={() => { clientStatisticsQuery.refetch(); ordersQuery.refetch(); invoicesQuery.refetch(); statementsQuery.refetch(); billsQuery.refetch() }} />
 
   return (
     <>
@@ -83,8 +84,8 @@ export function Dashboard() {
       </section>
 
       <section className="dashboard-grid dashboard-grid--bottom">
-        <article className="panel quick-panel"><div className="panel__header"><div><span className="eyebrow">Acesso rápido</span><h2>Rotinas frequentes</h2></div></div><div className="quick-actions"><button onClick={() => navigate('/clientes')}><span className="quick-icon quick-icon--blue"><UsersRound /></span><span><strong>Novo cliente</strong><small>Cadastro completo</small></span><ArrowRight /></button><button onClick={() => navigate('/contratos')}><span className="quick-icon"><FileSignature /></span><span><strong>Contratos</strong><small>Vínculos e serviços contratados</small></span><ArrowRight /></button><button onClick={() => navigate('/notas-fiscais')}><span className="quick-icon quick-icon--orange"><ReceiptText /></span><span><strong>Notas fiscais</strong><small>{readyInvoices.length} prontas</small></span><ArrowRight /></button><button onClick={() => navigate('/extratos')}><span className="quick-icon quick-icon--green"><FileCheck2 /></span><span><strong>Extratos</strong><small>{statementsQuery.data?.total ?? 0} movimentos</small></span><ArrowRight /></button></div></article>
-        <article className="panel closing-panel"><div className="closing-panel__top"><span className="eyebrow">Situação operacional</span><Badge tone="green">API sincronizada</Badge></div><h2>Dados consolidados</h2><p>Os indicadores desta tela são calculados sobre os registros retornados pelos endpoints atuais.</p><div className="detail-metrics"><span><small>Clientes</small><strong>{clientStatisticsQuery.data?.total ?? 0}</strong></span><span><small>Ordens</small><strong>{ordersQuery.data?.total ?? 0}</strong></span><span><small>Notas</small><strong>{invoicesQuery.data?.total ?? 0}</strong></span><span><small>Movimentos</small><strong>{statementsQuery.data?.total ?? 0}</strong></span></div><Button variant="secondary" onClick={() => { clientStatisticsQuery.refetch(); ordersQuery.refetch(); invoicesQuery.refetch(); statementsQuery.refetch() }}>Atualizar indicadores</Button></article>
+        <article className="panel quick-panel"><div className="panel__header"><div><span className="eyebrow">Acesso rápido</span><h2>Rotinas frequentes</h2></div></div><div className="quick-actions"><button onClick={() => navigate('/clientes')}><span className="quick-icon quick-icon--blue"><UsersRound /></span><span><strong>Novo cliente</strong><small>Cadastro completo</small></span><ArrowRight /></button><button onClick={() => navigate('/contratos')}><span className="quick-icon"><FileSignature /></span><span><strong>Contratos</strong><small>Vínculos e serviços contratados</small></span><ArrowRight /></button><button onClick={() => navigate('/notas-fiscais')}><span className="quick-icon quick-icon--orange"><ReceiptText /></span><span><strong>Notas fiscais</strong><small>{readyInvoices.length} prontas</small></span><ArrowRight /></button><button onClick={() => navigate('/extratos')}><span className="quick-icon quick-icon--green"><FileCheck2 /></span><span><strong>Boletos e extratos</strong><small>{billsQuery.data?.total ?? 0} boletos</small></span><ArrowRight /></button></div></article>
+        <article className="panel closing-panel"><div className="closing-panel__top"><span className="eyebrow">Situação operacional</span><Badge tone="green">API sincronizada</Badge></div><h2>Dados consolidados</h2><p>Os indicadores desta tela são calculados sobre os registros retornados pelos endpoints atuais.</p><div className="detail-metrics"><span><small>Clientes</small><strong>{clientStatisticsQuery.data?.total ?? 0}</strong></span><span><small>Ordens</small><strong>{ordersQuery.data?.total ?? 0}</strong></span><span><small>Notas</small><strong>{invoicesQuery.data?.total ?? 0}</strong></span><span><small>Boletos</small><strong>{billsQuery.data?.total ?? 0}</strong></span></div><Button variant="secondary" onClick={() => { clientStatisticsQuery.refetch(); ordersQuery.refetch(); invoicesQuery.refetch(); statementsQuery.refetch(); billsQuery.refetch() }}>Atualizar indicadores</Button></article>
       </section>
     </>
   )

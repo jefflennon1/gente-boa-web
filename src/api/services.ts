@@ -1,5 +1,10 @@
 import type {
   AppUser,
+  BillDetail,
+  BillEmailResponse,
+  BillEmailSettings,
+  BillEmailSettingsPayload,
+  BillListItem,
   AttendanceLocation,
   AttendanceLocationPayload,
   AuthResponse,
@@ -146,6 +151,10 @@ export const api = {
       const { data } = await http.get<ClientSearchOption[]>('/clients/search', { params: { query, at } })
       return data
     },
+    async updateBillEmailPreference(id: number, enabled: boolean) {
+      const { data } = await http.patch<Client>(`/clients/${id}/bill-email`, { enabled })
+      return data
+    },
   },
   addresses: {
     async findByCep(cep: string) {
@@ -189,6 +198,14 @@ export const api = {
     },
     async updateServiceAdjustment(payload: ServicePriceAdjustmentPayload) {
       const { data } = await http.put<SystemParameters>('/system-parameters/service-adjustment', payload)
+      return data
+    },
+    async updateBillEmailSettings(payload: BillEmailSettingsPayload) {
+      const { data } = await http.put<BillEmailSettings>('/system-parameters/bill-email', payload)
+      return data
+    },
+    async getBillEmailSettings() {
+      const { data } = await http.get<BillEmailSettings>('/system-parameters/bill-email')
       return data
     },
     async remove() {
@@ -422,6 +439,26 @@ export const api = {
     },
   },
   statements: resource<Statement, StatementPayload>('/statements'),
+  bills: {
+    async list(params: Pick<ListParams, 'query' | 'page' | 'size'> = {}) {
+      const { data } = await http.get<PagedResponse<BillListItem>>('/bills', { params: { page: 0, size: 20, ...params } })
+      return data
+    },
+    async find(id: number) {
+      const { data } = await http.get<BillDetail>(`/bills/${id}`)
+      return data
+    },
+    async pdf(id: number) {
+      const { data } = await http.get<Blob>(`/bills/${id}/pdf`, { responseType: 'blob' })
+      return data
+    },
+    async sendEmail(id: number) {
+      // O envio inclui geração do PDF e comunicação com o servidor SMTP.
+      // Ele pode ultrapassar o timeout padrão de 15 segundos das demais chamadas.
+      const { data } = await http.post<BillEmailResponse>(`/bills/${id}/email`, undefined, { timeout: 60_000 })
+      return data
+    },
+  },
   users: resource<AppUser, CreateUserPayload | UpdateUserPayload>('/users'),
   publicClients: {
     async referralDescriptions() {
@@ -451,5 +488,6 @@ export const queryKeys = {
   companyProfile: ['company-profile'] as const,
   fiscalCatalog: ['fiscal-catalog'] as const,
   statements: ['statements'] as const,
+  bills: ['bills'] as const,
   users: ['users'] as const,
 }

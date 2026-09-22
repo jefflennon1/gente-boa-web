@@ -34,6 +34,9 @@ http.interceptors.response.use(
 
 export function apiErrorMessage(error: unknown, fallback = 'Não foi possível concluir a operação.') {
   if (axios.isAxiosError<ApiProblem>(error)) {
+    if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+      return 'A API demorou mais do que o esperado para responder. Verifique o processamento antes de tentar novamente.'
+    }
     if (!error.response) {
       return `Não foi possível conectar à API em ${API_BASE_URL}. Verifique se o backend está ativo.`
     }

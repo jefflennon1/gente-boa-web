@@ -121,16 +121,16 @@ export function FormError({ message }: { message?: string }) {
   return message ? <div className="form-error" role="alert"><AlertTriangle size={16} /><span>{message}</span></div> : null
 }
 
-export function ConfirmDialog({ open, title, description, confirmLabel = 'Confirmar exclusão', busy = false, error, onConfirm, onCancel }: { open: boolean; title: string; description: string; confirmLabel?: string; busy?: boolean; error?: string; onConfirm: () => void; onCancel: () => void }) {
+export function ConfirmDialog({ open, title, description, confirmLabel = 'Confirmar exclusão', busyLabel = 'Excluindo...', eyebrow = 'Ação permanente', icon, variant = 'danger', busy = false, error, onConfirm, onCancel }: { open: boolean; title: string; description: string; confirmLabel?: string; busyLabel?: string; eyebrow?: string; icon?: ReactNode; variant?: 'primary' | 'danger'; busy?: boolean; error?: string; onConfirm: () => void; onCancel: () => void }) {
   if (!open) return null
   return (
     <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !busy && onCancel()}>
-      <section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-description">
+      <section className={`confirm-dialog confirm-dialog--${variant}`} role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-description">
         <button className="confirm-dialog__close" onClick={onCancel} disabled={busy} aria-label="Fechar"><X size={18} /></button>
-        <span className="confirm-dialog__icon"><Trash2 size={24} /></span>
-        <div className="confirm-dialog__copy"><span>Ação permanente</span><h2 id="confirm-dialog-title">{title}</h2><p id="confirm-dialog-description">{description}</p></div>
+        <span className="confirm-dialog__icon">{icon ?? <Trash2 size={24} />}</span>
+        <div className="confirm-dialog__copy"><span>{eyebrow}</span><h2 id="confirm-dialog-title">{title}</h2><p id="confirm-dialog-description">{description}</p></div>
         <FormError message={error} />
-        <footer><Button variant="secondary" onClick={onCancel} disabled={busy}>Cancelar</Button><Button variant="danger" icon={busy ? <LoaderCircle className="api-state__spinner" size={16} /> : <Trash2 size={16} />} onClick={onConfirm} disabled={busy}>{busy ? 'Excluindo...' : confirmLabel}</Button></footer>
+        <footer><Button variant="secondary" onClick={onCancel} disabled={busy}>Cancelar</Button><Button variant={variant} icon={busy ? <LoaderCircle className="api-state__spinner" size={16} /> : (icon ?? <Trash2 size={16} />)} onClick={onConfirm} disabled={busy}>{busy ? busyLabel : confirmLabel}</Button></footer>
       </section>
     </div>
   )

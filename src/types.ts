@@ -81,6 +81,8 @@ export interface SystemParameters {
   serviceAdjustmentAppliedAt?: ISODateTime | null
   serviceAdjustmentAppliedDate?: ISODate | null
   serviceAdjustmentAffectedServices?: number | null
+  billEmailDaysBeforeDue?: number | null
+  billEmailAllActiveClients?: boolean
 }
 
 export type SystemParametersPayload = SystemParameters
@@ -89,6 +91,23 @@ export interface ServicePriceAdjustmentPayload {
   enabled: boolean
   percentage: number | null
   scheduledDate: ISODate | null
+}
+
+export interface BillEmailSettingsPayload {
+  daysBeforeDue: number
+  enableForAllActiveClients: boolean
+  subject: string
+  body: string
+}
+
+export interface BillEmailSettings extends BillEmailSettingsPayload {
+}
+
+export interface BillEmailResponse {
+  billId: number
+  recipient: string
+  sentAt: ISODateTime
+  sent: boolean
 }
 
 export interface ClientEmailDraft {
@@ -198,6 +217,7 @@ export interface Client {
   flaniv?: string | null
   flenvioboleto?: string | null
   flenvioextrato?: string | null
+  billEmailEnabled?: boolean
   addresses?: ClientAddress[]
 }
 
@@ -1045,6 +1065,78 @@ export interface Statement {
 export type StatementPayload = Partial<Omit<Statement, 'id' | 'code' | 'amount'>> & {
   clientName: string
   sentAt: ISODateTime
+}
+
+export interface BillListItem {
+  id: number
+  number: number | null
+  processedAt: ISODateTime | null
+  clientId: number | null
+  clientName: string | null
+  clientTradeName: string | null
+  dueAt: ISODateTime | null
+  paidAt: ISODateTime | null
+  amount: number
+  serviceOrderId: number | null
+  contractId: number | null
+  serviceOrderDate: ISODateTime | null
+  emailSent: boolean
+  emailSentAt: ISODateTime | null
+}
+
+export interface BillServiceLine {
+  serviceId: number
+  description: string | null
+  quantity: number | null
+  hours: string | null
+  minimumAmount: number
+  minuteAmount: number
+  extraMinuteAmount: number
+  oneOffMinuteAmount: number
+  totalAmount: number
+}
+
+export interface BillMaterialLine {
+  materialId: number
+  description: string | null
+  unit: string | null
+  brand: string | null
+  quantity: number | null
+  unitAmount: number
+  totalAmount: number
+}
+
+export interface BillAttendanceLine {
+  scheduleId: number
+  serviceId: number | null
+  date: ISODateTime | null
+  start: string | null
+  end: string | null
+  duration: string | null
+  professional: string | null
+}
+
+export interface BillDetail extends BillListItem {
+  clientDocument: string | null
+  clientEmail: string | null
+  clientPhone: string | null
+  clientAddress: string | null
+  serviceOrderDescription: string | null
+  serviceOrderNotes: string | null
+  serviceOrderCategory: string | null
+  serviceOrderOrigin: string | null
+  actualHours: string | null
+  billableHours: string | null
+  serviceAmount: number
+  materialAmount: number
+  billFeeAmount: number
+  transportAmount: number
+  rentalAmount: number
+  discountAmount: number
+  otherAmount: number
+  services: BillServiceLine[]
+  materials: BillMaterialLine[]
+  attendances: BillAttendanceLine[]
 }
 
 export interface AppUser {
