@@ -53,6 +53,7 @@ import {
   StatCard,
   Toast,
 } from '../components/ui'
+import { useRouter } from '../router'
 
 type InvoiceTab = 'Pendentes' | 'Emitidas' | 'Canceladas' | 'Todas'
 type ToastState = { message: string; variant: 'success' | 'error' } | null
@@ -173,6 +174,8 @@ function downloadBlob(blob: Blob, filename: string) {
 
 export function NationalInvoices() {
   const queryClient = useQueryClient()
+  const { search: locationSearch, navigate } = useRouter()
+  const requestedInvoiceId = Number(new URLSearchParams(locationSearch).get('invoiceId')) || null
   const [tab, setTab] = useState<InvoiceTab>('Pendentes')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
@@ -257,6 +260,11 @@ export function NationalInvoices() {
     queryFn: () => api.clients.find(selectedClient!.id),
     enabled: Boolean(selectedClient?.id),
   })
+  const requestedInvoiceQuery = useQuery({
+    queryKey: [...queryKeys.invoices, 'requested', requestedInvoiceId],
+    queryFn: () => api.invoices.find(requestedInvoiceId!),
+    enabled: requestedInvoiceId !== null,
+  })
 
   useEffect(() => {
     if (customerCityCode || !selectedClient) return
@@ -276,6 +284,18 @@ export function NationalInvoices() {
     setToast({ message, variant })
     window.setTimeout(() => setToast(null), 4500)
   }
+
+  useEffect(() => {
+    if (!requestedInvoiceQuery.data) return
+    openEdit(requestedInvoiceQuery.data)
+    navigate('/notas-fiscais', { replace: true })
+  }, [navigate, requestedInvoiceQuery.data])
+
+  useEffect(() => {
+    if (!requestedInvoiceQuery.isError) return
+    showToast(apiErrorMessage(requestedInvoiceQuery.error, 'A nota fiscal foi criada, mas não foi possível abri-la automaticamente.'), 'error')
+    navigate('/notas-fiscais', { replace: true })
+  }, [navigate, requestedInvoiceQuery.error, requestedInvoiceQuery.isError])
 
   const saveMutation = useMutation({
     mutationFn: ({ id, payload }: { id?: number; payload: InvoicePayload }) => id
@@ -490,6 +510,8 @@ export function NationalInvoices() {
     }
     const payload: InvoicePayload = {
       clientId: selectedClient.id,
+      serviceOrderId: formInvoice?.serviceOrderId,
+      contractId: formInvoice?.contractId,
       competence: String(data.get('competence')),
       amount: currencyInputValue(data.get('amount')),
       unconditionalDiscount: currencyInputValue(data.get('unconditionalDiscount')),
@@ -653,11 +675,12 @@ export function NationalInvoices() {
         {invoicesQuery.isLoading ? <LoadingState label="Carregando documentos fiscais..." /> : invoicesQuery.isError ? <ErrorState message={apiErrorMessage(invoicesQuery.error)} onRetry={() => invoicesQuery.refetch()} /> : filtered.length === 0 ? <EmptyState title="Nenhuma nota encontrada" description="Altere os filtros ou cadastre um novo documento fiscal." /> : (
           <div className="table-wrap"><table className="data-table invoice-table"><thead><tr>
             <th className="check-column"><input type="checkbox" checked={issuable.length > 0 && issuable.every((item) => selectedIds.includes(item.id))} onChange={toggleAll} aria-label="Selecionar notas emitíveis" /></th>
-            <th>Documento / Cliente</th><th>Competência</th><th>Valor</th><th>ISS</th><th>Situação</th><th />
+            <th>Documento / Cliente</th><th>OS</th><th>Competência</th><th>Valor</th><th>ISS</th><th>Situação</th><th />
           </tr></thead><tbody>{filtered.map((invoice) => (
             <tr key={invoice.id} className={selectedIds.includes(invoice.id) ? 'row-selected' : ''} onClick={() => setDetail(invoice)}>
               <td className="check-column" onClick={(event) => event.stopPropagation()}><input type="checkbox" disabled={!issuableStatuses.includes(invoice.status)} checked={selectedIds.includes(invoice.id)} onChange={() => setSelectedIds((ids) => ids.includes(invoice.id) ? ids.filter((id) => id !== invoice.id) : [...ids, invoice.id])} /></td>
               <td><strong>{invoiceCode(invoice)}</strong><small className="table-secondary">{invoice.clientTradeName || invoice.clientName || 'Cliente não informado'} · {invoice.document || 'Sem documento'}</small></td>
+              <td>{invoice.serviceOrderId ? <strong>OS-{invoice.serviceOrderId}</strong> : '—'}</td>
               <td>{formatDate(invoice.competence)}<small className="table-secondary">{invoice.environment ? enumLabel(invoice.environment) : 'Registro legado'}</small></td>
               <td><strong>{money(invoice.amount)}</strong></td>
               <td>{invoice.issRetained ? <Badge tone="purple">Retido</Badge> : money(invoice.tax)}</td>
@@ -949,7 +972,7 @@ function InvoiceDetail({ invoice }: { invoice: Invoice }) {
     {invoice.errorMessage && <div className="form-error"><AlertTriangle size={16} /><span>{invoice.errorCode ? `${invoice.errorCode}: ` : ''}{invoice.errorMessage}</span></div>}
     <div className="detail-metrics"><span><small>Competência</small><strong>{formatDate(invoice.competence)}</strong></span><span><small>Valor do serviço</small><strong>{money(invoice.amount)}</strong></span><span><small>ISS</small><strong>{money(invoice.tax)}</strong></span><span><small>Tentativas</small><strong>{invoice.attempts || 0}</strong></span></div>
     <div className="detail-sections-grid">
-      <section className="drawer-section"><h3>Identificação nacional</h3><dl><div><dt>Número da NFS-e</dt><dd>{invoice.number || 'Ainda não autorizado'}</dd></div><div><dt>Chave de acesso</dt><dd className="nfse-long-value">{invoice.accessKey || 'Não disponível'}</dd></div><div><dt>DPS</dt><dd>{invoice.dpsId || 'Ainda não numerada'}</dd></div><div><dt>Ambiente / layout</dt><dd>{invoice.environment ? `${enumLabel(invoice.environment)} · ${invoice.layoutVersion}` : 'Registro legado'}</dd></div></dl></section>
+      <section className="drawer-section"><h3>Identificação nacional</h3><dl><div><dt>Número da NFS-e</dt><dd>{invoice.number || 'Ainda não autorizado'}</dd></div><div><dt>Ordem de serviço</dt><dd>{invoice.serviceOrderId ? `OS-${invoice.serviceOrderId}` : 'Não vinculada'}</dd></div><div><dt>Chave de acesso</dt><dd className="nfse-long-value">{invoice.accessKey || 'Não disponível'}</dd></div><div><dt>DPS</dt><dd>{invoice.dpsId || 'Ainda não numerada'}</dd></div><div><dt>Ambiente / layout</dt><dd>{invoice.environment ? `${enumLabel(invoice.environment)} · ${invoice.layoutVersion}` : 'Registro legado'}</dd></div></dl></section>
       <section className="drawer-section"><h3>Tributação do serviço</h3><dl><div><dt>CNAE do prestador</dt><dd>{invoice.issuerCnae || 'Não informado'}</dd></div><div><dt>Código nacional</dt><dd>{invoice.nationalServiceCode || 'Não informado'}</dd></div><div><dt>Código municipal da DPS</dt><dd>{invoice.municipalServiceCode || 'Não informado'}</dd></div><div><dt>NBS</dt><dd>{invoice.nbsCode || 'Não informada'}</dd></div><div><dt>Município da prestação</dt><dd>{invoice.serviceCityCode || 'Não informado'}</dd></div><div><dt>ISS retido</dt><dd>{invoice.issRetained ? 'Sim' : 'Não'}</dd></div></dl></section>
       {invoice.workIdentificationType && <section className="drawer-section"><h3>Informações da obra</h3><dl><div><dt>Identificação</dt><dd>{invoice.workIdentificationType === 'ADDRESS' ? 'Endereço no Brasil' : invoice.workIdentificationType === 'FOREIGN_ADDRESS' ? 'Endereço no exterior' : invoice.workIdentificationType === 'CNO_CEI' ? 'Código de obra (CNO/CEI)' : 'CIB'}</dd></div><div><dt>Código</dt><dd>{invoice.workCode || invoice.workCib || 'Identificada pelo endereço'}</dd></div><div><dt>Inscrição imobiliária</dt><dd>{invoice.workPropertyRegistration || 'Não informada'}</dd></div><div><dt>Endereço</dt><dd>{[invoice.workStreet, invoice.workNumber, invoice.workComplement, invoice.workDistrict, invoice.workZipCode || invoice.workForeignPostalCode, invoice.workForeignCity, invoice.workForeignRegion].filter(Boolean).join(' · ') || 'Não se aplica'}</dd></div></dl></section>}
       {invoice.ibsCbsApplicable && <section className="drawer-section"><h3>IBS/CBS</h3><dl><div><dt>Indicador da operação</dt><dd>{invoice.ibsCbsOperationIndicator}</dd></div><div><dt>CST</dt><dd>{invoice.ibsCbsCst}</dd></div><div><dt>Classificação tributária</dt><dd>{invoice.ibsCbsTaxClassification}</dd></div><div><dt>Consumidor final</dt><dd>{invoice.ibsCbsFinalConsumer === '1' ? 'Sim' : 'Não'}</dd></div></dl></section>}

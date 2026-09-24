@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Clock3, Columns3, Edit3, List, MapPin, Play, Plus, Search, Square, Trash2, UserRound, Wrench, X } from 'lucide-react'
+import { Building2, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Clock3, Columns3, Edit3, FilePlus2, List, MapPin, Play, Plus, Search, Square, Trash2, UserRound, Wrench, X } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useAuth } from '../auth'
@@ -8,6 +8,7 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money, toDateInput } from '../lib/format'
 import type { AttendanceLocation, AttendanceLocationPayload, Client, ClientSearchOption, Employee, Material, PagedResponse, ServiceCatalogItem, ServiceCategory, ServiceOrder, ServiceOrderListItem, ServiceOrderMaterialItem, ServiceOrderMaterialOrder, ServiceOrderOrigin, ServiceOrderPayload, ServiceOrderSchedule, ServiceOrderServiceItem, ServiceOrderStatus, ServiceOrderTracking, Supplier } from '../types'
 import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
+import { useRouter } from '../router'
 
 const stages: ServiceOrderStatus[] = ['ABERTA', 'FINALIZADA', 'CANCELADA']
 const flowStages: ServiceOrderStatus[] = stages.filter((status) => status !== 'CANCELADA')
@@ -202,6 +203,7 @@ function attendanceLocationDisplay(location: AttendanceLocation) {
 
 export function ServiceOrders() {
   const queryClient = useQueryClient()
+  const { navigate } = useRouter()
   const [view, setView] = useState<'kanban' | 'list'>('list')
   const [search, setSearch] = useState('')
   const [orderFilter, setOrderFilter] = useState<ServiceOrderFilter>('Todas')
@@ -321,6 +323,15 @@ export function ServiceOrders() {
       showToast('Ordem de serviço removida.')
     },
     onError: (error) => { setOrderToDelete(null); showToast(apiErrorMessage(error)) },
+  })
+  const invoiceMutation = useMutation({
+    mutationFn: (serviceOrderId: number) => api.invoices.createFromServiceOrder(serviceOrderId),
+    onSuccess: async (invoice) => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.invoices })
+      setDetailId(null)
+      navigate(`/notas-fiscais?invoiceId=${invoice.id}`)
+    },
+    onError: (error) => showToast(apiErrorMessage(error, 'Não foi possível gerar a nota fiscal da ordem de serviço.')),
   })
 
   const orders = ordersQuery.data?.content ?? []
@@ -558,7 +569,7 @@ export function ServiceOrders() {
       </footer>
     </section>
 
-    <DetailModal open={detailId !== null} onClose={() => setDetailId(null)} title={detail ? `Ordem de serviço OS-${detail.id}` : 'Detalhes da ordem de serviço'} description="Dados do atendimento, agenda, serviços e valores registrados." size="xlarge" actions={detail ? <><Button variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending} onClick={() => setOrderToDelete(detail.id)}>Excluir</Button>{!['FINALIZADA', 'CANCELADA'].includes(detail.status) && <Button variant="secondary" icon={detail.trackingDetails?.some((tracking) => tracking.running) ? <Square size={16} /> : <Play size={16} />} disabled={!detail.serviceItems?.length || trackingMutation.isPending || timerLoadingId === detail.id} title={!detail.serviceItems?.length ? 'Nenhum serviço vinculado à ordem de serviço' : undefined} onClick={() => openTimer(detail)}>{detail.trackingDetails?.some((tracking) => tracking.running) ? 'Parar atendimento' : 'Iniciar atendimento'}</Button>}{!['FINALIZADA', 'CANCELADA'].includes(detail.status) && <Button variant="secondary" icon={<CheckCircle2 size={16} />} disabled={advanceMutation.isPending} onClick={() => advance(detail)}>Finalizar OS</Button>}<Button icon={<Edit3 size={16} />} onClick={() => openEdit(detail)}>Editar OS</Button></> : undefined}>
+    <DetailModal open={detailId !== null} onClose={() => setDetailId(null)} title={detail ? `Ordem de serviço OS-${detail.id}` : 'Detalhes da ordem de serviço'} description="Dados do atendimento, agenda, serviços e valores registrados." size="xlarge" actions={detail ? <><Button variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending} onClick={() => setOrderToDelete(detail.id)}>Excluir</Button>{detail.status === 'FINALIZADA' && <Button variant="secondary" icon={<FilePlus2 size={16} />} disabled={invoiceMutation.isPending} onClick={() => invoiceMutation.mutate(detail.id)}>{invoiceMutation.isPending ? 'Gerando NF...' : 'Gerar NF'}</Button>}{!['FINALIZADA', 'CANCELADA'].includes(detail.status) && <Button variant="secondary" icon={detail.trackingDetails?.some((tracking) => tracking.running) ? <Square size={16} /> : <Play size={16} />} disabled={!detail.serviceItems?.length || trackingMutation.isPending || timerLoadingId === detail.id} title={!detail.serviceItems?.length ? 'Nenhum serviço vinculado à ordem de serviço' : undefined} onClick={() => openTimer(detail)}>{detail.trackingDetails?.some((tracking) => tracking.running) ? 'Parar atendimento' : 'Iniciar atendimento'}</Button>}{!['FINALIZADA', 'CANCELADA'].includes(detail.status) && <Button variant="secondary" icon={<CheckCircle2 size={16} />} disabled={advanceMutation.isPending} onClick={() => advance(detail)}>Finalizar OS</Button>}<Button icon={<Edit3 size={16} />} onClick={() => openEdit(detail)}>Editar OS</Button></> : undefined}>
       {detailQuery.isLoading ? <LoadingState label="Carregando a ordem de serviço..." /> : detailQuery.isError ? <ErrorState message={apiErrorMessage(detailQuery.error)} onRetry={() => detailQuery.refetch()} /> : detail ? <ServiceOrderDetail order={detail} catalog={catalogQuery.data?.content ?? []} /> : null}
     </DetailModal>
 

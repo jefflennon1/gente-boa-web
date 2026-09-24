@@ -690,6 +690,8 @@ export interface Invoice {
   id: number
   number: string | null
   clientId: number | null
+  serviceOrderId: number | null
+  contractId: number | null
   clientName: string | null
   clientTradeName: string | null
   document: string | null

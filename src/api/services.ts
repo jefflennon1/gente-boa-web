@@ -358,6 +358,10 @@ export const api = {
       const { data } = await http.post<Invoice>('/invoices', payload)
       return data
     },
+    async createFromServiceOrder(serviceOrderId: number) {
+      const { data } = await http.post<Invoice>(`/invoices/from-service-order/${serviceOrderId}`)
+      return data
+    },
     async update(id: number, payload: InvoicePayload) {
       const { data } = await http.put<Invoice>(`/invoices/${id}`, payload)
       return data
