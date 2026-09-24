@@ -76,6 +76,8 @@ const viaSulClientId = 9135
 const viaSulDocument = '54122933000776'
 const viaSulInvoiceCnae = '4321500'
 const viaSulInvoiceCnaeDescription = 'INSTALAÇÃO ELÉTRICA'
+const defaultNationalTaxCode = '140101'
+const defaultNationalTaxCodeDescription = 'Manutenção e conservação de máquinas, aparelhos, equipamentos ou qualquer objeto'
 
 const workRequiredTaxCodes = new Set([
   '070201', '070202', '070401', '070501', '070502', '070601', '070602',
@@ -119,9 +121,17 @@ function currencyInputValue(value: FormDataEntryValue | null) {
   return digits ? Number(digits) / 100 : 0
 }
 
-function initialCnaeForClient(client: ClientSearchOption) {
+function flagIsOn(value?: string | null) {
+  return ['1', 'S', 'SIM', 'TRUE'].includes(String(value || '').trim().toUpperCase())
+}
+
+function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100
+}
+
+function initialCnaeForClient(client: ClientSearchOption, defaultCnae: string) {
   const document = String(client.document || '').replace(/\D/g, '')
-  return client.id === viaSulClientId || document === viaSulDocument ? viaSulInvoiceCnae : defaultInvoiceCnae
+  return client.id === viaSulClientId || document === viaSulDocument ? viaSulInvoiceCnae : defaultCnae
 }
 
 function formatNationalTaxCode(value: string) {
@@ -192,6 +202,12 @@ export function NationalInvoices() {
   const [serviceCityCode, setServiceCityCode] = useState('2304400')
   const [workIdentificationType, setWorkIdentificationType] = useState<'CNO_CEI' | 'CIB' | 'ADDRESS' | 'FOREIGN_ADDRESS'>('ADDRESS')
   const [issRetained, setIssRetained] = useState(false)
+  const [issRate, setIssRate] = useState<number | ''>('')
+  const [invoiceAmount, setInvoiceAmount] = useState(0)
+  const [unconditionalDiscount, setUnconditionalDiscount] = useState(0)
+  const [clientInssRate, setClientInssRate] = useState(0)
+  const [clientTaxationApplied, setClientTaxationApplied] = useState(false)
+  const [applySelectedClientTaxation, setApplySelectedClientTaxation] = useState(false)
   const [issTaxation, setIssTaxation] = useState<'1' | '2' | '3' | '4'>('1')
   const [issImmunityType, setIssImmunityType] = useState<'1' | '2' | '3' | '4' | '5' | ''>('')
   const [catalogPicker, setCatalogPicker] = useState<'national' | 'nbs' | null>(null)
@@ -221,6 +237,11 @@ export function NationalInvoices() {
     queryKey: queryKeys.companyProfile,
     queryFn: api.companyProfile.find,
   })
+  const systemParametersQuery = useQuery({
+    queryKey: queryKeys.systemParameters,
+    queryFn: api.systemParameters.get,
+  })
+  const configuredDefaultInvoiceCnae = systemParametersQuery.data?.invoiceDefaultIssuerCnae || defaultInvoiceCnae
   const serviceIncidenceQuery = useQuery({
     queryKey: [...queryKeys.fiscalCatalog, 'incidence', serviceCityCode, customerCityCode, selectedNationalTaxCode, selectedMunicipalTaxCode, competence],
     queryFn: () => api.fiscalCatalog.serviceIncidence({
@@ -278,6 +299,18 @@ export function NationalInvoices() {
       .catch(() => undefined)
     return () => { active = false }
   }, [customerCityCode, selectedClient, selectedClientDetailsQuery.data])
+
+  useEffect(() => {
+    const client = selectedClientDetailsQuery.data
+    if (!applySelectedClientTaxation || !client || client.id !== selectedClient?.id) return
+    const retainsIss = flagIsOn(client.fliss)
+    const retainsInss = flagIsOn(client.flinss)
+    setIssRetained(retainsIss)
+    setIssRate(retainsIss && client.vliss != null ? Number(client.vliss) : '')
+    setClientInssRate(retainsInss && client.vlinss != null ? Number(client.vlinss) : 0)
+    setClientTaxationApplied(true)
+    setApplySelectedClientTaxation(false)
+  }, [applySelectedClientTaxation, selectedClient?.id, selectedClientDetailsQuery.data])
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: queryKeys.invoices })
   const showToast = (message: string, variant: 'success' | 'error' = 'success') => {
@@ -386,31 +419,44 @@ export function NationalInvoices() {
     setFormError('')
     setSelectedClient(null)
     setCustomerCityCode('')
-    setSelectedIssuerCnae(defaultInvoiceCnae)
-    setSelectedNationalTaxCode('')
+    setSelectedIssuerCnae(configuredDefaultInvoiceCnae)
+    setSelectedNationalTaxCode(defaultNationalTaxCode)
     setSelectedMunicipalTaxCode('')
     setSelectedNbsCode('')
     setCompetence(new Date().toISOString().slice(0, 10))
     setServiceCityCode(companyProfileQuery.data?.cityCode || '2304400')
     setWorkIdentificationType('ADDRESS')
     setIssRetained(false)
+    setIssRate('')
+    setInvoiceAmount(0)
+    setUnconditionalDiscount(0)
+    setClientInssRate(0)
+    setClientTaxationApplied(false)
+    setApplySelectedClientTaxation(false)
     setIssTaxation('1')
     setIssImmunityType('')
     setFormInvoice(null)
   }
 
   function openEdit(invoice: Invoice) {
+    const hasNationalTaxCode = Boolean(invoice.nationalServiceCode)
     setFormError('')
     setSelectedClient(invoiceClient(invoice))
     setCustomerCityCode(invoice.customerCityCode || '')
     setSelectedIssuerCnae(invoice.issuerCnae || '')
-    setSelectedNationalTaxCode(invoice.nationalServiceCode || '')
-    setSelectedMunicipalTaxCode(invoice.municipalServiceCode || '')
-    setSelectedNbsCode(invoice.nbsCode || '')
+    setSelectedNationalTaxCode(invoice.nationalServiceCode || defaultNationalTaxCode)
+    setSelectedMunicipalTaxCode(hasNationalTaxCode ? invoice.municipalServiceCode || '' : '')
+    setSelectedNbsCode(hasNationalTaxCode ? invoice.nbsCode || '' : '')
     setCompetence(toDateInput(invoice.competence) || new Date().toISOString().slice(0, 10))
     setServiceCityCode(invoice.serviceCityCode || companyProfileQuery.data?.cityCode || '2304400')
     setWorkIdentificationType(invoice.workIdentificationType || 'ADDRESS')
     setIssRetained(invoice.issRetained)
+    setIssRate(invoice.issRate ?? '')
+    setInvoiceAmount(Number(invoice.amount || 0))
+    setUnconditionalDiscount(Number(invoice.unconditionalDiscount || 0))
+    setClientInssRate(0)
+    setClientTaxationApplied(false)
+    setApplySelectedClientTaxation(false)
     setIssTaxation(invoice.issTaxation || '1')
     setIssImmunityType(invoice.issImmunityType || '')
     setDetail(null)
@@ -424,8 +470,13 @@ export function NationalInvoices() {
 
   function selectClient(client: ClientSearchOption) {
     setSelectedClient(client)
-    if (formInvoice === null) setSelectedIssuerCnae(initialCnaeForClient(client))
+    if (formInvoice === null) setSelectedIssuerCnae(initialCnaeForClient(client, configuredDefaultInvoiceCnae))
     setCustomerCityCode('')
+    setIssRetained(false)
+    setIssRate('')
+    setClientInssRate(0)
+    setClientTaxationApplied(false)
+    setApplySelectedClientTaxation(true)
     setClientPickerOpen(false)
     setClientSearch('')
   }
@@ -600,6 +651,9 @@ export function NationalInvoices() {
 
   const integration = integrationQuery.data
   const companyProfile = companyProfileQuery.data
+  const retainedInssValue = clientTaxationApplied
+    ? roundMoney(Math.max(0, invoiceAmount - unconditionalDiscount) * clientInssRate / 100)
+    : Number(formInvoice?.retainedInss || 0)
   const selectedNationalTaxCodeOption = nationalTaxSearchQuery.data?.find((item) => item.code === selectedNationalTaxCode)
   const selectedNbsCodeOption = nbsSearchQuery.data?.find((item) => item.code === selectedNbsCode.replace(/\D/g, ''))
   const configuredIssuerCnaes = new Set([
@@ -629,7 +683,7 @@ export function NationalInvoices() {
         title="Notas fiscais"
         subtitle="Emissão, consulta e cancelamento integrados ao Emissor Nacional de NFS-e."
         actions={<>
-          <Button variant="secondary" icon={<FilePlus2 size={17} />} onClick={openNew}>Nova nota</Button>
+          <Button variant="secondary" icon={<FilePlus2 size={17} />} onClick={openNew} disabled={systemParametersQuery.isLoading}>Nova nota</Button>
           <Button icon={<Send size={17} />} disabled={!selectedForIssue.length || !integration?.ready} onClick={() => { setFormError(''); setEmitModal(true) }}>
             Emitir selecionadas {selectedForIssue.length ? `(${selectedForIssue.length})` : ''}
           </Button>
@@ -741,6 +795,19 @@ export function NationalInvoices() {
               <FormField label="Município da prestação (IBGE) *" hint="Fortaleza: 2304400"><input name="serviceCityCode" inputMode="numeric" maxLength={7} required value={serviceCityCode} onChange={(event) => { setServiceCityCode(event.target.value.replace(/\D/g, '').slice(0, 7)); setSelectedMunicipalTaxCode('') }} /></FormField>
             </div>
             <div className="nfse-form-subtitle"><strong>Classificação tributária</strong><small>Atividade da empresa e códigos fiscais do serviço</small></div>
+            <aside className="nfse-tax-code-guidance">
+              <AlertTriangle size={18} aria-hidden="true" />
+              <div>
+                <strong>Confirme o código conforme o serviço executado</strong>
+                <p>O código 14.01.01 vem selecionado como padrão para manutenção de equipamentos, mas pode ser alterado. Os códigos mais indicados de acordo com o CNAE são:</p>
+                <ol>
+                  <li><b>070202</b> para instalação ou obra por empreitada/subempreitada;</li>
+                  <li><b>070501</b> para manutenção predial ou elétrica;</li>
+                  <li><b>140101</b> para manutenção de equipamento;</li>
+                  <li><b>140601</b> para montagem com material fornecido pelo cliente.</li>
+                </ol>
+              </div>
+            </aside>
             <div className="form-grid form-grid--two">
             <FormField label="Atividade do prestador (CNAE) *" hint="Escolha a atividade da Gente Boa relacionada ao serviço">
               <select name="issuerCnae" required value={selectedIssuerCnae} disabled={!companyProfile} onChange={(event) => {
@@ -750,14 +817,14 @@ export function NationalInvoices() {
                 <option value="">Selecione o CNAE</option>
                 {companyProfile && <option value={companyProfile.primaryCnae}>{companyProfile.primaryCnae} · {companyProfile.primaryActivityDescription} (principal)</option>}
                 {(companyProfile?.secondaryCnaes || []).map((item) => <option key={item.id} value={item.cnaeCode}>{item.cnaeCode} · {item.description}</option>)}
-                {!configuredIssuerCnaes.has(defaultInvoiceCnae) && <option value={defaultInvoiceCnae}>{defaultInvoiceCnae} · {defaultInvoiceCnaeDescription}</option>}
+                {!configuredIssuerCnaes.has(configuredDefaultInvoiceCnae) && <option value={configuredDefaultInvoiceCnae}>{configuredDefaultInvoiceCnae} · {configuredDefaultInvoiceCnae === defaultInvoiceCnae ? defaultInvoiceCnaeDescription : 'CNAE padrão dos parâmetros fiscais'}</option>}
                 {!configuredIssuerCnaes.has(viaSulInvoiceCnae) && <option value={viaSulInvoiceCnae}>{viaSulInvoiceCnae} · {viaSulInvoiceCnaeDescription}</option>}
               </select>
             </FormField>
             <FormField label="Código nacional de tributação *" hint="Selecione de acordo com o serviço efetivamente prestado">
               <input type="hidden" name="nationalServiceCode" value={selectedNationalTaxCode} />
               <button type="button" className="nfse-catalog-trigger" disabled={!selectedIssuerCnae} onClick={() => { setCatalogSearch(''); setCatalogPicker('national') }}>
-                <span><strong>{selectedNationalTaxCodeOption ? formatNationalTaxCode(selectedNationalTaxCodeOption.code) : 'Selecionar serviço nacional'}</strong><small>{selectedNationalTaxCodeOption?.description || 'Pesquise pelo código ou pela descrição'}</small></span><ChevronDown size={17} />
+                <span><strong>{selectedNationalTaxCodeOption ? formatNationalTaxCode(selectedNationalTaxCodeOption.code) : selectedNationalTaxCode ? formatNationalTaxCode(selectedNationalTaxCode) : 'Selecionar serviço nacional'}</strong><small>{selectedNationalTaxCodeOption?.description || (selectedNationalTaxCode === defaultNationalTaxCode ? defaultNationalTaxCodeDescription : 'Pesquise pelo código ou pela descrição')}</small></span><ChevronDown size={17} />
               </button>
             </FormField>
             <FormField label={`Código complementar municipal${(serviceIncidenceQuery.data?.municipalTaxCodes.length || 0) > 0 ? ' *' : ''}`} hint="Opções válidas para município, competência e código nacional selecionados">
@@ -852,7 +919,7 @@ export function NationalInvoices() {
               <FormField label="Documento de referência"><input name="referenceDocument" maxLength={255} defaultValue={formInvoice?.referenceDocument || ''} /></FormField>
             </div>
             <div className="form-grid form-grid--two">
-            <FormField label="Natureza da operação"><input name="nature" maxLength={100} defaultValue={formInvoice?.nature || ''} /></FormField>
+            <FormField label="Natureza da operação"><input name="nature" maxLength={100} defaultValue={formInvoice?.nature || systemParametersQuery.data?.invoiceDefaultNature || 'Prestação de serviços'} /></FormField>
             <FormField label="Observações internas"><textarea name="notes" rows={2} maxLength={2000} defaultValue={formInvoice?.notes || ''} /></FormField>
             </div>
 
@@ -864,20 +931,20 @@ export function NationalInvoices() {
             <div className="form-section-title"><span>4</span><div><strong>Valores e tributos</strong><small>Valores do serviço, ISS e retenções federais transmitidos na DPS</small></div></div>
             <div className="nfse-form-subtitle"><strong>Valores do serviço</strong><small>Campos com * são obrigatórios</small></div>
             <div className="form-grid form-grid--four">
-              <FormField label="Valor do serviço *"><CurrencyInput name="amount" initialValue={formInvoice?.amount || 0} required /></FormField>
-              <FormField label="Desconto incondicionado"><CurrencyInput name="unconditionalDiscount" initialValue={formInvoice?.unconditionalDiscount || 0} /></FormField>
+              <FormField label="Valor do serviço *"><CurrencyInput name="amount" initialValue={formInvoice?.amount || 0} required onValueChange={setInvoiceAmount} /></FormField>
+              <FormField label="Desconto incondicionado"><CurrencyInput name="unconditionalDiscount" initialValue={formInvoice?.unconditionalDiscount || 0} onValueChange={setUnconditionalDiscount} /></FormField>
               <FormField label="Desconto condicionado"><CurrencyInput name="conditionalDiscount" initialValue={formInvoice?.conditionalDiscount || 0} /></FormField>
-              <FormField label="Alíquota ISS (%)" hint={issRateRequirement(integrationQuery.data, issRetained) === 'required' ? `Obrigatória entre ${issRateMinimum(integrationQuery.data, issRetained).toLocaleString('pt-BR')}% e 5%` : 'Não se aplica ao regime e retenção selecionados'}><input name="issRate" type="number" min={issRateMinimum(integrationQuery.data, issRetained)} max="5" step="0.01" required={issRateRequirement(integrationQuery.data, issRetained) === 'required'} disabled={issRateRequirement(integrationQuery.data, issRetained) === 'forbidden'} defaultValue={issRateRequirement(integrationQuery.data, issRetained) === 'required' ? formInvoice?.issRate ?? '' : ''} /></FormField>
+              <FormField label="Alíquota ISS (%)" hint={issRateRequirement(integrationQuery.data, issRetained) === 'required' ? `Obrigatória entre ${issRateMinimum(integrationQuery.data, issRetained).toLocaleString('pt-BR')}% e 5%` : 'Não se aplica ao regime e retenção selecionados'}><input name="issRate" type="number" min={issRateMinimum(integrationQuery.data, issRetained)} max="5" step="0.01" required={issRateRequirement(integrationQuery.data, issRetained) === 'required'} disabled={issRateRequirement(integrationQuery.data, issRetained) === 'forbidden'} value={issRateRequirement(integrationQuery.data, issRetained) === 'required' ? issRate : ''} onChange={(event) => setIssRate(event.target.value === '' ? '' : Number(event.target.value))} /></FormField>
               <FormField label="ISS retido"><select name="issRetained" value={String(issRetained)} onChange={(event) => setIssRetained(event.target.value === 'true')}><option value="false">Não</option><option value="true">Sim</option></select></FormField>
               <FormField label="Mão de obra"><CurrencyInput name="laborAmount" initialValue={formInvoice?.laborAmount || 0} /></FormField>
               <FormField label="Materiais"><CurrencyInput name="materialAmount" initialValue={formInvoice?.materialAmount || 0} /></FormField>
             </div>
             <div className="nfse-form-subtitle"><strong>Tributos aproximados</strong><small>Percentuais da Lei 12.741/2012; confirme os valores com a contabilidade</small></div>
             {!companyProfile?.simei && <div className="form-grid form-grid--four">
-              {companyProfile?.simpleNational ? <FormField label="Total do Simples Nacional (%) *"><input name="approximateSimpleNationalTaxRate" type="number" min="0" max="100" step="0.0001" required defaultValue={formInvoice?.approximateSimpleNationalTaxRate ?? ''} /></FormField> : <>
-                <FormField label="Tributos federais (%) *"><input name="approximateFederalTaxRate" type="number" min="0" max="100" step="0.0001" required defaultValue={formInvoice?.approximateFederalTaxRate ?? ''} /></FormField>
-                <FormField label="Tributos estaduais (%) *"><input name="approximateStateTaxRate" type="number" min="0" max="100" step="0.0001" required defaultValue={formInvoice?.approximateStateTaxRate ?? ''} /></FormField>
-                <FormField label="Tributos municipais (%) *"><input name="approximateMunicipalTaxRate" type="number" min="0" max="100" step="0.0001" required defaultValue={formInvoice?.approximateMunicipalTaxRate ?? ''} /></FormField>
+              {companyProfile?.simpleNational ? <FormField label="Total do Simples Nacional (%) *"><input name="approximateSimpleNationalTaxRate" type="number" min="0" max="100" step="0.0001" required defaultValue={formInvoice?.approximateSimpleNationalTaxRate ?? systemParametersQuery.data?.invoiceApproximateSimpleNationalTaxRate ?? ''} /></FormField> : <>
+                <FormField label="Tributos federais (%) *"><input name="approximateFederalTaxRate" type="number" min="0" max="100" step="0.0001" required defaultValue={formInvoice?.approximateFederalTaxRate ?? systemParametersQuery.data?.invoiceApproximateFederalTaxRate ?? ''} /></FormField>
+                <FormField label="Tributos estaduais (%) *"><input name="approximateStateTaxRate" type="number" min="0" max="100" step="0.0001" required defaultValue={formInvoice?.approximateStateTaxRate ?? systemParametersQuery.data?.invoiceApproximateStateTaxRate ?? ''} /></FormField>
+                <FormField label="Tributos municipais (%) *"><input name="approximateMunicipalTaxRate" type="number" min="0" max="100" step="0.0001" required defaultValue={formInvoice?.approximateMunicipalTaxRate ?? systemParametersQuery.data?.invoiceApproximateMunicipalTaxRate ?? ''} /></FormField>
               </>}
             </div>}
             <div className="nfse-form-subtitle"><strong>Tributos federais</strong><small>Preencha somente quando aplicável à operação</small></div>
@@ -887,7 +954,7 @@ export function NationalInvoices() {
               <FormField label="Base PIS/COFINS"><CurrencyInput name="pisCofinsBase" initialValue={formInvoice?.pisCofinsBase || 0} /></FormField>
               <FormField label="PIS"><CurrencyInput name="pisValue" initialValue={formInvoice?.pisValue || 0} /></FormField>
               <FormField label="COFINS"><CurrencyInput name="cofinsValue" initialValue={formInvoice?.cofinsValue || 0} /></FormField>
-              <FormField label="INSS/CP retido"><CurrencyInput name="retainedInss" initialValue={formInvoice?.retainedInss || 0} /></FormField>
+              <FormField label="INSS/CP retido" hint={clientTaxationApplied && clientInssRate > 0 ? `Calculado pela alíquota de ${clientInssRate.toLocaleString('pt-BR')}% do cadastro do cliente` : undefined}><CurrencyInput key={`retained-inss-${selectedClient?.id || 'none'}-${clientTaxationApplied ? `${invoiceAmount}-${unconditionalDiscount}-${clientInssRate}` : `saved-${formInvoice?.id || 'new'}`}`} name="retainedInss" initialValue={retainedInssValue} /></FormField>
               <FormField label="IRRF retido"><CurrencyInput name="retainedIrrf" initialValue={formInvoice?.retainedIrrf || 0} /></FormField>
               <FormField label="CSLL retido"><CurrencyInput name="retainedCsll" initialValue={formInvoice?.retainedCsll || 0} /></FormField>
               <FormField label="Preparação"><select name="status" defaultValue={formInvoice?.status === 'REJEITADA' ? 'REVISAR' : formInvoice?.status || 'RASCUNHO'}><option value="RASCUNHO">Rascunho</option><option value="REVISAR">Revisar</option><option value="PRONTA">Pronta para emitir</option></select></FormField>
@@ -981,7 +1048,7 @@ function InvoiceDetail({ invoice }: { invoice: Invoice }) {
   </div>
 }
 
-function CurrencyInput({ name, initialValue, required = false }: { name: string; initialValue: number; required?: boolean }) {
+function CurrencyInput({ name, initialValue, required = false, onValueChange }: { name: string; initialValue: number; required?: boolean; onValueChange?: (value: number) => void }) {
   const [value, setValue] = useState(Math.max(0, Number(initialValue) || 0))
   return <input
     name={name}
@@ -993,7 +1060,9 @@ function CurrencyInput({ name, initialValue, required = false }: { name: string;
     onFocus={(event) => event.currentTarget.select()}
     onChange={(event) => {
       const digits = event.target.value.replace(/\D/g, '').slice(0, 17)
-      setValue(digits ? Number(digits) / 100 : 0)
+      const nextValue = digits ? Number(digits) / 100 : 0
+      setValue(nextValue)
+      onValueChange?.(nextValue)
     }}
   />
 }

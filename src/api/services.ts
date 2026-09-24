@@ -54,6 +54,7 @@ import type {
   SortDirection,
   SystemParameters,
   SystemParametersPayload,
+  InvoiceFiscalSettingsPayload,
   ServicePriceAdjustmentPayload,
   Supplier,
   SupplierPayload,
@@ -198,6 +199,10 @@ export const api = {
     },
     async updateServiceAdjustment(payload: ServicePriceAdjustmentPayload) {
       const { data } = await http.put<SystemParameters>('/system-parameters/service-adjustment', payload)
+      return data
+    },
+    async updateInvoiceSettings(payload: InvoiceFiscalSettingsPayload) {
+      const { data } = await http.put<SystemParameters>('/system-parameters/invoice', payload)
       return data
     },
     async updateBillEmailSettings(payload: BillEmailSettingsPayload) {

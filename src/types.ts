@@ -83,6 +83,12 @@ export interface SystemParameters {
   serviceAdjustmentAffectedServices?: number | null
   billEmailDaysBeforeDue?: number | null
   billEmailAllActiveClients?: boolean
+  invoiceDefaultIssuerCnae?: string | null
+  invoiceDefaultNature?: string | null
+  invoiceApproximateSimpleNationalTaxRate?: number | null
+  invoiceApproximateFederalTaxRate?: number | null
+  invoiceApproximateStateTaxRate?: number | null
+  invoiceApproximateMunicipalTaxRate?: number | null
 }
 
 export type SystemParametersPayload = SystemParameters
@@ -98,6 +104,15 @@ export interface BillEmailSettingsPayload {
   enableForAllActiveClients: boolean
   subject: string
   body: string
+}
+
+export interface InvoiceFiscalSettingsPayload {
+  defaultIssuerCnae: string
+  defaultNature: string
+  approximateSimpleNationalTaxRate: number | null
+  approximateFederalTaxRate: number | null
+  approximateStateTaxRate: number | null
+  approximateMunicipalTaxRate: number | null
 }
 
 export interface BillEmailSettings extends BillEmailSettingsPayload {

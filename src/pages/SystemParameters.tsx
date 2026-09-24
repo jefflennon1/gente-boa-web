@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, CalendarCheck2, CalendarClock, Clock3, FolderOpen, Landmark, LoaderCircle, Mail, Percent, Save, Settings2, TrendingUp, Trash2 } from 'lucide-react'
+import { Building2, CalendarCheck2, CalendarClock, Clock3, FolderOpen, Landmark, LoaderCircle, Mail, Percent, ReceiptText, Save, Settings2, TrendingUp, Trash2 } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import type { SystemParametersPayload } from '../types'
@@ -31,7 +31,7 @@ export function SystemParametersPage() {
   const [formError, setFormError] = useState('')
   const [deleteError, setDeleteError] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [section, setSection] = useState<'general' | 'adjustment' | 'bill-email'>('general')
+  const [section, setSection] = useState<'general' | 'invoice' | 'adjustment' | 'bill-email'>('general')
   const [adjustmentEnabled, setAdjustmentEnabled] = useState(false)
   const [billEmailAllClients, setBillEmailAllClients] = useState(false)
 
@@ -86,6 +86,17 @@ export function SystemParametersPage() {
       await queryClient.invalidateQueries({ queryKey: queryKeys.clients })
       setFormError('')
       showToast('Configuração de envio dos boletos atualizada.')
+    },
+    onError: (error) => setFormError(apiErrorMessage(error)),
+  })
+
+  const invoiceSettingsMutation = useMutation({
+    mutationFn: api.systemParameters.updateInvoiceSettings,
+    onSuccess: async (updated) => {
+      queryClient.setQueryData(queryKeys.systemParameters, updated)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.systemParameters })
+      setFormError('')
+      showToast('Parâmetros da nota fiscal atualizados.')
     },
     onError: (error) => setFormError(apiErrorMessage(error)),
   })
@@ -170,6 +181,35 @@ export function SystemParametersPage() {
     billEmailMutation.mutate({ daysBeforeDue, enableForAllActiveClients: billEmailAllClients, subject, body })
   }
 
+  function submitInvoiceSettings(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setFormError('')
+    const data = new FormData(event.currentTarget)
+    const defaultIssuerCnae = textValue(data, 'defaultIssuerCnae').replace(/\D/g, '')
+    const defaultNature = textValue(data, 'defaultNature')
+    const approximateSimpleNationalTaxRate = nullableNumber(data, 'approximateSimpleNationalTaxRate')
+    if (defaultIssuerCnae.length !== 7) {
+      setFormError('Informe o CNAE padrão com 7 dígitos.')
+      return
+    }
+    if (!defaultNature) {
+      setFormError('Informe a natureza padrão da operação.')
+      return
+    }
+    if (approximateSimpleNationalTaxRate === null) {
+      setFormError('Informe o total aproximado do Simples Nacional confirmado pela contabilidade.')
+      return
+    }
+    invoiceSettingsMutation.mutate({
+      defaultIssuerCnae,
+      defaultNature,
+      approximateSimpleNationalTaxRate,
+      approximateFederalTaxRate: nullableNumber(data, 'approximateFederalTaxRate'),
+      approximateStateTaxRate: nullableNumber(data, 'approximateStateTaxRate'),
+      approximateMunicipalTaxRate: nullableNumber(data, 'approximateMunicipalTaxRate'),
+    })
+  }
+
   return (
     <>
       <PageHeader
@@ -180,6 +220,7 @@ export function SystemParametersPage() {
 
       <nav className="system-parameters-menu" aria-label="Seções dos parâmetros">
         <button type="button" className={section === 'general' ? 'active' : ''} onClick={() => { setSection('general'); setFormError('') }}><Settings2 size={16} />Parâmetros gerais</button>
+        <button type="button" className={section === 'invoice' ? 'active' : ''} onClick={() => { setSection('invoice'); setFormError('') }}><ReceiptText size={16} />Nota fiscal</button>
         <button type="button" className={section === 'adjustment' ? 'active' : ''} onClick={() => { setSection('adjustment'); setFormError('') }}><TrendingUp size={16} />Reajuste de serviços</button>
         <button type="button" className={section === 'bill-email' ? 'active' : ''} onClick={() => { setSection('bill-email'); setFormError('') }}><Mail size={16} />Envio de boletos</button>
       </nav>
@@ -248,6 +289,38 @@ export function SystemParametersPage() {
           <footer className="system-parameters-form__footer">
             <span>{parameters ? 'Atualize os campos necessários e salve.' : 'Preencha os dados para criar o registro único de parâmetros.'}</span>
             <Button type="submit" icon={saveMutation.isPending ? <LoaderCircle className="api-state__spinner" size={16} /> : <Save size={17} />} disabled={saveMutation.isPending}>{saveMutation.isPending ? 'Salvando...' : parameters ? 'Salvar alterações' : 'Cadastrar parâmetros'}</Button>
+          </footer>
+        </form>
+      ))}
+
+      {section === 'invoice' && (parametersQuery.isLoading ? <section className="panel"><LoadingState label="Carregando parâmetros da nota fiscal..." /></section> : parametersQuery.isError ? <section className="panel"><ErrorState message={apiErrorMessage(parametersQuery.error)} onRetry={() => parametersQuery.refetch()} /></section> : !parameters ? <section className="panel"><ErrorState message="Cadastre os parâmetros gerais antes de configurar a nota fiscal." /></section> : (
+        <form className="panel system-parameters-form service-adjustment-form" key={`${parameters.nmempre}-invoice-settings`} onSubmit={submitInvoiceSettings}>
+          <header className="system-parameters-form__header">
+            <span className="system-parameters-form__icon"><ReceiptText size={21} /></span>
+            <div><span>Emissão nacional</span><h2>Preenchimento padrão da nota fiscal</h2><p>Valores sugeridos automaticamente em novas notas manuais e nas notas geradas por ordem de serviço.</p></div>
+          </header>
+          <div className="system-parameters-form__body">
+            <FormError message={formError} />
+            <div className="service-adjustment-intro"><ReceiptText size={20} /><span><strong>Padrões editáveis em cada nota</strong><small>Esses valores agilizam o cadastro, mas devem ser conferidos antes da emissão. Retenções e códigos do serviço continuam sendo definidos pelo cliente e pela operação.</small></span></div>
+
+            <div className="form-section-title"><span><Landmark size={14} /></span><div><strong>Identificação da operação</strong><small>Dados normalmente repetidos nas emissões</small></div></div>
+            <div className="form-grid form-grid--two">
+              <FormField label="CNAE padrão do prestador *" hint="Informe apenas os 7 dígitos do CNAE"><input name="defaultIssuerCnae" inputMode="numeric" pattern="\d{7}" maxLength={7} required defaultValue={parameters.invoiceDefaultIssuerCnae ?? '4329104'} /></FormField>
+              <FormField label="Natureza padrão da operação *" hint="Pode ser alterada individualmente na nota"><input name="defaultNature" maxLength={100} required defaultValue={parameters.invoiceDefaultNature ?? 'Prestação de serviços'} /></FormField>
+            </div>
+
+            <div className="form-section-title"><span><Percent size={14} /></span><div><strong>Valores aproximados dos tributos</strong><small>Percentuais de transparência tributária enviados no grupo total de tributos da DPS</small></div></div>
+            <div className="form-grid form-grid--two system-parameters-financial">
+              <FormField label="Total do Simples Nacional (%) *" hint="Use a alíquota efetiva total confirmada no PGDAS-D ou pela contabilidade"><input name="approximateSimpleNationalTaxRate" type="number" min="0" max="100" step="0.0001" required defaultValue={parameters.invoiceApproximateSimpleNationalTaxRate ?? ''} /></FormField>
+              <FormField label="Tributos federais (%)" hint="Usado somente quando a empresa não estiver no Simples Nacional"><input name="approximateFederalTaxRate" type="number" min="0" max="100" step="0.0001" defaultValue={parameters.invoiceApproximateFederalTaxRate ?? ''} /></FormField>
+              <FormField label="Tributos estaduais (%)" hint="Usado somente quando a empresa não estiver no Simples Nacional"><input name="approximateStateTaxRate" type="number" min="0" max="100" step="0.0001" defaultValue={parameters.invoiceApproximateStateTaxRate ?? ''} /></FormField>
+              <FormField label="Tributos municipais (%)" hint="Usado somente quando a empresa não estiver no Simples Nacional"><input name="approximateMunicipalTaxRate" type="number" min="0" max="100" step="0.0001" defaultValue={parameters.invoiceApproximateMunicipalTaxRate ?? ''} /></FormField>
+            </div>
+            <aside className="system-parameters-note"><Percent size={18} /><span><strong>Não confundir com ISS</strong><small>O total do Simples Nacional representa a alíquota efetiva total do regime. A retenção e a alíquota do ISS continuam vindo do cadastro do cliente.</small><small>Consulte em <a href="https://www8.receita.fazenda.gov.br/SimplesNacional/" target="_blank" rel="noreferrer">Portal do Simples Nacional</a> → Simples Nacional – Serviços → Cálculo e Declaração → PGDAS-D e DEFIS, ou confirme o percentual com a contabilidade.</small></span></aside>
+          </div>
+          <footer className="system-parameters-form__footer">
+            <span>As alterações serão usadas somente como padrão nas próximas notas.</span>
+            <Button type="submit" icon={invoiceSettingsMutation.isPending ? <LoaderCircle className="api-state__spinner" size={16} /> : <Save size={17} />} disabled={invoiceSettingsMutation.isPending}>{invoiceSettingsMutation.isPending ? 'Salvando...' : 'Salvar parâmetros fiscais'}</Button>
           </footer>
         </form>
       ))}
