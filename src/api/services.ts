@@ -17,6 +17,8 @@ import type {
   ClientPayload,
   ClientReferral,
   ClientStatisticsResponse,
+  ClientStatementDetail,
+  ClientStatementSummary,
   CancelContractPayload,
   Contract,
   ContractListItem,
@@ -448,6 +450,20 @@ export const api = {
     },
   },
   statements: resource<Statement, StatementPayload>('/statements'),
+  clientStatements: {
+    async list(params: { startDate: string; endDate: string; query?: string; clientId?: number; page?: number; size?: number }) {
+      const { data } = await http.get<PagedResponse<ClientStatementSummary>>('/client-statements', { params: { page: 0, size: 10, ...params } })
+      return data
+    },
+    async find(clientId: number, startDate: string, endDate: string) {
+      const { data } = await http.get<ClientStatementDetail>(`/client-statements/${clientId}`, { params: { startDate, endDate } })
+      return data
+    },
+    async pdf(clientId: number, startDate: string, endDate: string) {
+      const { data } = await http.get<Blob>(`/client-statements/${clientId}/pdf`, { params: { startDate, endDate }, responseType: 'blob' })
+      return data
+    },
+  },
   bills: {
     async list(params: Pick<ListParams, 'query' | 'page' | 'size'> = {}) {
       const { data } = await http.get<PagedResponse<BillListItem>>('/bills', { params: { page: 0, size: 20, ...params } })
@@ -497,6 +513,7 @@ export const queryKeys = {
   companyProfile: ['company-profile'] as const,
   fiscalCatalog: ['fiscal-catalog'] as const,
   statements: ['statements'] as const,
+  clientStatements: ['client-statements'] as const,
   bills: ['bills'] as const,
   users: ['users'] as const,
 }

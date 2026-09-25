@@ -1156,6 +1156,33 @@ export interface BillDetail extends BillListItem {
   attendances: BillAttendanceLine[]
 }
 
+export interface ClientStatementSummary {
+  clientId: number
+  clientName: string | null
+  clientTradeName: string | null
+  clientDocument: string | null
+  contractId: number | null
+  periodStart: string
+  periodEnd: string
+  contractedMinutes: number
+  usedMinutes: number
+  availableMinutes: number
+  extraMinutes: number
+  serviceOrderCount: number
+  serviceAmount: number
+  materialAmount: number
+  additionalAmount: number
+  discountAmount: number
+  totalAmount: number
+}
+
+export interface ClientStatementDetail extends ClientStatementSummary {
+  clientEmail: string | null
+  clientPhone: string | null
+  clientAddress: string | null
+  orders: BillDetail[]
+}
+
 export interface AppUser {
   id: number
   name: string
