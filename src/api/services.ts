@@ -44,6 +44,9 @@ import type {
   Material,
   MaterialPayload,
   PagedResponse,
+  ReportRow,
+  ReportSummary,
+  ReportType,
   ServiceOrder,
   ServiceOrderListItem,
   ServiceOrderTracking,
@@ -484,6 +487,16 @@ export const api = {
       return data
     },
   },
+  reports: {
+    async list(type: ReportType, params: { startDate?: string; endDate?: string; query?: string; page?: number; size?: number } = {}) {
+      const { data } = await http.get<PagedResponse<ReportRow>>(`/reports/${type}`, { params: { page: 0, size: 20, ...params } })
+      return data
+    },
+    async summary(type: ReportType, params: { startDate?: string; endDate?: string; query?: string } = {}) {
+      const { data } = await http.get<ReportSummary>(`/reports/${type}/summary`, { params })
+      return data
+    },
+  },
   users: resource<AppUser, CreateUserPayload | UpdateUserPayload>('/users'),
   publicClients: {
     async referralDescriptions() {
@@ -515,5 +528,6 @@ export const queryKeys = {
   statements: ['statements'] as const,
   clientStatements: ['client-statements'] as const,
   bills: ['bills'] as const,
+  reports: ['reports'] as const,
   users: ['users'] as const,
 }

@@ -35,6 +35,26 @@ export interface PagedResponse<T> {
   totalPages: number
 }
 
+export type ReportType = 'clients' | 'invoices' | 'statements' | 'bills' | 'trackings' | 'employees' | 'materials'
+
+export interface ReportRow {
+  code: string
+  name: string
+  description: string
+  date: ISODateTime | null
+  status: string
+  quantity: number | null
+  unit: string | null
+  value: number
+}
+
+export interface ReportSummary {
+  total: number
+  totalValue: number
+  totalQuantity: number
+  groups: Array<{ label: string; count: number; value: number }>
+}
+
 export interface CepAddressResponse {
   cep: string | null
   logradouro: string | null
