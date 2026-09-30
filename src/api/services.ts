@@ -104,6 +104,16 @@ export type ServiceOrderListParams = {
   size?: number
 }
 
+export type BillListParams = Pick<ListParams, 'query' | 'page' | 'size'> & {
+  serviceOrderStart?: string
+  serviceOrderEnd?: string
+  dueStart?: string
+  dueEnd?: string
+  dueDay?: 1 | 10 | 20
+  billingType?: 'ALL' | 'CONTRACT' | 'ONE_OFF'
+  paymentStatus?: 'ALL' | 'PENDING' | 'PAID'
+}
+
 function resource<T, TPayload, TList = T>(path: string) {
   return {
     async list(params: ListParams = {}) {
@@ -468,7 +478,7 @@ export const api = {
     },
   },
   bills: {
-    async list(params: Pick<ListParams, 'query' | 'page' | 'size'> = {}) {
+    async list(params: BillListParams = {}) {
       const { data } = await http.get<PagedResponse<BillListItem>>('/bills', { params: { page: 0, size: 20, ...params } })
       return data
     },

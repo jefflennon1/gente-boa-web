@@ -19,10 +19,33 @@ export function Statements() {
   const [emailTarget, setEmailTarget] = useState<BillDetail | null>(null)
   const [emailError, setEmailError] = useState('')
   const [billPdfPreview, setBillPdfPreview] = useState<{ url: string; bill: Pick<BillListItem, 'id' | 'number'> } | null>(null)
+  const initialBillPeriod = useMemo(currentMonthPeriod, [])
+  const [billOrderStart, setBillOrderStart] = useState(initialBillPeriod.startDate)
+  const [billOrderEnd, setBillOrderEnd] = useState(initialBillPeriod.endDate)
+  const [billDueStart, setBillDueStart] = useState('')
+  const [billDueEnd, setBillDueEnd] = useState('')
+  const [billDueDay, setBillDueDay] = useState<'' | 1 | 10 | 20>('')
+  const [billingType, setBillingType] = useState<'ALL' | 'CONTRACT' | 'ONE_OFF'>('ALL')
+  const [paymentStatus, setPaymentStatus] = useState<'ALL' | 'PENDING' | 'PAID'>('ALL')
   const debouncedSearch = useDebouncedValue(search)
   const pageSize = 20
 
-  const billsQuery = useQuery({ queryKey: [...queryKeys.bills, debouncedSearch, page, pageSize], queryFn: () => api.bills.list({ query: debouncedSearch || undefined, page, size: pageSize }), enabled: section === 'bills' })
+  const billsQuery = useQuery({
+    queryKey: [...queryKeys.bills, debouncedSearch, billOrderStart, billOrderEnd, billDueStart, billDueEnd, billDueDay, billingType, paymentStatus, page, pageSize],
+    queryFn: () => api.bills.list({
+      query: debouncedSearch || undefined,
+      serviceOrderStart: billOrderStart || undefined,
+      serviceOrderEnd: billOrderEnd || undefined,
+      dueStart: billDueStart || undefined,
+      dueEnd: billDueEnd || undefined,
+      dueDay: billDueDay || undefined,
+      billingType,
+      paymentStatus,
+      page,
+      size: pageSize,
+    }),
+    enabled: section === 'bills',
+  })
   const detailQuery = useQuery({ queryKey: [...queryKeys.bills, 'detail', detailId], queryFn: () => api.bills.find(detailId!), enabled: detailId !== null })
   const pdfMutation = useMutation({
     mutationFn: async (bill: Pick<BillListItem, 'id' | 'number'>) => ({ bill, blob: await api.bills.pdf(bill.id) }),
@@ -110,7 +133,17 @@ export function Statements() {
     </section>
 
     <section className="panel data-panel bill-panel">
-      <div className="data-toolbar"><div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }} placeholder="Buscar cliente, CPF/CNPJ, boleto ou OS..." /></div></div>
+      <div className="billing-filter-panel">
+        <div className="billing-filter-panel__heading"><div><strong>Visualização do faturamento</strong><small>Consulte contratos fixos e atendimentos avulsos antes do vencimento.</small></div><Badge tone="green">Boletos gerados</Badge></div>
+        <div className="billing-filter-grid">
+          <label className="billing-filter-group billing-filter-group--dates"><span>Data das OS</span><div><input type="date" value={billOrderStart} max={billOrderEnd || undefined} onChange={(event) => { setBillOrderStart(event.target.value); setPage(0) }} /><i>até</i><input type="date" value={billOrderEnd} min={billOrderStart || undefined} onChange={(event) => { setBillOrderEnd(event.target.value); setPage(0) }} /></div></label>
+          <label className="billing-filter-group billing-filter-group--dates"><span>Vencimento</span><div><input type="date" value={billDueStart} max={billDueEnd || undefined} onChange={(event) => { setBillDueStart(event.target.value); setPage(0) }} /><i>até</i><input type="date" value={billDueEnd} min={billDueStart || undefined} onChange={(event) => { setBillDueEnd(event.target.value); setPage(0) }} /></div></label>
+          <div className="billing-filter-group"><span>Dia fixo</span><div className="billing-day-options"><button type="button" className={billDueDay === '' ? 'active' : ''} onClick={() => { setBillDueDay(''); setPage(0) }}>Todos</button>{([1, 10, 20] as const).map((day) => <button type="button" key={day} className={billDueDay === day ? 'active' : ''} onClick={() => { setBillDueDay(day); setPage(0) }}>{day}</button>)}</div></div>
+          <label className="billing-filter-group"><span>Faturamento</span><select value={billingType} onChange={(event) => { setBillingType(event.target.value as typeof billingType); setPage(0) }}><option value="ALL">Todos</option><option value="CONTRACT">Contratos fixos</option><option value="ONE_OFF">Avulsos</option></select></label>
+          <label className="billing-filter-group"><span>Pagamento</span><select value={paymentStatus} onChange={(event) => { setPaymentStatus(event.target.value as typeof paymentStatus); setPage(0) }}><option value="ALL">Todos</option><option value="PENDING">Pendentes</option><option value="PAID">Pagos</option></select></label>
+        </div>
+        <div className="billing-search-row"><div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }} placeholder="Buscar cliente, CPF/CNPJ, número do boleto ou OS..." /></div><Button variant="ghost" onClick={() => { setBillOrderStart(''); setBillOrderEnd(''); setBillDueStart(''); setBillDueEnd(''); setBillDueDay(''); setBillingType('ALL'); setPaymentStatus('ALL'); setSearch(''); setPage(0) }}>Limpar filtros</Button></div>
+      </div>
       {billsQuery.isLoading ? <LoadingState label="Carregando boletos..." /> : billsQuery.isError ? <ErrorState message={apiErrorMessage(billsQuery.error)} onRetry={() => billsQuery.refetch()} /> : bills.length === 0 ? <EmptyState title="Nenhum boleto encontrado" description="Os boletos serão gerados quando uma ordem de serviço for finalizada." /> : <div className="table-wrap"><table className="data-table bill-table"><thead><tr><th>Boleto</th><th>OS</th><th>Cliente</th><th>Contrato</th><th>Data cadastro</th><th>Processamento</th><th>Vencimento</th><th>Valor</th><th>Enviado e-mail</th><th>Pagamento</th><th>PDF</th><th /></tr></thead><tbody>{bills.map((bill) => <tr key={bill.id} onClick={() => setDetailId(bill.id)}>
         <td><strong>#{bill.number || bill.id}</strong><small className="table-secondary">Registro {bill.id}</small></td>
         <td><strong>{bill.serviceOrderId || '—'}</strong></td>
@@ -302,6 +335,14 @@ function previousMonthPeriod() {
   const start = new Date(today.getFullYear(), today.getMonth() - 1, 1)
   const end = new Date(today.getFullYear(), today.getMonth(), 0)
   return { startDate: localDate(start), endDate: localDate(end) }
+}
+
+function currentMonthPeriod() {
+  const today = new Date()
+  return {
+    startDate: localDate(new Date(today.getFullYear(), today.getMonth(), 1)),
+    endDate: localDate(new Date(today.getFullYear(), today.getMonth() + 1, 0)),
+  }
 }
 
 function localDate(date: Date) {

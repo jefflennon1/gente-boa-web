@@ -546,6 +546,33 @@ h1, h2, h3, p { margin-top: 0; }
 .positive-value { color: #168457; }.negative-value { color: #bd3e49; }
 .statement-table { min-width: 980px; }
 .bill-table { min-width: 1450px; }
+.billing-filter-panel { padding: 16px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #fbfbfe, #f7f8fb); }
+.billing-filter-panel__heading { margin-bottom: 13px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.billing-filter-panel__heading strong, .billing-filter-panel__heading small { display: block; }
+.billing-filter-panel__heading strong { color: var(--navy); font-size: 11px; }
+.billing-filter-panel__heading small { margin-top: 3px; color: var(--muted); font-size: 8px; }
+.billing-filter-grid { display: grid; grid-template-columns: 1.4fr 1.4fr .8fr .8fr .75fr; gap: 9px; align-items: end; }
+.billing-filter-group { min-width: 0; display: grid; gap: 5px; }
+.billing-filter-group > span { color: var(--muted); font-size: 7px; font-weight: 800; text-transform: uppercase; letter-spacing: .45px; }
+.billing-filter-group select, .billing-filter-group input { min-width: 0; height: 37px; padding: 0 9px; border: 1px solid var(--line); border-radius: 8px; outline: 0; color: var(--ink); background: white; font: inherit; font-size: 8px; }
+.billing-filter-group select:focus, .billing-filter-group input:focus { border-color: #a8abd6; box-shadow: 0 0 0 3px rgba(46,49,145,.07); }
+.billing-filter-group--dates > div { display: flex; align-items: center; gap: 6px; }
+.billing-filter-group--dates input { width: 100%; }
+.billing-filter-group--dates i { color: var(--muted); font-size: 7.5px; font-style: normal; }
+.billing-day-options { height: 37px; display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: white; }
+.billing-day-options button { min-width: 33px; padding: 0 8px; border: 0; border-right: 1px solid var(--line); color: var(--muted); background: white; font-size: 8px; font-weight: 750; cursor: pointer; }
+.billing-day-options button:last-child { border-right: 0; }
+.billing-day-options button.active { color: white; background: var(--brand); }
+.billing-search-row { margin-top: 11px; display: flex; align-items: center; gap: 9px; }
+.billing-search-row .search-box { flex: 1; }
+@media (max-width: 1100px) {
+  .billing-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+  .billing-filter-grid { grid-template-columns: 1fr; }
+  .billing-filter-panel__heading, .billing-search-row { align-items: stretch; flex-direction: column; }
+  .billing-filter-group--dates > div { flex-wrap: wrap; }
+}
 .statement-sections { margin-bottom: 18px; }
 .client-statement-toolbar { gap: 10px; }
 .client-statement-toolbar .search-box { flex: 1; min-width: 260px; }
