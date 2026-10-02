@@ -6,7 +6,7 @@ import { Login } from './pages/Login'
 import { useRouter } from './router'
 
 const pages: Partial<Record<string, LazyExoticComponent<ComponentType>>> = {
-  '/': lazy(() => import('./pages/Dashboard').then((module) => ({ default: module.Dashboard }))),
+  '/': lazy(() => import('./pages/MonthlyDashboard').then((module) => ({ default: module.MonthlyDashboard }))),
   '/clientes': lazy(() => import('./pages/Clients').then((module) => ({ default: module.Clients }))),
   '/contratos': lazy(() => import('./pages/Contracts').then((module) => ({ default: module.Contracts }))),
   '/ordens-de-servico': lazy(() => import('./pages/ServiceOrders').then((module) => ({ default: module.ServiceOrders }))),
