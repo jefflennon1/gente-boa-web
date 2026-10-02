@@ -120,7 +120,7 @@ export function Contracts() {
   const [sortBy, setSortBy] = useState<ContractListSortBy>('CONTRACT_DATE')
   const [direction, setDirection] = useState<SortDirection>('DESC')
   const [page, setPage] = useState(0)
-  const [pageSize, setPageSize] = useState(20)
+  const [pageSize, setPageSize] = useState(10)
   const [modalOpen, setModalOpen] = useState(false)
   const [formLoading, setFormLoading] = useState(false)
   const [selected, setSelected] = useState<Contract | null>(null)
@@ -594,8 +594,8 @@ export function Contracts() {
       <section className="panel data-panel">
         {clientFilter !== null && <div className="contract-client-filter"><span className="contract-client-filter__icon"><Building2 size={17} /></span><div><small>Contratos filtrados por cliente</small><strong>{filteredClientQuery.isLoading ? `Carregando cliente #${clientFilter}...` : filteredClientName}</strong></div><button onClick={() => navigate('/contratos', { replace: true })}>Remover filtro <X size={15} /></button></div>}
         <div className="data-toolbar data-toolbar--clients">
-          <div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); resetPage() }} placeholder="Buscar por razão social, nome fantasia, código do cliente ou contrato..." /></div>
-          <div className="segmented-control" aria-label="Filtrar contratos">{(['TODOS', 'ATIVO', 'CANCELADO'] as const).map((item) => <button key={item} className={statusFilter === item ? 'active' : ''} onClick={() => { setStatusFilter(item); resetPage() }}>{item === 'TODOS' ? 'Todos' : item === 'ATIVO' ? 'Ativos' : 'Cancelados'}</button>)}</div>
+          <label className="structured-filter-field"><span>Cliente ou contrato</span><div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); resetPage() }} placeholder="Nome, código do cliente ou contrato" /></div></label>
+          <div className="structured-filter-field"><span>Situação</span><div className="segmented-control" aria-label="Filtrar contratos">{(['TODOS', 'ATIVO', 'CANCELADO'] as const).map((item) => <button key={item} className={statusFilter === item ? 'active' : ''} onClick={() => { setStatusFilter(item); resetPage() }}>{item === 'TODOS' ? 'Todos' : item === 'ATIVO' ? 'Ativos' : 'Cancelados'}</button>)}</div></div>
           <label className="toolbar-select"><span>Ordenar por</span><select value={sortBy} onChange={(event) => { setSortBy(event.target.value as ContractListSortBy); resetPage() }}>{sortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
           <label className="toolbar-select toolbar-select--compact"><span>Direção</span><select value={direction} onChange={(event) => { setDirection(event.target.value as SortDirection); resetPage() }}><option value="ASC">Crescente</option><option value="DESC">Decrescente</option></select></label>
         </div>
@@ -622,7 +622,7 @@ export function Contracts() {
         <footer className="table-footer table-footer--pagination">
           <span>Mostrando <strong>{firstResult}–{lastResult}</strong> de <strong>{total}</strong> contratos</span>
           <div className="pagination-controls">
-            <label>Por página <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); resetPage() }}><option value={20}>20</option><option value={50}>50</option><option value={100}>100</option></select></label>
+            <label>Por página <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); resetPage() }}>{[5, 10, 20, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
             <button disabled={page === 0 || contractsQuery.isFetching} onClick={() => setPage((value) => Math.max(0, value - 1))} aria-label="Página anterior"><ChevronLeft size={16} /></button>
             <span>Página <strong>{totalPages ? page + 1 : 0}</strong> de <strong>{totalPages}</strong></span>
             <button disabled={page + 1 >= totalPages || contractsQuery.isFetching} onClick={() => setPage((value) => value + 1)} aria-label="Próxima página"><ChevronRight size={16} /></button>

@@ -206,6 +206,11 @@ export function ServiceOrders() {
   const { navigate } = useRouter()
   const [view, setView] = useState<'kanban' | 'list'>('list')
   const [search, setSearch] = useState('')
+  const [cpfFilter, setCpfFilter] = useState('')
+  const [cnpjFilter, setCnpjFilter] = useState('')
+  const [orderNumber, setOrderNumber] = useState('')
+  const [contractCode, setContractCode] = useState('')
+  const [attendanceLocationId, setAttendanceLocationId] = useState('')
   const [orderFilter, setOrderFilter] = useState<ServiceOrderFilter>('Todas')
   const [dateFilterMode, setDateFilterMode] = useState<DateFilterMode>('day')
   const [date, setDate] = useState(localToday())
@@ -214,7 +219,7 @@ export function ServiceOrders() {
   const [month, setMonth] = useState('')
   const [weekDate, setWeekDate] = useState(localToday())
   const [page, setPage] = useState(0)
-  const pageSize = 10
+  const [pageSize, setPageSize] = useState(10)
   const [modalOpen, setModalOpen] = useState(false)
   const [selected, setSelected] = useState<ServiceOrder | null>(null)
   const [formKey, setFormKey] = useState(0)
@@ -238,6 +243,11 @@ export function ServiceOrders() {
     ...queryKeys.serviceOrders,
     'list',
     debouncedSearch,
+    cpfFilter,
+    cnpjFilter,
+    orderNumber,
+    contractCode,
+    attendanceLocationId,
     dateBounds.startDate ?? '',
     dateBounds.endDate ?? '',
     orderFilter,
@@ -248,7 +258,12 @@ export function ServiceOrders() {
   const ordersQuery = useQuery({
     queryKey: ordersQueryKey,
     queryFn: () => api.serviceOrders.list({
-      query: debouncedSearch || undefined,
+      clientName: debouncedSearch || undefined,
+      cpf: cpfFilter || undefined,
+      cnpj: cnpjFilter || undefined,
+      orderNumber: orderNumber ? Number(orderNumber) : undefined,
+      contractCode: contractCode ? Number(contractCode) : undefined,
+      attendanceLocationId: attendanceLocationId ? Number(attendanceLocationId) : undefined,
       startDate: dateBounds.startDate,
       endDate: dateBounds.endDate,
       urgentOnly: orderFilter === 'Urgentes' || undefined,
@@ -490,7 +505,12 @@ export function ServiceOrders() {
 
     <section className="panel data-panel os-panel">
       <div className="data-toolbar data-toolbar--orders">
-        <div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); resetPage() }} placeholder="Buscar por código, cliente, solicitante ou descrição..." /></div>
+        <label className="structured-filter-field"><span>Nome do cliente</span><div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); resetPage() }} placeholder="Razão social ou nome fantasia" /></div></label>
+        <label className="structured-filter-field"><span>Número da OS</span><input type="number" min="1" value={orderNumber} onChange={(event) => { setOrderNumber(event.target.value); resetPage() }} /></label>
+        <label className="structured-filter-field"><span>Contrato</span><input type="number" min="1" value={contractCode} onChange={(event) => { setContractCode(event.target.value); resetPage() }} /></label>
+        <label className="structured-filter-field"><span>Código do local</span><input type="number" min="1" value={attendanceLocationId} onChange={(event) => { setAttendanceLocationId(event.target.value); resetPage() }} /></label>
+        <label className="structured-filter-field"><span>CPF</span><input inputMode="numeric" value={cpfFilter} onChange={(event) => { setCpfFilter(event.target.value.replace(/\D/g, '')); resetPage() }} placeholder="Somente números" /></label>
+        <label className="structured-filter-field"><span>CNPJ</span><input inputMode="numeric" value={cnpjFilter} onChange={(event) => { setCnpjFilter(event.target.value.replace(/\D/g, '')); resetPage() }} placeholder="Somente números" /></label>
         <div className="segmented-control os-status-filter"><button className={orderFilter === 'Todas' ? 'active' : ''} onClick={() => { setOrderFilter('Todas'); resetPage() }}>Todas</button><button className={orderFilter === 'Urgentes' ? 'active' : ''} onClick={() => { setOrderFilter('Urgentes'); resetPage() }}>Urgentes</button><button className={orderFilter === 'ABERTA' ? 'active' : ''} onClick={() => { setOrderFilter('ABERTA'); resetPage() }}>Abertas</button><button className={orderFilter === 'FINALIZADA' ? 'active' : ''} onClick={() => { setOrderFilter('FINALIZADA'); resetPage() }}>Finalizadas</button><button className={orderFilter === 'CANCELADA' ? 'active' : ''} onClick={() => { setOrderFilter('CANCELADA'); resetPage() }}>Canceladas</button></div>
         <label className="toolbar-select toolbar-select--compact os-period-mode"><span>Período</span><select value={dateFilterMode} onChange={(event) => changeDateFilterMode(event.target.value as DateFilterMode)}><option value="day">Dia</option><option value="range">Entre datas</option><option value="week">Semana</option><option value="month">Mês</option><option value="none">Todas as datas</option></select></label>
         {dateFilterMode === 'day' && <label className="os-date-field"><span>Dia</span><div><CalendarDays size={15} /><input type="date" value={date} onChange={(event) => { setDate(event.target.value); resetPage() }} aria-label="Filtrar por dia" /></div></label>}
@@ -560,6 +580,7 @@ export function ServiceOrders() {
         <div className="os-pagination-area">
           {dateFilterMode !== 'none' && <button className="table-link" onClick={clearPeriod}>Limpar período</button>}
           <div className="pagination-controls">
+            <label className="dynamic-page-size">Itens <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); resetPage() }}>{[5, 10, 20, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
             <span>10 por página</span>
             <button disabled={page === 0 || ordersQuery.isFetching} onClick={() => setPage((value) => Math.max(0, value - 1))} aria-label="Página anterior"><ChevronLeft size={16} /></button>
             <span>Página <strong>{totalPages ? page + 1 : 0}</strong> de <strong>{totalPages}</strong></span>

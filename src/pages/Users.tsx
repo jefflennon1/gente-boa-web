@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ChevronRight, Clock3, Edit3, KeyRound, Mail, Plus, Search, ShieldCheck, Trash2, UserCheck, UserCog } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Clock3, Edit3, KeyRound, Mail, Plus, Search, ShieldCheck, Trash2, UserCheck, UserCog } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useAuth } from '../auth'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, initials } from '../lib/format'
 import type { AppUser, CreateUserPayload, UpdateUserPayload, UserRole, UserStatus } from '../types'
 import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
@@ -26,6 +27,8 @@ export function Users() {
   const queryClient = useQueryClient()
   const { user: currentUser } = useAuth()
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(10)
   const [modalOpen, setModalOpen] = useState(false)
   const [selected, setSelected] = useState<AppUser | null>(null)
   const [detail, setDetail] = useState<AppUser | null>(null)
@@ -33,7 +36,11 @@ export function Users() {
   const [toast, setToast] = useState('')
   const [formError, setFormError] = useState('')
 
-  const usersQuery = useQuery({ queryKey: queryKeys.users, queryFn: () => api.users.list() })
+  const debouncedSearch = useDebouncedValue(search)
+  const usersQuery = useQuery({
+    queryKey: [...queryKeys.users, 'list', debouncedSearch, page, pageSize],
+    queryFn: () => api.users.list({ query: debouncedSearch || undefined, page, size: pageSize }),
+  })
 
   const saveMutation = useMutation({
     mutationFn: ({ id, payload }: { id?: number; payload: CreateUserPayload | UpdateUserPayload }) => id ? api.users.update(id, payload) : api.users.create(payload),
@@ -70,7 +77,10 @@ export function Users() {
   })
 
   const users = usersQuery.data?.content ?? []
-  const filtered = useMemo(() => users.filter((user) => [user.name, user.email, enumLabel(user.role)].some((value) => value.toLowerCase().includes(search.toLowerCase()))), [search, users])
+  const total = usersQuery.data?.total ?? 0
+  const totalPages = usersQuery.data?.totalPages ?? 0
+  const firstResult = total === 0 ? 0 : page * pageSize + 1
+  const lastResult = Math.min((page + 1) * pageSize, total)
 
   function showToast(message: string) {
     setToast(message)
@@ -121,10 +131,10 @@ export function Users() {
       </section>
 
       <section className="panel data-panel">
-        <div className="data-toolbar"><div className="search-box"><Search size={18} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar usuário, e-mail ou perfil..." /></div><div className="users-security"><KeyRound size={17} /><span>Senhas protegidas pelo backend</span></div></div>
+        <div className="data-toolbar"><div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }} placeholder="Buscar usuário, e-mail ou perfil..." /></div><div className="users-security"><KeyRound size={17} /><span>Senhas protegidas pelo backend</span></div></div>
 
-        {usersQuery.isLoading ? <LoadingState label="Carregando usuários..." /> : usersQuery.isError ? <ErrorState message={apiErrorMessage(usersQuery.error)} onRetry={() => usersQuery.refetch()} /> : filtered.length === 0 ? <EmptyState title="Nenhum usuário encontrado" description="Altere a busca ou cadastre um usuário." /> : (
-          <div className="user-list">{filtered.map((user) => (
+        {usersQuery.isLoading ? <LoadingState label="Carregando usuários..." /> : usersQuery.isError ? <ErrorState message={apiErrorMessage(usersQuery.error)} onRetry={() => usersQuery.refetch()} /> : users.length === 0 ? <EmptyState title="Nenhum usuário encontrado" description="Altere a busca ou cadastre um usuário." /> : (
+          <div className="user-list">{users.map((user) => (
             <article key={user.id} onClick={() => setDetail(user)}>
               <span className={`user-avatar user-avatar--${user.id % 4}`}>{user.initials || initials(user.name)}</span>
               <div className="user-identity"><strong>{user.name}{user.id === currentUser?.id && <small>Você</small>}</strong><span><Mail size={13} />{user.email}</span></div>
@@ -135,7 +145,15 @@ export function Users() {
             </article>
           ))}</div>
         )}
-        <footer className="table-footer"><span><strong>{filtered.length}</strong> de {usersQuery.data?.total ?? 0} usuários</span><span>Endpoint protegido por perfil administrador</span></footer>
+        <footer className="table-footer table-footer--pagination">
+          <span>Mostrando <strong>{firstResult}–{lastResult}</strong> de <strong>{total.toLocaleString('pt-BR')}</strong> usuários</span>
+          <div className="pagination-controls">
+            <label>Por página <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(0) }}>{[5, 10, 20, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
+            <button disabled={page === 0 || usersQuery.isFetching} onClick={() => setPage((value) => Math.max(0, value - 1))} aria-label="Página anterior"><ChevronLeft size={16} /></button>
+            <span>Página <strong>{totalPages ? page + 1 : 0}</strong> de <strong>{totalPages}</strong></span>
+            <button disabled={page + 1 >= totalPages || usersQuery.isFetching} onClick={() => setPage((value) => value + 1)} aria-label="Próxima página"><ChevronRight size={16} /></button>
+          </div>
+        </footer>
       </section>
 
       <DetailModal

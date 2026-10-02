@@ -188,8 +188,13 @@ export function NationalInvoices() {
   const requestedInvoiceId = Number(new URLSearchParams(locationSearch).get('invoiceId')) || null
   const [tab, setTab] = useState<InvoiceTab>('Pendentes')
   const [search, setSearch] = useState('')
+  const [cpfFilter, setCpfFilter] = useState('')
+  const [cnpjFilter, setCnpjFilter] = useState('')
+  const [invoiceNumberFilter, setInvoiceNumberFilter] = useState('')
+  const [issueStart, setIssueStart] = useState('')
+  const [issueEnd, setIssueEnd] = useState('')
   const [page, setPage] = useState(0)
-  const [pageSize, setPageSize] = useState(20)
+  const [pageSize, setPageSize] = useState(10)
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [formInvoice, setFormInvoice] = useState<Invoice | null | undefined>(undefined)
   const [selectedClient, setSelectedClient] = useState<ClientSearchOption | null>(null)
@@ -226,8 +231,17 @@ export function NationalInvoices() {
   const clientSearchReady = debouncedClientSearch.length >= 2 || /^\d+$/.test(debouncedClientSearch)
 
   const invoicesQuery = useQuery({
-    queryKey: [...queryKeys.invoices, debouncedSearch, page, pageSize],
-    queryFn: () => api.invoices.list({ query: debouncedSearch || undefined, page, size: pageSize }),
+    queryKey: [...queryKeys.invoices, debouncedSearch, cpfFilter, cnpjFilter, invoiceNumberFilter, issueStart, issueEnd, page, pageSize],
+    queryFn: () => api.invoices.list({
+      clientName: debouncedSearch || undefined,
+      cpf: cpfFilter || undefined,
+      cnpj: cnpjFilter || undefined,
+      invoiceNumber: invoiceNumberFilter || undefined,
+      startDate: issueStart || undefined,
+      endDate: issueEnd || undefined,
+      page,
+      size: pageSize,
+    }),
   })
   const integrationQuery = useQuery({
     queryKey: [...queryKeys.invoices, 'integration-status'],
@@ -715,13 +729,20 @@ export function NationalInvoices() {
       </section>
 
       <section className="panel data-panel invoice-panel">
+        <div className="structured-filters structured-filters--invoices">
+          <label><span>Nome do cliente</span><div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }} placeholder="Razão social ou nome fantasia" /></div></label>
+          <label><span>Número da nota</span><input value={invoiceNumberFilter} onChange={(event) => { setInvoiceNumberFilter(event.target.value); setPage(0) }} /></label>
+          <label><span>CPF</span><input inputMode="numeric" value={cpfFilter} onChange={(event) => { setCpfFilter(event.target.value.replace(/\D/g, '')); setPage(0) }} /></label>
+          <label><span>CNPJ</span><input inputMode="numeric" value={cnpjFilter} onChange={(event) => { setCnpjFilter(event.target.value.replace(/\D/g, '')); setPage(0) }} /></label>
+          <label><span>Emissão de</span><input type="date" value={issueStart} max={issueEnd || undefined} onChange={(event) => { setIssueStart(event.target.value); setPage(0) }} /></label>
+          <label><span>Emissão até</span><input type="date" value={issueEnd} min={issueStart || undefined} onChange={(event) => { setIssueEnd(event.target.value); setPage(0) }} /></label>
+        </div>
         <div className="data-toolbar">
           <div className="segmented-control">
             {(['Pendentes', 'Emitidas', 'Canceladas', 'Todas'] as const).map((item) => (
               <button key={item} className={tab === item ? 'active' : ''} onClick={() => { setTab(item); setSelectedIds([]) }}>{item}</button>
             ))}
           </div>
-          <div className="search-box search-box--push"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }} placeholder="Buscar cliente, CPF/CNPJ, DPS ou NFS-e..." /></div>
         </div>
 
         {selectedIds.length > 0 && <div className="selection-bar"><span><Check size={16} />{selectedIds.length} selecionada(s)</span><button onClick={() => setSelectedIds([])}>Limpar seleção</button></div>}
@@ -745,7 +766,7 @@ export function NationalInvoices() {
         )}
         <footer className="table-footer nfse-pagination">
           <span><strong>{invoicesQuery.data?.total ?? 0}</strong> documentos encontrados</span>
-          <div><label>Por página <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(0) }}>{[10, 20, 50, 100].map((size) => <option key={size}>{size}</option>)}</select></label><button disabled={page === 0} onClick={() => setPage((value) => value - 1)}><ChevronLeft size={16} /></button><span>Página {page + 1} de {Math.max(invoicesQuery.data?.totalPages || 1, 1)}</span><button disabled={page + 1 >= (invoicesQuery.data?.totalPages || 1)} onClick={() => setPage((value) => value + 1)}><ChevronRight size={16} /></button></div>
+          <div><label>Por página <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(0) }}>{[5, 10, 20, 50, 100].map((size) => <option key={size}>{size}</option>)}</select></label><button disabled={page === 0} onClick={() => setPage((value) => value - 1)}><ChevronLeft size={16} /></button><span>Página {page + 1} de {Math.max(invoicesQuery.data?.totalPages || 1, 1)}</span><button disabled={page + 1 >= (invoicesQuery.data?.totalPages || 1)} onClick={() => setPage((value) => value + 1)}><ChevronRight size={16} /></button></div>
         </footer>
       </section>
 

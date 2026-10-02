@@ -35,7 +35,6 @@ const reports: ReportDefinition[] = [
   { key: 'materials', title: 'Materiais', detail: 'Materiais utilizados nas ordens de serviço', searchPlaceholder: 'Material, marca, código ou OS', dateLabel: 'Utilização', statusLabel: 'Marca', quantityLabel: 'Quantidade', valueLabel: 'Valor', codePrefix: '', icon: Boxes },
 ]
 
-const PAGE_SIZE = 20
 const CHART_COLORS = ['#33399a', '#f48120', '#169b72', '#7f56d9', '#247ba0', '#d64550', '#c18b18', '#687087']
 
 function currentMonthPeriod() {
@@ -68,6 +67,7 @@ export function Reports() {
   const [draftQuery, setDraftQuery] = useState('')
   const [filters, setFilters] = useState({ startDate: initialPeriod.start, endDate: initialPeriod.end, query: '' })
   const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(10)
   const [exporting, setExporting] = useState(false)
   const [toast, setToast] = useState<{ message: string; error?: boolean } | null>(null)
 
@@ -77,8 +77,8 @@ export function Reports() {
     ? { query: filters.query || undefined }
     : { startDate: filters.startDate || undefined, endDate: filters.endDate || undefined, query: filters.query || undefined }
   const reportQuery = useQuery({
-    queryKey: [...queryKeys.reports, selected, filters.startDate, filters.endDate, filters.query, page],
-    queryFn: () => api.reports.list(selected!, { ...reportParams, page, size: PAGE_SIZE }),
+    queryKey: [...queryKeys.reports, selected, filters.startDate, filters.endDate, filters.query, page, pageSize],
+    queryFn: () => api.reports.list(selected!, { ...reportParams, page, size: pageSize }),
     enabled: Boolean(selected && preview),
   })
   const summaryQuery = useQuery({
@@ -91,8 +91,8 @@ export function Reports() {
   const rows = reportQuery.data?.content ?? []
   const total = reportQuery.data?.total ?? 0
   const totalPages = reportQuery.data?.totalPages ?? 0
-  const firstResult = total ? page * PAGE_SIZE + 1 : 0
-  const lastResult = Math.min((page + 1) * PAGE_SIZE, total)
+  const firstResult = total ? page * pageSize + 1 : 0
+  const lastResult = Math.min((page + 1) * pageSize, total)
 
   function openReport(type: ReportType) {
     const period = currentMonthPeriod()
@@ -173,11 +173,11 @@ export function Reports() {
           <form onSubmit={generate}>
             <div className="modal__body">
               <div className="report-config-intro"><span><Filter size={21} /></span><div><strong>Filtros do relatório</strong><small>{selected === 'clients' ? 'Sem busca informada, todos os clientes serão apresentados.' : selected === 'employees' ? 'Sem busca informada, todos os funcionários serão apresentados.' : 'O mês atual vem selecionado por padrão. Você pode alterar ou limpar as datas.'}</small></div></div>
+              <div className="report-filter-search"><FormField label="Buscar por nome ou código" hint="A pesquisa também considera documento, cliente, funcionário ou OS quando aplicável."><div className="input-with-icon"><Search size={17} /><input value={draftQuery} onChange={(event) => setDraftQuery(event.target.value)} placeholder={selectedReport?.searchPlaceholder} /></div></FormField></div>
               {hasPeriodFilter && <div className="form-grid form-grid--two">
                 <FormField label="Período inicial"><input value={draftStartDate} onChange={(event) => setDraftStartDate(event.target.value)} type="date" /></FormField>
                 <FormField label="Período final"><input value={draftEndDate} onChange={(event) => setDraftEndDate(event.target.value)} type="date" /></FormField>
               </div>}
-              <div className="report-filter-search"><FormField label="Buscar por nome ou código" hint="A pesquisa também considera documento, cliente, funcionário ou OS quando aplicável."><div className="input-with-icon"><Search size={17} /><input value={draftQuery} onChange={(event) => setDraftQuery(event.target.value)} placeholder={selectedReport?.searchPlaceholder} /></div></FormField></div>
             </div>
             <footer className="modal__footer"><Button type="button" variant="secondary" onClick={() => setSelected(null)}>Cancelar</Button><Button type="submit" icon={<BarChart3 size={17} />}>Gerar relatório</Button></footer>
           </form>
@@ -190,7 +190,7 @@ export function Reports() {
               {reportQuery.isLoading || reportQuery.isFetching ? <LoadingState label="Consultando relatório..." /> : reportQuery.isError ? <ErrorState message={apiErrorMessage(reportQuery.error)} onRetry={() => reportQuery.refetch()} /> : rows.length ? (
                 <div className="table-wrap"><table><thead><tr><th>Código</th><th>Nome</th><th>Descrição</th><th>{selectedReport?.dateLabel}</th><th>{selectedReport?.statusLabel}</th>{selectedReport?.quantityLabel && <th>{selectedReport.quantityLabel}</th>}{selectedReport?.valueLabel && <th>{selectedReport.valueLabel}</th>}</tr></thead><tbody>{rows.map((row) => <tr key={`${row.code}-${row.date || ''}-${row.name}`}><td>{selectedReport ? displayCode(selectedReport, row.code) : row.code}</td><td>{row.name}</td><td>{row.description || '—'}</td><td>{row.date ? formatDate(row.date) : '—'}</td><td>{row.status || '—'}</td>{selectedReport?.quantityLabel && <td>{displayQuantity(row)}</td>}{selectedReport?.valueLabel && <td>{money(Number(row.value ?? 0))}</td>}</tr>)}</tbody></table></div>
               ) : <EmptyState title="Sem dados no período" description="Altere as datas ou o termo pesquisado para ampliar a consulta." />}
-              {!reportQuery.isLoading && !reportQuery.isError && <footer className="table-footer table-footer--pagination"><span>Mostrando <strong>{firstResult}–{lastResult}</strong> de <strong>{total.toLocaleString('pt-BR')}</strong> registros</span><div className="pagination-controls"><button disabled={page === 0 || reportQuery.isFetching} onClick={() => setPage((value) => Math.max(0, value - 1))} aria-label="Página anterior"><ChevronLeft size={16} /></button><span>Página <strong>{totalPages ? page + 1 : 0}</strong> de <strong>{totalPages}</strong></span><button disabled={page + 1 >= totalPages || reportQuery.isFetching} onClick={() => setPage((value) => value + 1)} aria-label="Próxima página"><ChevronRight size={16} /></button></div></footer>}
+              {!reportQuery.isLoading && !reportQuery.isError && <footer className="table-footer table-footer--pagination"><span>Mostrando <strong>{firstResult}–{lastResult}</strong> de <strong>{total.toLocaleString('pt-BR')}</strong> registros</span><div className="pagination-controls"><label>Itens <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(0) }}>{[5, 10, 20, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label><button disabled={page === 0 || reportQuery.isFetching} onClick={() => setPage((value) => Math.max(0, value - 1))} aria-label="Página anterior"><ChevronLeft size={16} /></button><span>Página <strong>{totalPages ? page + 1 : 0}</strong> de <strong>{totalPages}</strong></span><button disabled={page + 1 >= totalPages || reportQuery.isFetching} onClick={() => setPage((value) => value + 1)} aria-label="Próxima página"><ChevronRight size={16} /></button></div></footer>}
             </div>
             <footer className="modal__footer"><Button variant="secondary" onClick={() => setPreview(false)}>Alterar filtros</Button><Button icon={exporting ? <LoaderCircle className="spin" size={17} /> : <FileDown size={17} />} disabled={!total || exporting} onClick={exportCsv}>{exporting ? 'Exportando...' : 'Exportar CSV'}</Button></footer>
           </>

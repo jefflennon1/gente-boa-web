@@ -1121,6 +1121,36 @@ export interface BillListItem {
   emailSentAt: ISODateTime | null
 }
 
+export interface AccountsReceivableListItem {
+  id: number
+  clientId: number | null
+  clientName: string | null
+  clientTradeName: string | null
+  clientDocument: string | null
+  contractId: number | null
+  serviceOrderId: number | null
+  description: string | null
+  billNumber: number | null
+  createdAt: ISODateTime | null
+  dueAt: ISODateTime | null
+  receivedAt: ISODateTime | null
+  amount: number
+  receivedAmount: number
+  balance: number
+  statusFlag: string | null
+  generated: boolean
+  paid: boolean
+}
+
+export interface GeneratedBill {
+  id: number
+  number: number
+  clientId: number
+  dueAt: ISODateTime
+  amount: number
+  receivableCount: number
+}
+
 export interface BillServiceLine {
   serviceId: number
   description: string | null
@@ -1153,6 +1183,17 @@ export interface BillAttendanceLine {
   professional: string | null
 }
 
+export interface BillReceivableLine {
+  id: number
+  serviceOrderId: number | null
+  contractId: number | null
+  description: string | null
+  createdAt: ISODateTime | null
+  dueAt: ISODateTime | null
+  amount: number
+  balance: number
+}
+
 export interface BillDetail extends BillListItem {
   clientDocument: string | null
   clientEmail: string | null
@@ -1174,6 +1215,7 @@ export interface BillDetail extends BillListItem {
   services: BillServiceLine[]
   materials: BillMaterialLine[]
   attendances: BillAttendanceLine[]
+  receivables: BillReceivableLine[]
 }
 
 export interface ClientStatementSummary {
@@ -1189,6 +1231,7 @@ export interface ClientStatementSummary {
   availableMinutes: number
   extraMinutes: number
   serviceOrderCount: number
+  attendanceLocationCount: number
   serviceAmount: number
   materialAmount: number
   additionalAmount: number
@@ -1201,6 +1244,29 @@ export interface ClientStatementDetail extends ClientStatementSummary {
   clientPhone: string | null
   clientAddress: string | null
   orders: BillDetail[]
+  attendanceLocations: ClientStatementLocation[]
+}
+
+export interface ClientStatementLocation {
+  locationId: number | null
+  contractId: number | null
+  description: string | null
+  address: string | null
+  complement: string | null
+  district: string | null
+  city: string | null
+  zipCode: string | null
+  contactName: string | null
+  contactPhone: string | null
+  referencePoint: string | null
+  serviceOrderCount: number
+  usedMinutes: number
+  allocationPercentage: number
+  serviceAmount: number
+  additionalAmount: number
+  discountAmount: number
+  totalAmount: number
+  serviceOrderIds: number[]
 }
 
 export interface AppUser {

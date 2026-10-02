@@ -132,11 +132,16 @@ export function Clients() {
   const queryClient = useQueryClient()
   const { user: currentUser } = useAuth()
   const { navigate } = useRouter()
-  const [search, setSearch] = useState('')
+  const [clientName, setClientName] = useState('')
+  const [cpfFilter, setCpfFilter] = useState('')
+  const [cnpjFilter, setCnpjFilter] = useState('')
+  const [clientCode, setClientCode] = useState('')
+  const search = clientName
+  const setSearch = setClientName
   const [sortBy, setSortBy] = useState<'' | ClientListSortBy>('')
   const [direction, setDirection] = useState<SortDirection>('ASC')
   const [page, setPage] = useState(0)
-  const [pageSize, setPageSize] = useState(20)
+  const [pageSize, setPageSize] = useState(10)
   const [modalOpen, setModalOpen] = useState(false)
   const [selected, setSelected] = useState<Client | null>(null)
   const [detailId, setDetailId] = useState<number | null>(null)
@@ -152,12 +157,18 @@ export function Clients() {
   const [addressFields, setAddressFields] = useState<AddressFields>(emptyAddressFields)
   const [additionalAddresses, setAdditionalAddresses] = useState<ClientAddressRow[]>([])
   const [cepLookupValue, setCepLookupValue] = useState<string | null>(null)
-  const debouncedSearch = useDebouncedValue(search)
+  const debouncedClientName = useDebouncedValue(clientName.trim())
+  const debouncedCpf = useDebouncedValue(cpfFilter.replace(/\D/g, ''))
+  const debouncedCnpj = useDebouncedValue(cnpjFilter.replace(/\D/g, ''))
+  const debouncedClientCode = useDebouncedValue(clientCode)
 
   const clientsQuery = useQuery({
-    queryKey: [...queryKeys.clients, 'list', debouncedSearch, sortBy, direction, page, pageSize],
+    queryKey: [...queryKeys.clients, 'list', debouncedClientName, debouncedCpf, debouncedCnpj, debouncedClientCode, sortBy, direction, page, pageSize],
     queryFn: () => api.clients.list({
-      query: debouncedSearch || undefined,
+      name: debouncedClientName || undefined,
+      cpf: debouncedCpf || undefined,
+      cnpj: debouncedCnpj || undefined,
+      clientCode: debouncedClientCode ? Number(debouncedClientCode) : undefined,
       sortBy: sortBy || undefined,
       direction: sortBy ? direction : undefined,
       page,
@@ -231,7 +242,7 @@ export function Clients() {
       } else {
         const searchValue = savedClient.name?.trim() || savedClient.document?.trim() || ''
         queryClient.setQueryData([...queryKeys.clients, 'detail', savedClient.id], savedClient)
-        setSearch(searchValue)
+        setClientName(searchValue)
         setSortBy('')
         setDirection('ASC')
         setPage(0)
@@ -490,7 +501,10 @@ export function Clients() {
 
       <section className="panel data-panel">
         <div className="data-toolbar data-toolbar--clients">
-          <div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); resetPage() }} placeholder="Buscar por código, nome, nome fantasia, CPF ou CNPJ..." /></div>
+          <label className="structured-filter-field"><span>Nome do cliente</span><div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); resetPage() }} placeholder="Razão social ou nome fantasia" /></div></label>
+          <label className="structured-filter-field"><span>Código do cliente</span><input type="number" min="1" value={clientCode} onChange={(event) => { setClientCode(event.target.value); resetPage() }} placeholder="Ex.: 5035" /></label>
+          <label className="structured-filter-field"><span>CPF</span><input inputMode="numeric" value={cpfFilter} onChange={(event) => { setCpfFilter(event.target.value.replace(/\D/g, '')); resetPage() }} placeholder="Somente números" /></label>
+          <label className="structured-filter-field"><span>CNPJ</span><input inputMode="numeric" value={cnpjFilter} onChange={(event) => { setCnpjFilter(event.target.value.replace(/\D/g, '')); resetPage() }} placeholder="Somente números" /></label>
           <label className="toolbar-select"><span>Ordenar por</span><select value={sortBy} onChange={(event) => { setSortBy(event.target.value as '' | ClientListSortBy); resetPage() }}>{sortOptions.map((option) => <option key={option.value || 'default'} value={option.value}>{option.label}</option>)}</select></label>
           <label className="toolbar-select toolbar-select--compact"><span>Direção</span><select value={direction} disabled={!sortBy} onChange={(event) => { setDirection(event.target.value as SortDirection); resetPage() }}><option value="ASC">Crescente</option><option value="DESC">Decrescente</option></select></label>
         </div>
@@ -516,7 +530,7 @@ export function Clients() {
         <footer className="table-footer table-footer--pagination">
           <span>Mostrando <strong>{firstResult}–{lastResult}</strong> de <strong>{total}</strong> clientes</span>
           <div className="pagination-controls">
-            <label>Por página <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); resetPage() }}><option value={20}>20</option><option value={50}>50</option><option value={100}>100</option></select></label>
+            <label>Por página <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); resetPage() }}>{[5, 10, 20, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
             <button disabled={page === 0 || clientsQuery.isFetching} onClick={() => setPage((value) => Math.max(0, value - 1))} aria-label="Página anterior"><ChevronLeft size={16} /></button>
             <span>Página <strong>{totalPages ? page + 1 : 0}</strong> de <strong>{totalPages}</strong></span>
             <button disabled={page + 1 >= totalPages || clientsQuery.isFetching} onClick={() => setPage((value) => value + 1)} aria-label="Próxima página"><ChevronRight size={16} /></button>

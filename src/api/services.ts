@@ -1,4 +1,5 @@
 import type {
+  AccountsReceivableListItem,
   AppUser,
   BillDetail,
   BillEmailResponse,
@@ -41,6 +42,7 @@ import type {
   NfseIntegrationStatus,
   Employee,
   EmployeePayload,
+  GeneratedBill,
   Material,
   MaterialPayload,
   PagedResponse,
@@ -69,6 +71,10 @@ import { http } from './client'
 
 export type ListParams = {
   query?: string
+  name?: string
+  cpf?: string
+  cnpj?: string
+  clientCode?: number
   date?: string
   sortBy?: ClientListSortBy
   direction?: SortDirection
@@ -95,6 +101,12 @@ export type ServiceCatalogListParams = {
 
 export type ServiceOrderListParams = {
   query?: string
+  clientName?: string
+  cpf?: string
+  cnpj?: string
+  orderNumber?: number
+  contractCode?: number
+  attendanceLocationId?: number
   date?: string
   startDate?: string
   endDate?: string
@@ -105,6 +117,12 @@ export type ServiceOrderListParams = {
 }
 
 export type BillListParams = Pick<ListParams, 'query' | 'page' | 'size'> & {
+  clientName?: string
+  cpf?: string
+  cnpj?: string
+  billNumber?: number
+  serviceOrderNumber?: number
+  contractCode?: number
   serviceOrderStart?: string
   serviceOrderEnd?: string
   dueStart?: string
@@ -366,7 +384,14 @@ export const api = {
     },
   },
   invoices: {
-    async list(params: Pick<ListParams, 'query' | 'page' | 'size'> = {}) {
+    async list(params: Pick<ListParams, 'query' | 'page' | 'size'> & {
+      clientName?: string
+      cpf?: string
+      cnpj?: string
+      invoiceNumber?: string
+      startDate?: string
+      endDate?: string
+    } = {}) {
       const { data } = await http.get<PagedResponse<Invoice>>('/invoices', { params: { page: 0, size: 100, ...params } })
       return data
     },
@@ -463,8 +488,46 @@ export const api = {
     },
   },
   statements: resource<Statement, StatementPayload>('/statements'),
+  accountsReceivable: {
+    async list(params: {
+      query?: string
+      dueStart?: string
+      dueEnd?: string
+      dueDay?: 1 | 10 | 20
+      billingType?: 'ALL' | 'CONTRACT' | 'ONE_OFF'
+      generatedStatus?: 'ALL' | 'GENERATED' | 'PENDING'
+      paymentStatus?: 'ALL' | 'PAID' | 'PENDING'
+      page?: number
+      size?: number
+    } = {}) {
+      const { data } = await http.get<PagedResponse<AccountsReceivableListItem>>('/accounts-receivable', {
+        params: { page: 0, size: 20, ...params },
+      })
+      return data
+    },
+    async createIssWithholding(payload: { clientId: number; dueDate: string; amount: number; description?: string }) {
+      const { data } = await http.post<AccountsReceivableListItem>('/accounts-receivable/iss-withholding', payload)
+      return data
+    },
+    async generateBill(receivableIds: number[]) {
+      const { data } = await http.post<GeneratedBill>('/accounts-receivable/generate-bill', { receivableIds })
+      return data
+    },
+  },
   clientStatements: {
-    async list(params: { startDate: string; endDate: string; query?: string; clientId?: number; page?: number; size?: number }) {
+    async list(params: {
+      startDate: string
+      endDate: string
+      query?: string
+      clientName?: string
+      cpf?: string
+      cnpj?: string
+      clientId?: number
+      attendanceLocationId?: number
+      attendanceLocation?: string
+      page?: number
+      size?: number
+    }) {
       const { data } = await http.get<PagedResponse<ClientStatementSummary>>('/client-statements', { params: { page: 0, size: 10, ...params } })
       return data
     },
@@ -536,6 +599,7 @@ export const queryKeys = {
   companyProfile: ['company-profile'] as const,
   fiscalCatalog: ['fiscal-catalog'] as const,
   statements: ['statements'] as const,
+  accountsReceivable: ['accounts-receivable'] as const,
   clientStatements: ['client-statements'] as const,
   bills: ['bills'] as const,
   reports: ['reports'] as const,
