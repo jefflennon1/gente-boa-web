@@ -12,6 +12,8 @@ const pages: Partial<Record<string, LazyExoticComponent<ComponentType>>> = {
   '/ordens-de-servico': lazy(() => import('./pages/ServiceOrders').then((module) => ({ default: module.ServiceOrders }))),
   '/servicos': lazy(() => import('./pages/Services').then((module) => ({ default: module.Services }))),
   '/materiais': lazy(() => import('./pages/Materials').then((module) => ({ default: module.Materials }))),
+  '/fornecedores': lazy(() => import('./pages/Suppliers').then((module) => ({ default: module.Suppliers }))),
+  '/contas-a-pagar': lazy(() => import('./pages/AccountsPayable').then((module) => ({ default: module.AccountsPayable }))),
   '/funcionarios': lazy(() => import('./pages/Employees').then((module) => ({ default: module.Employees }))),
   '/notas-fiscais': lazy(() => import('./pages/NationalInvoices').then((module) => ({ default: module.NationalInvoices }))),
   '/extratos': lazy(() => import('./pages/Statements').then((module) => ({ default: module.Statements }))),

@@ -54,6 +54,7 @@ import type {
   ServiceOrderTracking,
   ServiceOrderStatus,
   ServiceOrderPayload,
+  ServiceOrderMaterialOrder,
   ServiceCatalogItem,
   ServiceCatalogPayload,
   Statement,
@@ -65,6 +66,12 @@ import type {
   ServicePriceAdjustmentPayload,
   Supplier,
   SupplierPayload,
+  PayableAccount,
+  PayableAccountPayload,
+  PayableDateField,
+  PayablePaymentPayload,
+  FinancialLookup,
+  PurchaseOrderListItem,
   UpdateUserPayload,
 } from '../types'
 import { http } from './client'
@@ -130,6 +137,20 @@ export type BillListParams = Pick<ListParams, 'query' | 'page' | 'size'> & {
   dueDay?: 1 | 10 | 20
   billingType?: 'ALL' | 'CONTRACT' | 'ONE_OFF'
   paymentStatus?: 'ALL' | 'PENDING' | 'PAID'
+}
+
+export type PayableListParams = Pick<ListParams, 'query' | 'page' | 'size'> & {
+  supplierId?: number
+  startDate?: string
+  endDate?: string
+  dateField?: PayableDateField
+  status?: 'ALL' | 'OPEN' | 'PAID' | 'CLOSED'
+}
+
+export type PurchaseOrderListParams = Pick<ListParams, 'query' | 'page' | 'size'> & {
+  supplierId?: number
+  startDate?: string
+  endDate?: string
 }
 
 function resource<T, TPayload, TList = T>(path: string) {
@@ -347,6 +368,64 @@ export const api = {
     },
     async create(payload: SupplierPayload) {
       const { data } = await http.post<Supplier>('/suppliers', payload)
+      return data
+    },
+    async update(id: number, payload: SupplierPayload) {
+      const { data } = await http.put<Supplier>(`/suppliers/${id}`, payload)
+      return data
+    },
+    async remove(id: number) {
+      await http.delete(`/suppliers/${id}`)
+    },
+  },
+  payables: {
+    async list(params: PayableListParams = {}) {
+      const { data } = await http.get<PagedResponse<PayableAccount>>('/payables', { params: { page: 0, size: 20, status: 'OPEN', ...params } })
+      return data
+    },
+    async find(id: number) {
+      const { data } = await http.get<PayableAccount>(`/payables/${id}`)
+      return data
+    },
+    async create(payload: PayableAccountPayload) {
+      const { data } = await http.post<PayableAccount>('/payables', payload)
+      return data
+    },
+    async update(id: number, payload: PayableAccountPayload) {
+      const { data } = await http.put<PayableAccount>(`/payables/${id}`, payload)
+      return data
+    },
+    async remove(id: number) {
+      await http.delete(`/payables/${id}`)
+    },
+    async settle(id: number, payload: PayablePaymentPayload) {
+      const { data } = await http.post<PayableAccount>(`/payables/${id}/payments`, payload)
+      return data
+    },
+    async reversePayment(id: number, paymentId: number) {
+      const { data } = await http.delete<PayableAccount>(`/payables/${id}/payments/${paymentId}`)
+      return data
+    },
+    async costCenters() {
+      const { data } = await http.get<FinancialLookup[]>('/payables/lookups/cost-centers')
+      return data
+    },
+    async subCostCenters(costCenterId?: number) {
+      const { data } = await http.get<FinancialLookup[]>('/payables/lookups/sub-cost-centers', { params: { costCenterId } })
+      return data
+    },
+    async movementAccounts() {
+      const { data } = await http.get<FinancialLookup[]>('/payables/lookups/movement-accounts')
+      return data
+    },
+  },
+  purchaseOrders: {
+    async list(params: PurchaseOrderListParams = {}) {
+      const { data } = await http.get<PagedResponse<PurchaseOrderListItem>>('/purchase-orders', { params: { page: 0, size: 20, ...params } })
+      return data
+    },
+    async find(id: number) {
+      const { data } = await http.get<ServiceOrderMaterialOrder>(`/purchase-orders/${id}`)
       return data
     },
   },
@@ -594,6 +673,8 @@ export const queryKeys = {
   materials: ['materials'] as const,
   employees: ['employees'] as const,
   suppliers: ['suppliers'] as const,
+  payables: ['payables'] as const,
+  purchaseOrders: ['purchase-orders'] as const,
   serviceOrders: ['service-orders'] as const,
   invoices: ['invoices'] as const,
   companyProfile: ['company-profile'] as const,

@@ -77,11 +77,12 @@ export function FormField({ label, children, hint }: { label: string; children: 
   )
 }
 
-export function ModalForm({ children, onSubmit, onCancel, submitLabel = 'Salvar', submitting = false }: { children: ReactNode; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void; submitLabel?: string; submitting?: boolean }) {
+export function ModalForm({ children, onSubmit, onCancel, actions, submitLabel = 'Salvar', submitting = false }: { children: ReactNode; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void; actions?: ReactNode; submitLabel?: string; submitting?: boolean }) {
   return (
     <form onSubmit={onSubmit}>
       <div className="modal__body">{children}</div>
       <footer className="modal__footer">
+        {actions}
         <Button type="button" variant="secondary" onClick={onCancel} disabled={submitting}>Cancelar</Button>
         <Button type="submit" disabled={submitting}>{submitLabel}</Button>
       </footer>

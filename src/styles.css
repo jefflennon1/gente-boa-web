@@ -390,10 +390,46 @@ h1, h2, h3, p { margin-top: 0; }
 .os-purchase-totals { min-height: 59px; margin-top: 13px; border: 1px solid #dfe1e9; border-radius: 11px; display: grid; grid-template-columns: repeat(4, minmax(110px, .8fr)) minmax(155px, 1.15fr); overflow: hidden; background: #fafafd; }.os-purchase-totals > span { padding: 9px 12px; border-right: 1px solid #e3e4eb; display: grid; align-content: center; }.os-purchase-totals small, .os-purchase-totals strong { display: block; }.os-purchase-totals small { color: var(--muted); font-size: 7px; text-transform: uppercase; letter-spacing: .4px; }.os-purchase-totals strong { margin-top: 4px; color: var(--ink); font-size: 10px; }.os-purchase-totals__primary { border-right: 0 !important; background: var(--navy-2); }.os-purchase-totals__primary small { color: #c8cae0; }.os-purchase-totals__primary strong { color: white; font-size: 13px; }
 .detail-purchase-items { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .materials-table { min-width: 1040px; }
+.suppliers-table { min-width: 1050px; }
+.suppliers-table td:nth-child(2) { min-width: 190px; }
+.suppliers-table td:nth-child(7) { min-width: 160px; }
 .material-supplier-control { display: grid; grid-template-columns: minmax(0, 1fr) 43px; gap: 8px; }
 .material-supplier-add { min-height: 41px; border: 1px solid #d8daea; border-radius: 9px; display: grid; place-items: center; color: var(--brand); background: white; cursor: pointer; transition: .15s ease; }
 .material-supplier-add:hover { border-color: #b9bcdb; background: var(--brand-soft); }
 .material-supplier-add:focus-visible { outline: 2px solid rgba(44, 48, 131, .22); outline-offset: 2px; }
+.supplier-linked-actions { margin-top: 18px; padding: 13px 14px; border: 1px solid #dfe1ed; border-radius: 11px; display: flex; align-items: center; justify-content: space-between; gap: 14px; background: #f8f8fc; }
+.supplier-linked-actions span { display: grid; gap: 3px; }
+.supplier-linked-actions strong { color: var(--navy); font-size: 10px; }
+.supplier-linked-actions small { color: var(--muted); font-size: 8px; }
+.material-purchase-panel { margin-top: 18px; }
+.material-purchase-panel__header { padding: 17px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.material-purchase-panel__header h2 { margin: 3px 0 0; color: var(--navy); font-size: 16px; }
+.material-purchase-panel__header p { margin: 4px 0 0; color: var(--muted); font-size: 9px; }
+.section-kicker { color: var(--brand); font-size: 7.5px; font-weight: 800; letter-spacing: .55px; text-transform: uppercase; }
+.purchase-orders-table { min-width: 900px; }
+.link-button { padding: 0; border: 0; display: inline-flex; align-items: center; gap: 7px; color: var(--brand); background: transparent; font: inherit; font-weight: 800; cursor: pointer; }
+.link-button:hover { text-decoration: underline; }
+.payables-toolbar { padding: 16px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: minmax(270px, 1.6fr) repeat(5, minmax(125px, .75fr)); align-items: end; gap: 11px; background: #fbfbfe; }
+.payables-toolbar > label { min-width: 0; display: grid; gap: 5px; }
+.payables-toolbar > label > span { color: var(--muted); font-size: 7px; font-weight: 800; letter-spacing: .45px; text-transform: uppercase; }
+.payables-toolbar .search-box { width: 100%; }
+.payables-toolbar select, .payables-toolbar > label input { width: 100%; height: 40px; padding: 0 9px; border: 1px solid var(--line); border-radius: 9px; outline: 0; color: var(--navy); background: white; font-size: 8.5px; }
+.payables-toolbar select:focus, .payables-toolbar > label input:focus { border-color: #a8abd6; box-shadow: 0 0 0 3px rgba(46,49,145,.07); }
+.payables-table { min-width: 1260px; }
+.payable-settlement-summary { margin-bottom: 17px; border: 1px solid #dfe1eb; border-radius: 11px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); overflow: hidden; background: #fafafd; }
+.payable-settlement-summary span { min-height: 58px; padding: 10px 13px; border-right: 1px solid #e3e4eb; display: grid; align-content: center; gap: 4px; }
+.payable-settlement-summary span:last-child { border-right: 0; color: white; background: var(--navy-2); }
+.payable-settlement-summary small { color: var(--muted); font-size: 7px; font-weight: 800; text-transform: uppercase; }
+.payable-settlement-summary span:last-child small { color: #c8cae0; }
+.payable-settlement-summary strong { font-size: 11px; }
+.payable-payment-history { margin-top: 17px; padding: 14px; border: 1px solid #dfe1eb; border-radius: 11px; background: #fafafd; }
+.payable-payment-history h3 { margin: 0 0 9px; color: var(--navy); font-size: 10px; }
+.payable-payment-history article { padding: 9px 0; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.payable-payment-history article > span { display: grid; gap: 3px; }
+.payable-payment-history article strong { color: var(--ink); font-size: 9px; }
+.payable-payment-history article small { color: var(--muted); font-size: 8px; }
+.payable-payment-history article button { border: 0; color: var(--red); background: transparent; font-size: 8px; font-weight: 800; cursor: pointer; }
+.row-action--success { color: #078370; background: #e8f8f4; }
 .form-field__error { color: var(--red) !important; }
 .detail-status-stack { display: flex; align-items: center; gap: 7px; }.detail-list-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }.detail-list-grid > span { padding: 10px; border: 1px solid #e5e6ed; border-radius: 9px; background: #fbfbfd; }.detail-list-grid strong, .detail-list-grid small { display: block; }.detail-list-grid strong { color: var(--navy); font-size: 9px; }.detail-list-grid small { margin-top: 4px; color: var(--muted); font-size: 8px; }
 
@@ -891,6 +927,8 @@ h1, h2, h3, p { margin-top: 0; }
   .breadcrumb span, .breadcrumb b { display: none; }
   .demo-mode-badge { margin-left: 10px; }
   .page-content { padding: 28px 22px 45px; }
+  .payables-toolbar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .payables-toolbar .search-box { grid-column: 1 / -1; }
   .dashboard-analytics-grid { grid-template-columns: 1fr; }
   .form-grid--three, .form-grid--four { grid-template-columns: repeat(2,1fr); }
   .client-address-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }.client-address-fields .form-field:has(textarea) { grid-column: 1 / -1; }
@@ -906,6 +944,12 @@ h1, h2, h3, p { margin-top: 0; }
 }
 
 @media (max-width: 740px) {
+  .payables-toolbar { grid-template-columns: 1fr 1fr; }
+  .payables-toolbar .search-box, .payables-toolbar > label:first-of-type { grid-column: 1 / -1; }
+  .material-purchase-panel__header, .supplier-linked-actions { align-items: stretch; flex-direction: column; }
+  .payable-settlement-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .payable-settlement-summary span:nth-child(2) { border-right: 0; }
+  .payable-settlement-summary span:nth-child(-n+2) { border-bottom: 1px solid #e3e4eb; }
   .client-statement-toolbar { align-items: stretch; }
   .client-statement-toolbar .search-box, .statement-date-field { width: 100%; min-width: 0; }
   .client-statement-balance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -961,6 +1005,11 @@ h1, h2, h3, p { margin-top: 0; }
 }
 
 @media (max-width: 440px) {
+  .payables-toolbar { grid-template-columns: 1fr; }
+  .payables-toolbar .search-box, .payables-toolbar > label:first-of-type { grid-column: auto; }
+  .payable-settlement-summary { grid-template-columns: 1fr; }
+  .payable-settlement-summary span { border-right: 0; border-bottom: 1px solid #e3e4eb; }
+  .payable-settlement-summary span:last-child { border-bottom: 0; }
   .client-statement-balance-grid { grid-template-columns: 1fr; }
   .page-header h1 { font-size: 27px; }.button { padding: 0 11px; }.page-actions { flex-wrap: wrap; }
   .schedule-row { grid-template-columns: 68px minmax(0,1fr); column-gap: 9px; }.schedule-tech { display: none; }

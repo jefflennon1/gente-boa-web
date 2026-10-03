@@ -656,6 +656,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   const [materialSearch, setMaterialSearch] = useState('')
   const [materialToAdd, setMaterialToAdd] = useState('')
   const [purchaseEntryDate, setPurchaseEntryDate] = useState(toDateInput(selected?.materialOrder?.entryDate) || initialDate)
+  const [purchasePayableDueDate, setPurchasePayableDueDate] = useState(toDateInput(selected?.materialOrder?.payableDueDate) || toDateInput(selected?.materialOrder?.entryDate) || initialDate)
   const [purchaseInvoice, setPurchaseInvoice] = useState(selected?.materialOrder?.invoiceNumber ?? '')
   const [purchaseDiscount, setPurchaseDiscount] = useState(String(selected?.materialOrder?.discountPercentage ?? 0))
   const [purchaseFreight, setPurchaseFreight] = useState(String(selected?.materialOrder?.freightValue ?? 0))
@@ -1069,6 +1070,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       serviceOrderId: selected?.id ?? null,
       supplierId: supplierId ? Number(supplierId) : null,
       entryDate: purchaseEntryDate ? dateTime(purchaseEntryDate) : dateTime(requestDate),
+      payableDueDate: purchasePayableDueDate ? dateTime(purchasePayableDueDate) : purchaseEntryDate ? dateTime(purchaseEntryDate) : dateTime(requestDate),
       invoiceNumber: purchaseInvoice.trim() || null,
       discountPercentage: Math.min(100, numberValue(purchaseDiscount)),
       freightValue: numberValue(purchaseFreight),
@@ -1150,7 +1152,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
         <span className="os-contract-balance__projected"><small>Saldo após esta OS</small><strong>{asDuration(projectedBalanceMinutes)}</strong></span>
       </div>}
     </aside>}
-    <div className="os-form-tabs" role="tablist"><button type="button" className={tab === 'general' ? 'active' : ''} onClick={() => setTab('general')}>Dados gerais</button><button type="button" className={tab === 'materials' ? 'active' : ''} onClick={() => setTab('materials')}>Materiais</button></div>
+    <div className="os-form-tabs" role="tablist"><button type="button" className={tab === 'general' ? 'active' : ''} onClick={() => setTab('general')}>Dados gerais</button><button type="button" className={tab === 'materials' ? 'active' : ''} onClick={() => setTab('materials')}>Pedido de compra</button></div>
 
     {tab === 'general' ? <>
       <section className="os-form-section">
@@ -1198,9 +1200,9 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
           })}</tbody></table></div> : <div className="os-empty-grid">Nenhum serviço adicionado. Use “Adicionar serviço” para montar a cobrança.</div>}
         </section>
       </div>
-      <div className="os-total-strip"><span><small>Serviços</small><strong>{money(serviceSubtotal)}</strong></span><span><small>Materiais</small><strong>{money(materialAmount)}</strong></span><span><small>Desconto</small><strong>- {money(discountAmount)}</strong></span><span className="os-total-strip__primary"><small>Valor a cobrar</small><strong>{money(Math.max(0, total))}</strong></span></div>
+      <div className="os-total-strip"><span><small>Serviços</small><strong>{money(serviceSubtotal)}</strong></span><span><small>Pedido de compra</small><strong>{money(materialAmount)}</strong></span><span><small>Desconto</small><strong>- {money(discountAmount)}</strong></span><span className="os-total-strip__primary"><small>Valor a cobrar</small><strong>{money(Math.max(0, total))}</strong></span></div>
     </> : <section className="os-material-tab">
-      <div><strong>Pedido de compra</strong><p>Selecione o fornecedor e adicione todos os materiais utilizados no atendimento. O total líquido será levado automaticamente para a ordem de serviço.</p></div>
+      <div><strong>Pedido de compra</strong><p>Selecione o fornecedor e os materiais adquiridos para reabastecer o estoque. Ao salvar, o pedido gera uma conta a pagar vinculada à OS.</p></div>
       <FormError message={materialError} />
       {suppliersQuery.isError && <FormError message={`Não foi possível consultar os fornecedores: ${apiErrorMessage(suppliersQuery.error)}`} />}
       {materialsQuery.isError && <FormError message={`Não foi possível consultar os materiais: ${apiErrorMessage(materialsQuery.error)}`} />}
@@ -1208,6 +1210,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       <div className="os-purchase-header">
         <FormField label="Pedido de compra"><input value={selected?.materialOrder?.id ?? selected?.idpedi ?? 'Gerado ao salvar'} disabled /></FormField>
         <FormField label="Data de entrada"><input type="date" value={purchaseEntryDate} onChange={(event) => setPurchaseEntryDate(event.target.value)} /></FormField>
+        <FormField label="Vencimento da conta"><input type="date" value={purchasePayableDueDate} onChange={(event) => setPurchasePayableDueDate(event.target.value)} /></FormField>
         <FormField label="Nota fiscal"><input maxLength={50} value={purchaseInvoice} onChange={(event) => setPurchaseInvoice(event.target.value)} /></FormField>
         {/* <FormField label="Buscar fornecedor" hint="Nome fantasia, razão social, CPF, CNPJ ou código"><input value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} placeholder="Digite para pesquisar..." /></FormField> */}
         <FormField label="Fornecedor"><select value={supplierId} onChange={(event) => { setSupplierId(event.target.value); setMaterialError('') }} disabled={suppliersQuery.isLoading}><option value="">Selecione o fornecedor</option>{selectedSupplierMissing && <option value={supplierId}>{selected?.materialOrder?.supplierTradeName || selected?.materialOrder?.supplierName || `Fornecedor #${supplierId}`}</option>}{supplierOptions.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplierDisplay(supplier)}</option>)}</select></FormField>
@@ -1337,7 +1340,7 @@ function ServiceOrderDetail({ order, catalog }: { order: ServiceOrder; catalog: 
         return <span key={item.scheduleId}><strong>Previsto: {formatDate(item.expectedDate)} · {item.expectedStart || '--:--'}–{item.expectedEnd || '--:--'}</strong><small>Funcionário: {item.employeeName || item.employeeNickname || (item.employeeId ? `#${item.employeeId}` : 'Aguardando')}{item.employeePosition ? ` · ${item.employeePosition}` : ''}{item.employeePhone ? ` · ${item.employeePhone}` : ''} · Serviço: {serviceName || (item.serviceId ? `#${item.serviceId}` : 'não vinculado')} · Realizado: {item.actualDate ? formatDate(item.actualDate) : 'sem data'} · {item.actualStart || '--:--'}–{item.actualEnd || '--:--'} ({item.actualDuration || '00:00'})</small></span>
       })}</div> : <p className="drawer-section__text">Nenhum agendamento vinculado.</p>}</section>
       <section className="drawer-section drawer-section--wide"><h3>Serviços</h3>{order.serviceItems?.length ? <div className="detail-list-grid">{order.serviceItems.map((item) => <span key={item.serviceId}><strong>{catalog.find((service) => service.id === item.serviceId)?.description || `Serviço #${item.serviceId}`}</strong><small>Horas oficiais: {item.hours || '00:00'} · {item.quantity || 0} × {money(item.unitValue)} · Total {money(item.totalValue)}</small></span>)}</div> : <p className="drawer-section__text service-description-empty">NENHUM SERVIÇO VINCULADO</p>}</section>
-      <section className="drawer-section drawer-section--wide"><h3>Pedido de compra</h3>{order.materialOrder ? <><dl><div><dt>Pedido</dt><dd>#{order.materialOrder.id}</dd></div><div><dt>Fornecedor</dt><dd>{order.materialOrder.supplierTradeName || order.materialOrder.supplierName || `#${order.materialOrder.supplierId}`}</dd></div><div><dt>Data de entrada</dt><dd>{formatDate(order.materialOrder.entryDate)}</dd></div><div><dt>Total líquido</dt><dd>{money(order.materialOrder.netValue)}</dd></div></dl>{order.materialOrder.items?.length ? <div className="detail-list-grid detail-purchase-items">{order.materialOrder.items.map((item) => <span key={`${item.purchaseOrderId}-${item.itemId}`}><strong>{item.materialDescription || `Material #${item.materialId}`}</strong><small>{item.quantity || 0} {item.materialUnit || 'UN'} × {money(item.unitValue)} · Total {money(item.totalValue)}</small></span>)}</div> : <p className="drawer-section__text detail-text-spaced">Nenhum item vinculado ao pedido.</p>}</> : <p className="drawer-section__text">Nenhum pedido de compra vinculado.</p>}</section>
+      <section className="drawer-section drawer-section--wide"><h3>Pedido de compra</h3>{order.materialOrder ? <><dl><div><dt>Pedido</dt><dd>#{order.materialOrder.id}</dd></div><div><dt>Fornecedor</dt><dd>{order.materialOrder.supplierTradeName || order.materialOrder.supplierName || `#${order.materialOrder.supplierId}`}</dd></div><div><dt>Data de entrada</dt><dd>{formatDate(order.materialOrder.entryDate)}</dd></div><div><dt>Conta a pagar</dt><dd>{order.materialOrder.payableId ? `#${order.materialOrder.payableId} · ${order.materialOrder.payableStatus === 'PAID' ? 'Quitada' : 'Em aberto'}` : 'Não gerada'}</dd></div><div><dt>Vencimento</dt><dd>{formatDate(order.materialOrder.payableDueDate)}</dd></div><div><dt>Total líquido</dt><dd>{money(order.materialOrder.netValue)}</dd></div></dl>{order.materialOrder.items?.length ? <div className="detail-list-grid detail-purchase-items">{order.materialOrder.items.map((item) => <span key={`${item.purchaseOrderId}-${item.itemId}`}><strong>{item.materialDescription || `Material #${item.materialId}`}</strong><small>{item.quantity || 0} {item.materialUnit || 'UN'} × {money(item.unitValue)} · Total {money(item.totalValue)}</small></span>)}</div> : <p className="drawer-section__text detail-text-spaced">Nenhum item vinculado ao pedido.</p>}</> : <p className="drawer-section__text">Nenhum pedido de compra vinculado.</p>}</section>
     </div>
   </div>
 }

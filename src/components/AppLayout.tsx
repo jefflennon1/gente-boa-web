@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Boxes, BriefcaseBusiness, ChevronDown, ClipboardList, FileBarChart, FileSignature, FileText, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, ReceiptText, Search, Settings, UserRoundCog, UsersRound, X } from 'lucide-react'
+import { Bell, Boxes, BriefcaseBusiness, ChevronDown, ClipboardList, FileBarChart, FileSignature, FileText, HandCoins, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, ReceiptText, Search, Settings, Truck, UserRoundCog, UsersRound, X } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { useAuth } from '../auth'
 import { enumLabel, initials } from '../lib/format'
@@ -13,6 +13,8 @@ const nav = [
   { to: '/ordens-de-servico', label: 'Ordens de serviço', icon: ClipboardList },
   { to: '/servicos', label: 'Serviços', icon: BriefcaseBusiness },
   { to: '/materiais', label: 'Materiais', icon: Boxes },
+  { to: '/fornecedores', label: 'Fornecedores', icon: Truck },
+  { to: '/contas-a-pagar', label: 'Contas a pagar', icon: HandCoins },
   { to: '/funcionarios', label: 'Funcionários', icon: UserRoundCog },
   { to: '/notas-fiscais', label: 'Notas fiscais', icon: ReceiptText },
   { to: '/extratos', label: 'Boletos e extratos', icon: FileText },
@@ -22,7 +24,7 @@ const nav = [
 ]
 
 const routeNames: Record<string, string> = {
-  '/': 'Visão geral', '/clientes': 'Clientes', '/contratos': 'Contratos', '/ordens-de-servico': 'Ordens de serviço', '/servicos': 'Serviços', '/materiais': 'Materiais', '/funcionarios': 'Funcionários', '/notas-fiscais': 'Notas fiscais', '/extratos': 'Boletos e extratos', '/relatorios': 'Relatórios', '/usuarios': 'Usuários', '/parametros-do-sistema': 'Parâmetros do sistema', '/envio-de-emails': 'Notificações',
+  '/': 'Visão geral', '/clientes': 'Clientes', '/contratos': 'Contratos', '/ordens-de-servico': 'Ordens de serviço', '/servicos': 'Serviços', '/materiais': 'Materiais', '/fornecedores': 'Fornecedores', '/contas-a-pagar': 'Contas a pagar', '/funcionarios': 'Funcionários', '/notas-fiscais': 'Notas fiscais', '/extratos': 'Boletos e extratos', '/relatorios': 'Relatórios', '/usuarios': 'Usuários', '/parametros-do-sistema': 'Parâmetros do sistema', '/envio-de-emails': 'Notificações',
 }
 
 export function AppLayout({ children }: { children: ReactNode }) {
@@ -58,6 +60,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
     else if (value.includes('param')) navigate('/parametros-do-sistema')
     else if (value.includes('contrato')) navigate('/contratos')
     else if (value.includes('cliente')) navigate('/clientes')
+    else if (value.includes('fornecedor')) navigate('/fornecedores')
+    else if (value.includes('pagar') || value.includes('despesa')) navigate('/contas-a-pagar')
     else if (value.includes('material') || value.includes('produto')) navigate('/materiais')
     else if (value.includes('funcion') || value.includes('colaborador')) navigate('/funcionarios')
     else if (value.includes('nota') || value.includes('nf')) navigate('/notas-fiscais')
@@ -87,7 +91,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <div className={`app-main ${sidebarCollapsed ? 'app-main--sidebar-collapsed' : ''}`}>
         <header className="topbar">
           <div className="topbar__left"><button className="mobile-menu" onClick={() => setMenuOpen(true)} aria-label="Abrir menu"><Menu size={22} /></button><div className="breadcrumb"><span>Gente Boa</span><b>/</b><strong>{routeNames[pathname] || 'Gestão'}</strong></div></div>
-          <form className="global-search" onSubmit={submitSearch}><Search size={18} /><input ref={searchRef} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Ir para cliente, contrato, OS ou nota..." aria-label="Navegação rápida" /><kbd>Ctrl K</kbd></form>
+          <form className="global-search" onSubmit={submitSearch}><Search size={18} /><input ref={searchRef} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Ir para cliente, fornecedor, OS ou nota..." aria-label="Navegação rápida" /><kbd>Ctrl K</kbd></form>
           <div className="topbar__actions">
             <div className="popover-anchor"><button className="topbar-icon" onClick={() => setNotificationsOpen((value) => !value)} aria-label="Notificações"><Bell size={19} />{notificationCount > 0 && <i />}</button>{notificationsOpen && <div className="popover notifications-popover"><div className="popover__title"><strong>Notificações</strong><span>{notificationCount} pendentes</span></div>{pendingInvoices.length > 0 && <button onClick={() => navigate('/notas-fiscais')}><i className="notification-dot notification-dot--orange" /><span><strong>{pendingInvoices.length} notas aguardam ação</strong><small>Prontas ou em revisão</small></span></button>}{urgentOrders.length > 0 && <button onClick={() => navigate('/ordens-de-servico')}><i className="notification-dot notification-dot--red" /><span><strong>{urgentOrders.length} ordens urgentes</strong><small>Atendimentos não finalizados</small></span></button>}{notificationCount === 0 && <div className="popover-empty">Nenhuma pendência encontrada.</div>}</div>}</div>
             <div className="popover-anchor profile-anchor"><button className="profile-button" onClick={() => setProfileOpen((value) => !value)}><span className="avatar">{user?.initials || initials(user?.name)}</span><span className="profile-copy"><strong>{user?.name}</strong><small>{enumLabel(user?.role)}</small></span><ChevronDown size={16} /></button>{profileOpen && <div className="popover profile-popover">{user?.role === 'ADMINISTRADOR' && <button onClick={() => navigate('/usuarios')}>Usuários e acessos</button>}<button className="profile-popover__logout" onClick={() => { logout(); navigate('/login', { replace: true }) }}><LogOut size={15} /> Sair do sistema</button></div>}</div>

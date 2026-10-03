@@ -1,15 +1,17 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Boxes, ChevronLeft, ChevronRight, CircleDollarSign, Edit3, PackageCheck, PackageMinus, Plus, Search, Trash2 } from 'lucide-react'
+import { Boxes, ChevronLeft, ChevronRight, CircleDollarSign, ClipboardList, Edit3, PackageCheck, PackageMinus, Plus, Search, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
-import { money } from '../lib/format'
+import { useRouter } from '../router'
+import { formatDate, money } from '../lib/format'
 import type { Material, MaterialPayload, Supplier, SupplierPayload } from '../types'
-import { Button, ConfirmDialog, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
+import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 export function Materials() {
   const queryClient = useQueryClient()
+  const { navigate } = useRouter()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(10)
@@ -34,6 +36,11 @@ export function Materials() {
     queryKey: [...queryKeys.suppliers, 'material-form'],
     queryFn: () => api.suppliers.list({ page: 0, size: 100 }),
     enabled: modalOpen || supplierModalOpen,
+  })
+
+  const purchaseOrdersQuery = useQuery({
+    queryKey: [...queryKeys.purchaseOrders, 'materials-recent'],
+    queryFn: () => api.purchaseOrders.list({ page: 0, size: 8 }),
   })
 
   const saveMutation = useMutation({
@@ -195,6 +202,18 @@ export function Materials() {
           <button disabled={page + 1 >= totalPages || materialsQuery.isFetching} onClick={() => setPage((value) => value + 1)} aria-label="Próxima página"><ChevronRight size={16} /></button>
         </div>
       </footer>
+    </section>
+
+    <section className="panel data-panel material-purchase-panel">
+      <header className="material-purchase-panel__header">
+        <div><span className="section-kicker">Movimentação de estoque</span><h2>Pedidos de compra recentes</h2><p>Compras registradas nas ordens de serviço e suas contas a pagar.</p></div>
+        <Button variant="secondary" icon={<ClipboardList size={17} />} onClick={() => navigate('/ordens-de-servico')}>Abrir ordens de serviço</Button>
+      </header>
+      {purchaseOrdersQuery.isLoading ? <LoadingState label="Carregando pedidos de compra..." /> : purchaseOrdersQuery.isError ? <ErrorState message={apiErrorMessage(purchaseOrdersQuery.error)} onRetry={() => purchaseOrdersQuery.refetch()} /> : !purchaseOrdersQuery.data?.content.length ? <EmptyState title="Nenhum pedido de compra encontrado" description="Os pedidos criados dentro das ordens de serviço aparecerão aqui." /> : <div className="table-wrap">
+        <table className="data-table purchase-orders-table"><thead><tr><th>Pedido</th><th>Data</th><th>OS</th><th>Fornecedor</th><th>Itens</th><th>Total</th><th>Conta a pagar</th></tr></thead><tbody>{purchaseOrdersQuery.data.content.map((order) => <tr key={order.id}>
+          <td><strong>#{order.id}</strong></td><td>{formatDate(order.entryDate)}</td><td>{order.serviceOrderId ? `#${order.serviceOrderId}` : '—'}</td><td>{order.supplierName || 'Não informado'}</td><td>{order.itemCount}</td><td><strong>{money(order.netValue)}</strong></td><td>{order.payableId ? <button type="button" className="link-button" onClick={() => navigate(`/contas-a-pagar?payableId=${order.payableId}`)}>#{order.payableId} <Badge tone={order.payableStatus === 'PAID' ? 'green' : 'orange'}>{order.payableStatus === 'PAID' ? 'Quitada' : 'Aberta'}</Badge></button> : <Badge tone="neutral">Não gerada</Badge>}</td>
+        </tr>)}</tbody></table>
+      </div>}
     </section>
 
     <Modal open={modalOpen} onClose={() => !saveMutation.isPending && setModalOpen(false)} title={selected ? `Editar material #${selected.id}` : 'Novo material'} description="Dados utilizados na montagem dos pedidos de compra.">

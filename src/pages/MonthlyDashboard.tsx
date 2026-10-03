@@ -5,7 +5,7 @@ import {
 } from 'recharts'
 import {
   ArrowRight, CalendarDays, CircleDollarSign, ClipboardCheck, FileBarChart, FileCheck2,
-  Plus, ReceiptText, RefreshCw, TrendingUp, WalletCards,
+  HandCoins, Plus, ReceiptText, RefreshCw, TrendingUp, WalletCards,
 } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
@@ -24,7 +24,7 @@ export function MonthlyDashboard() {
   const [referenceMonth, setReferenceMonth] = useState(currentReferenceMonth)
   const period = useMemo(() => monthPeriod(referenceMonth), [referenceMonth])
 
-  const [ordersQuery, receivablesQuery, invoicesQuery, statementsQuery, billsQuery, trackingsQuery, materialsQuery] = useQueries({ queries: [
+  const [ordersQuery, receivablesQuery, invoicesQuery, statementsQuery, billsQuery, trackingsQuery, materialsQuery, payablesQuery, purchaseOrdersQuery] = useQueries({ queries: [
     {
       queryKey: [...queryKeys.serviceOrders, 'dashboard-month', period?.startDate, period?.endDate],
       queryFn: () => loadMonthlyOrders(period!.startDate, period!.endDate),
@@ -60,6 +60,16 @@ export function MonthlyDashboard() {
       queryFn: () => api.reports.summary('materials', { startDate: period!.startDate, endDate: period!.endDate }),
       enabled: period !== null,
     },
+    {
+      queryKey: [...queryKeys.payables, 'dashboard-month', period?.startDate, period?.endDate],
+      queryFn: () => loadMonthlyPayables(period!.startDate, period!.endDate),
+      enabled: period !== null,
+    },
+    {
+      queryKey: [...queryKeys.purchaseOrders, 'dashboard-month', period?.startDate, period?.endDate],
+      queryFn: () => loadMonthlyPurchaseOrders(period!.startDate, period!.endDate),
+      enabled: period !== null,
+    },
   ] })
 
   const orders = ordersQuery.data?.content ?? []
@@ -73,6 +83,10 @@ export function MonthlyDashboard() {
   const readyInvoices = invoiceStatusData.find((item) => statusKey(item.label) === 'PRONTA')?.count ?? 0
   const issuedInvoices = invoiceStatusData.find((item) => statusKey(item.label) === 'EMITIDA')?.count ?? 0
   const orderValue = orders.reduce((sum, order) => sum + Number(order.totalValue ?? 0), 0)
+  const payables = payablesQuery.data?.content ?? []
+  const payableBalance = payables.reduce((sum, item) => sum + Number(item.balance ?? 0), 0)
+  const purchaseOrders = purchaseOrdersQuery.data?.content ?? []
+  const purchaseOrderValue = purchaseOrders.reduce((sum, item) => sum + Number(item.netValue ?? 0), 0)
 
   const moduleCounts = [
     { name: 'Notas fiscais', count: invoicesQuery.data?.total ?? 0, fill: CHART_COLORS[0] },
@@ -82,6 +96,8 @@ export function MonthlyDashboard() {
     { name: 'Ordens de serviço', count: ordersQuery.data?.total ?? 0, fill: CHART_COLORS[4] },
     { name: 'Atendimentos', count: trackingsQuery.data?.total ?? 0, fill: CHART_COLORS[5] },
     { name: 'Materiais', count: materialsQuery.data?.total ?? 0, fill: CHART_COLORS[6] },
+    { name: 'Contas a pagar', count: payablesQuery.data?.total ?? 0, fill: CHART_COLORS[7] },
+    { name: 'Pedidos de compra', count: purchaseOrdersQuery.data?.total ?? 0, fill: CHART_COLORS[1] },
   ]
   const moduleValues = [
     { name: 'Notas fiscais', value: Number(invoicesQuery.data?.totalValue ?? 0), fill: CHART_COLORS[0] },
@@ -90,12 +106,14 @@ export function MonthlyDashboard() {
     { name: 'Contas a receber', value: receivables.reduce((sum, item) => sum + Number(item.amount ?? 0), 0), fill: CHART_COLORS[3] },
     { name: 'Ordens de serviço', value: orderValue, fill: CHART_COLORS[4] },
     { name: 'Materiais', value: Number(materialsQuery.data?.totalValue ?? 0), fill: CHART_COLORS[6] },
+    { name: 'Contas a pagar', value: payableBalance, fill: CHART_COLORS[7] },
+    { name: 'Pedidos de compra', value: purchaseOrderValue, fill: CHART_COLORS[1] },
   ]
   const activity = [...activeOrders]
     .sort((a, b) => (a.scheduledAt || a.orderedAt || '').localeCompare(b.scheduledAt || b.orderedAt || ''))
     .slice(0, 5)
 
-  const queries = [ordersQuery, receivablesQuery, invoicesQuery, statementsQuery, billsQuery, trackingsQuery, materialsQuery]
+  const queries = [ordersQuery, receivablesQuery, invoicesQuery, statementsQuery, billsQuery, trackingsQuery, materialsQuery, payablesQuery, purchaseOrdersQuery]
   const isLoading = period !== null && queries.some((query) => query.isLoading)
   const isFetching = queries.some((query) => query.isFetching)
   const failedQuery = queries.find((query) => query.isError)
@@ -129,11 +147,12 @@ export function MonthlyDashboard() {
         <StatCard label="Boletos" value={money(Number(billsQuery.data?.totalValue ?? 0))} helper={`${billsQuery.data?.total ?? 0} processados no mês`} icon={<WalletCards />} tone="blue" />
         <StatCard label="Contas a receber" value={money(receivableBalance)} helper={`${pendingReceivables.length} pendentes por vencimento`} icon={<CircleDollarSign />} tone="orange" />
         <StatCard label="Ordens de serviço" value={String(ordersQuery.data?.total ?? 0)} helper={`${finalizedOrders} finalizadas · ${activeOrders.length} em andamento`} icon={<ClipboardCheck />} tone="gold" />
+        <StatCard label="Contas a pagar" value={money(payableBalance)} helper={`${payablesQuery.data?.total ?? 0} títulos por vencimento`} icon={<HandCoins />} tone="orange" />
       </section>
 
       {readyInvoices > 0 && <button className="attention-banner" onClick={() => navigate('/notas-fiscais')}><span className="attention-banner__icon"><FileCheck2 size={21} /></span><span><strong>{readyInvoices} {readyInvoices === 1 ? 'nota está pronta' : 'notas estão prontas'} para emissão em {period.label}</strong><small>Revise os dados fiscais antes de concluir.</small></span><b>Revisar faturamento <ArrowRight size={17} /></b></button>}
 
-      <div className="dashboard-period-scope"><CalendarDays size={16} /><span><strong>Critério da competência:</strong> NF por emissão, extratos pelo período movimentado, boletos por processamento, CR por vencimento e OS por abertura.</span></div>
+      <div className="dashboard-period-scope"><CalendarDays size={16} /><span><strong>Critério da competência:</strong> NF por emissão, extratos pelo período movimentado, boletos por processamento, CR e contas a pagar por vencimento, OS e pedidos por abertura.</span></div>
 
       <section className="dashboard-analytics-grid">
         <DashboardChart title="Movimentações por módulo" eyebrow={period.label} description="Quantidade de registros gerados na competência.">
@@ -160,10 +179,10 @@ export function MonthlyDashboard() {
           <div className="schedule-footer"><ClipboardCheck size={16} /><span><strong>{ordersQuery.data?.total ?? 0}</strong> ordens abertas no mês selecionado</span></div>
         </article>
 
-        <article className="panel closing-panel dashboard-month-summary"><div className="closing-panel__top"><span className="eyebrow">Resumo complementar</span><Badge tone="green">{period.label}</Badge></div><h2>Demais movimentações do mês</h2><p>Indicadores operacionais que complementam o faturamento e a execução dos serviços.</p><div className="detail-metrics"><span><small>Atendimentos</small><strong>{trackingsQuery.data?.total ?? 0}</strong></span><span><small>Tempo apontado</small><strong>{formatMinutes(Number(trackingsQuery.data?.totalQuantity ?? 0))}</strong></span><span><small>Materiais</small><strong>{materialsQuery.data?.total ?? 0}</strong></span><span><small>Valor materiais</small><strong>{money(Number(materialsQuery.data?.totalValue ?? 0))}</strong></span></div><Button variant="secondary" icon={<RefreshCw size={16} />} disabled={isFetching} onClick={refreshAll}>{isFetching ? 'Atualizando...' : 'Atualizar indicadores'}</Button></article>
+        <article className="panel closing-panel dashboard-month-summary"><div className="closing-panel__top"><span className="eyebrow">Resumo complementar</span><Badge tone="green">{period.label}</Badge></div><h2>Compras e operação do mês</h2><p>Indicadores operacionais e financeiros ligados à execução dos serviços.</p><div className="detail-metrics"><span><small>Atendimentos</small><strong>{trackingsQuery.data?.total ?? 0}</strong></span><span><small>Materiais</small><strong>{materialsQuery.data?.total ?? 0}</strong></span><span><small>Pedidos de compra</small><strong>{purchaseOrdersQuery.data?.total ?? 0}</strong></span><span><small>Valor comprado</small><strong>{money(purchaseOrderValue)}</strong></span></div><Button variant="secondary" icon={<RefreshCw size={16} />} disabled={isFetching} onClick={refreshAll}>{isFetching ? 'Atualizando...' : 'Atualizar indicadores'}</Button></article>
       </section>
 
-      <article className="panel quick-panel dashboard-quick-panel"><div className="panel__header"><div><span className="eyebrow">Acesso rápido</span><h2>Detalhar os indicadores</h2></div></div><div className="dashboard-quick-actions"><button onClick={() => navigate('/ordens-de-servico')}><span className="quick-icon quick-icon--blue"><ClipboardCheck /></span><span><strong>Ordens de serviço</strong><small>{ordersQuery.data?.total ?? 0} no mês</small></span><ArrowRight /></button><button onClick={() => navigate('/notas-fiscais')}><span className="quick-icon quick-icon--orange"><ReceiptText /></span><span><strong>Notas fiscais</strong><small>{invoicesQuery.data?.total ?? 0} no mês</small></span><ArrowRight /></button><button onClick={() => navigate('/extratos')}><span className="quick-icon quick-icon--green"><WalletCards /></span><span><strong>Boletos e extratos</strong><small>{billsQuery.data?.total ?? 0} boletos · {statementsQuery.data?.total ?? 0} extratos</small></span><ArrowRight /></button><button onClick={() => navigate('/relatorios')}><span className="quick-icon"><TrendingUp /></span><span><strong>Relatórios</strong><small>Análise detalhada e exportação</small></span><ArrowRight /></button></div></article>
+      <article className="panel quick-panel dashboard-quick-panel"><div className="panel__header"><div><span className="eyebrow">Acesso rápido</span><h2>Detalhar os indicadores</h2></div></div><div className="dashboard-quick-actions"><button onClick={() => navigate('/ordens-de-servico')}><span className="quick-icon quick-icon--blue"><ClipboardCheck /></span><span><strong>Ordens de serviço</strong><small>{ordersQuery.data?.total ?? 0} no mês</small></span><ArrowRight /></button><button onClick={() => navigate('/contas-a-pagar')}><span className="quick-icon quick-icon--orange"><HandCoins /></span><span><strong>Contas a pagar</strong><small>{payablesQuery.data?.total ?? 0} títulos · {money(payableBalance)} em saldo</small></span><ArrowRight /></button><button onClick={() => navigate('/notas-fiscais')}><span className="quick-icon quick-icon--orange"><ReceiptText /></span><span><strong>Notas fiscais</strong><small>{invoicesQuery.data?.total ?? 0} no mês</small></span><ArrowRight /></button><button onClick={() => navigate('/extratos')}><span className="quick-icon quick-icon--green"><WalletCards /></span><span><strong>Boletos e extratos</strong><small>{billsQuery.data?.total ?? 0} boletos · {statementsQuery.data?.total ?? 0} extratos</small></span><ArrowRight /></button><button onClick={() => navigate('/relatorios')}><span className="quick-icon"><TrendingUp /></span><span><strong>Relatórios</strong><small>Análise detalhada e exportação</small></span><ArrowRight /></button></div></article>
     </>
   )
 }
@@ -204,6 +223,16 @@ async function loadMonthlyOrders(startDate: string, endDate: string) {
 async function loadMonthlyReceivables(startDate: string, endDate: string) {
   const first = await api.accountsReceivable.list({ dueStart: startDate, dueEnd: endDate, generatedStatus: 'ALL', paymentStatus: 'ALL', page: 0, size: 500 })
   return collectAllPages(first, (page, size) => api.accountsReceivable.list({ dueStart: startDate, dueEnd: endDate, generatedStatus: 'ALL', paymentStatus: 'ALL', page, size }))
+}
+
+async function loadMonthlyPayables(startDate: string, endDate: string) {
+  const first = await api.payables.list({ startDate, endDate, dateField: 'DUE_DATE', status: 'ALL', page: 0, size: 500 })
+  return collectAllPages(first, (page, size) => api.payables.list({ startDate, endDate, dateField: 'DUE_DATE', status: 'ALL', page, size }))
+}
+
+async function loadMonthlyPurchaseOrders(startDate: string, endDate: string) {
+  const first = await api.purchaseOrders.list({ startDate, endDate, page: 0, size: 500 })
+  return collectAllPages(first, (page, size) => api.purchaseOrders.list({ startDate, endDate, page, size }))
 }
 
 async function collectAllPages<T>(first: PagedResponse<T>, loadPage: (page: number, size: number) => Promise<PagedResponse<T>>) {

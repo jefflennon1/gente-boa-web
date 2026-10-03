@@ -410,6 +410,108 @@ export interface Supplier {
 
 export type SupplierPayload = Omit<Supplier, 'id' | 'registeredAt' | 'document'>
 
+export type PayableStatus = 'OPEN' | 'PAID' | 'CLOSED'
+export type PayableDateField = 'DUE_DATE' | 'PAYMENT_DATE' | 'REGISTRATION_DATE'
+
+export interface PayablePayment {
+  id: number
+  payableId: number
+  paidAt: ISODateTime
+  cashValue: number
+  courtesyValue: number
+  checkValue: number
+  cardValue: number
+  transferValue: number
+  billValue: number
+  totalValue: number
+  movementAccountId: number | null
+  movementAccountName: string | null
+  checkId: number | null
+  notes: string | null
+}
+
+export interface PayableAccount {
+  id: number
+  supplierId: number
+  supplierName: string | null
+  purchaseOrderId: number | null
+  invoiceNumber: string | null
+  serviceOrderId: number | null
+  contractId: number | null
+  orderedAt: ISODateTime | null
+  documentCode: string | null
+  description: string | null
+  notes: string | null
+  amountDue: number
+  amountPaid: number
+  balance: number
+  registeredAt: ISODateTime | null
+  paidAt: ISODateTime | null
+  dueAt: ISODateTime | null
+  status: PayableStatus
+  costCenterId: number | null
+  costCenterName: string | null
+  subCostCenterId: number | null
+  subCostCenterName: string | null
+  movementAccountId: number | null
+  movementAccountName: string | null
+  username: string | null
+  payments: PayablePayment[]
+}
+
+export interface PayableAccountPayload {
+  supplierId: number
+  purchaseOrderId?: number | null
+  invoiceNumber?: string | null
+  serviceOrderId?: number | null
+  contractId?: number | null
+  orderedAt?: ISODateTime | null
+  documentCode?: string | null
+  description: string
+  notes?: string | null
+  amountDue: number
+  registeredAt?: ISODateTime | null
+  dueAt: ISODateTime
+  costCenterId?: number | null
+  subCostCenterId?: number | null
+}
+
+export interface PayablePaymentPayload {
+  paidAt: ISODateTime
+  cashValue: number
+  courtesyValue: number
+  checkValue: number
+  cardValue: number
+  transferValue: number
+  billValue: number
+  movementAccountId: number
+  costCenterId?: number | null
+  subCostCenterId?: number | null
+  checkId?: number | null
+  notes?: string | null
+}
+
+export interface FinancialLookup {
+  id: number
+  name: string | null
+  detail: string | null
+  parentId: number | null
+}
+
+export interface PurchaseOrderListItem {
+  id: number
+  entryDate: ISODateTime | null
+  invoiceNumber: string | null
+  serviceOrderId: number | null
+  supplierId: number | null
+  supplierName: string | null
+  payableId: number | null
+  payableStatus: PayableStatus | null
+  grossValue: number | null
+  netValue: number | null
+  itemCount: number
+}
+
 export interface ServiceOrderMaterialItem {
   itemId?: number | null
   purchaseOrderId?: number | null
@@ -430,6 +532,7 @@ export interface ServiceOrderMaterialOrder {
   supplierId?: number | null
   supplierName?: string | null
   supplierTradeName?: string | null
+  payableId?: number | null
   discountPercentage?: number | null
   freightValue?: number | null
   insuranceValue?: number | null
@@ -441,6 +544,8 @@ export interface ServiceOrderMaterialOrder {
   notes?: string | null
   netValue?: number | null
   grossValue?: number | null
+  payableDueDate?: ISODateTime | null
+  payableStatus?: PayableStatus | null
   items: ServiceOrderMaterialItem[]
 }
 
