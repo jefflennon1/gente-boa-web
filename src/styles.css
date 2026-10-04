@@ -613,6 +613,8 @@ h1, h2, h3, p { margin-top: 0; }
 .os-advanced-filters__fields { padding: 0 16px 16px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 14px; }
 .os-advanced-filters__fields[hidden] { display: none; }
 .os-advanced-filters__fields .search-box { width: 100%; min-width: 0; max-width: none; }
+.os-advanced-filters__fields.collapsible-filter-content--block { display: block; }
+.os-advanced-filters__fields.collapsible-filter-content--block[hidden] { display: none; }
 .data-toolbar--orders { display: grid; grid-template-columns: minmax(240px, 1.35fr) minmax(180px, 1fr); align-items: end; gap: 12px 14px; padding: 16px; }
 .data-toolbar--orders .search-box { width: 100%; min-width: 0; max-width: none; }
 .os-status-filter { grid-column: 1 / -1; width: fit-content; }

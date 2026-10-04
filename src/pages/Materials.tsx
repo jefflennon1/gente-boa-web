@@ -7,7 +7,7 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { useRouter } from '../router'
 import { formatDate, money } from '../lib/format'
 import type { Material, MaterialPayload, Supplier, SupplierPayload } from '../types'
-import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
+import { Badge, Button, CollapsibleFilters, ConfirmDialog, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 export function Materials() {
   const queryClient = useQueryClient()
@@ -175,9 +175,9 @@ export function Materials() {
     </section>
 
     <section className="panel data-panel">
-      <div className="data-toolbar data-toolbar--clients">
+      <CollapsibleFilters summary="Código, material, marca ou unidade" activeCount={search.trim() ? 1 : 0} onClear={() => { setSearch(''); setPage(0) }} contentClassName="data-toolbar data-toolbar--clients">
         <div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }} placeholder="Buscar por código, material, marca ou unidade..." /></div>
-      </div>
+      </CollapsibleFilters>
 
       {materialsQuery.isLoading ? <LoadingState label="Carregando materiais..." /> : materialsQuery.isError ? <ErrorState message={apiErrorMessage(materialsQuery.error)} onRetry={() => materialsQuery.refetch()} /> : materials.length === 0 ? <EmptyState title="Nenhum material encontrado" description="Altere a busca ou cadastre um novo material." /> : <div className={`table-wrap ${materialsQuery.isFetching ? 'table-wrap--refreshing' : ''}`}>
         <table className="data-table materials-table"><thead><tr><th>Código</th><th>Material</th><th>Marca</th><th>Fornecedor</th><th>Unidade</th><th>Estoque mínimo</th><th>Estoque atual</th><th>Valor unitário</th><th /></tr></thead><tbody>{materials.map((material) => <tr key={material.id} onClick={() => openEdit(material)}>

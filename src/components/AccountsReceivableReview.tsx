@@ -6,7 +6,7 @@ import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { formatDate, money } from '../lib/format'
 import type { AccountsReceivableListItem, BillDetail, ClientBillingContext } from '../types'
-import { Badge, Button, DetailModal, EmptyState, ErrorState, FormField, LoadingState, Modal, StatCard } from './ui'
+import { Badge, Button, CollapsibleFilters, DetailModal, EmptyState, ErrorState, FormField, LoadingState, Modal, StatCard } from './ui'
 import { AccountsReceivableHourBalance } from './AccountsReceivableHourBalance'
 import { ClientHourTracking } from './ClientHourTracking'
 
@@ -190,7 +190,7 @@ export function AccountsReceivableReview({ showToast }: { showToast: (message: s
     </section>
 
     <section className="panel data-panel bill-panel">
-      <div className="billing-filter-panel">
+      <CollapsibleFilters summary="Cliente, faturamento, geração, pagamento e competência" contentClassName="billing-filter-panel collapsible-filter-content--block">
         <div className="billing-filter-panel__heading"><div><strong>Competência de boletos</strong><small>Ordens finalizadas e cobranças do período, com ou sem boleto gerado.</small></div><Badge tone="orange">Faturamento mensal</Badge></div>
         <div className="billing-filter-grid receivable-filter-grid">
           <label className="billing-filter-group"><span>Cliente ou código</span><div className="search-box"><Search size={18} /><input value={search} onChange={(event) => changeFilter(() => setSearch(event.target.value))} placeholder="CR, cliente, CPF/CNPJ, contrato, boleto ou OS" /></div></label>
@@ -203,7 +203,7 @@ export function AccountsReceivableReview({ showToast }: { showToast: (message: s
         <div className="billing-search-row billing-search-row--actions"><Button variant="ghost" onClick={() => changeFilter(() => { setDueStart(initialPeriod.startDate); setDueEnd(initialPeriod.endDate); setDueDay(''); setBillingType('ALL'); setGeneratedStatus('PENDING'); setPaymentStatus('PENDING'); setSearch('') })}>Limpar filtros</Button></div>
         <div className="receivable-actions"><span><strong>{selectedRows.length}</strong> registro(s) selecionado(s)</span><div><Button type="button" variant="secondary" onClick={openIss}>Lançar ISS retido</Button><Button type="button" disabled={selectedRows.length === 0 || generateMutation.isPending} onClick={() => generateMutation.mutate(selectedRows.map((item) => item.id))}>{generateMutation.isPending ? 'Gerando...' : `Gerar boletos em lote (${selectedRows.length})`}</Button></div></div>
         {actionError && <div className="receivable-action-error" role="alert">{actionError}</div>}
-      </div>
+      </CollapsibleFilters>
 
       {query.isLoading ? <LoadingState label="Carregando competência de boletos..." /> : query.isError ? <ErrorState message={apiErrorMessage(query.error)} onRetry={() => query.refetch()} /> : rows.length === 0 ? <EmptyState title="Nenhum registro encontrado na competência" description="Finalize uma OS ou ajuste o período e os filtros de faturamento." /> : <div className="table-wrap"><table className="data-table receivable-table"><thead><tr><th><input type="checkbox" checked={rows.some((row) => !row.generated) && rows.filter((row) => !row.generated).every((row) => Boolean(selected[row.id]))} onChange={togglePage} aria-label="Marcar todos os registros pendentes desta página" /></th><th>CR</th><th>Cliente</th><th>Contrato</th><th>OS</th><th>Descrição</th><th>Cadastro</th><th>Vencimento</th><th>Valor</th><th>Saldo</th><th>Situação</th><th /></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className={selected[row.id] ? 'receivable-row--selected' : ''} onClick={() => openPreview(row)}>
         <td><input type="checkbox" checked={Boolean(selected[row.id])} disabled={row.generated} onChange={() => toggle(row)} onClick={(event) => event.stopPropagation()} aria-label={`Selecionar conta a receber ${row.id}`} /></td>

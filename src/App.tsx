@@ -34,6 +34,23 @@ export default function App() {
   const PublicPage = publicPages[pathname]
 
   useEffect(() => {
+    function preventEnterFormSubmission(event: KeyboardEvent) {
+      if (event.key !== 'Enter' || event.isComposing || event.defaultPrevented) return
+
+      const target = event.target
+      if (!(target instanceof HTMLElement) || target instanceof HTMLTextAreaElement || target.isContentEditable) return
+
+      const form = target.closest('form')
+      if (!form || form.dataset.allowEnterSubmit === 'true') return
+
+      event.preventDefault()
+    }
+
+    document.addEventListener('keydown', preventEnterFormSubmission, true)
+    return () => document.removeEventListener('keydown', preventEnterFormSubmission, true)
+  }, [])
+
+  useEffect(() => {
     if (PublicPage) return
     if (!isAuthenticated && pathname !== '/login') navigate('/login', { replace: true })
     else if (isAuthenticated && pathname === '/login') navigate('/', { replace: true })

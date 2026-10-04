@@ -3,7 +3,7 @@ import { Building2, ChevronLeft, ChevronRight, Edit3, HandCoins, MapPin, Phone, 
 import { useState } from 'react'
 import { apiErrorMessage } from '../api/client'
 import { api, queryKeys } from '../api/services'
-import { Button, ConfirmDialog, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
+import { Button, CollapsibleFilters, ConfirmDialog, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import type { Supplier, SupplierPayload } from '../types'
 import { useRouter } from '../router'
@@ -134,9 +134,9 @@ export function Suppliers() {
     </section>
 
     <section className="panel data-panel">
-      <div className="data-toolbar data-toolbar--clients">
+      <CollapsibleFilters summary="Código, nome, documento, cidade ou contato" activeCount={search.trim() ? 1 : 0} onClear={() => { setSearch(''); setPage(0) }} contentClassName="data-toolbar data-toolbar--clients">
         <div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }} placeholder="Buscar por código, nome, documento, cidade ou contato..." /></div>
-      </div>
+      </CollapsibleFilters>
 
       {suppliersQuery.isLoading ? <LoadingState label="Carregando fornecedores..." /> : suppliersQuery.isError ? <ErrorState message={apiErrorMessage(suppliersQuery.error)} onRetry={() => suppliersQuery.refetch()} /> : suppliers.length === 0 ? <EmptyState title="Nenhum fornecedor encontrado" description="Altere a busca ou cadastre um novo fornecedor." /> : <div className={`table-wrap ${suppliersQuery.isFetching ? 'table-wrap--refreshing' : ''}`}>
         <table className="data-table suppliers-table"><thead><tr><th>Código</th><th>Fornecedor</th><th>Documento</th><th>Tipo</th><th>Cidade / UF</th><th>Telefone</th><th>Contato</th><th /></tr></thead><tbody>{suppliers.map((supplier) => <tr key={supplier.id} onClick={() => openEdit(supplier)}>

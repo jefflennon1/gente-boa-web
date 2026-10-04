@@ -3,7 +3,7 @@ import { Banknote, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, Ed
 import { useMemo, useState } from 'react'
 import { apiErrorMessage } from '../api/client'
 import { api, queryKeys } from '../api/services'
-import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
+import { Badge, Button, CollapsibleFilters, ConfirmDialog, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { formatDate, money } from '../lib/format'
 import { useRouter } from '../router'
@@ -158,14 +158,14 @@ export function AccountsPayable() {
     </section>
 
     <section className="panel data-panel">
-      <div className="payables-toolbar">
+      <CollapsibleFilters summary="Descrição, fornecedor, período e situação" activeCount={[search, supplierId, startDate, endDate].filter(Boolean).length + (dateField !== 'DUE_DATE' ? 1 : 0) + (status !== 'ALL' ? 1 : 0)} onClear={() => { setSearch(''); setSupplierId(''); setStartDate(''); setEndDate(''); setDateField('DUE_DATE'); setStatus('ALL'); setPage(0) }} contentClassName="payables-toolbar">
         <div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }} placeholder="Código, descrição, pedido, OS ou nota fiscal..." /></div>
         <label><span>Fornecedor</span><select value={supplierId} onChange={(event) => { setSupplierId(event.target.value); setPage(0) }}><option value="">Todos</option>{filterSuppliersQuery.data?.content.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplierDisplay(supplier)}</option>)}</select></label>
         <label><span>Data de</span><select value={dateField} onChange={(event) => { setDateField(event.target.value as PayableDateField); setPage(0) }}><option value="DUE_DATE">Vencimento</option><option value="PAYMENT_DATE">Pagamento</option><option value="REGISTRATION_DATE">Cadastro</option></select></label>
         <label><span>De</span><input type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); setPage(0) }} /></label>
         <label><span>Até</span><input type="date" value={endDate} onChange={(event) => { setEndDate(event.target.value); setPage(0) }} /></label>
         <label><span>Status</span><select value={status} onChange={(event) => { setStatus(event.target.value as typeof status); setPage(0) }}><option value="OPEN">Em aberto</option><option value="PAID">Quitadas</option><option value="CLOSED">Fechadas</option><option value="ALL">Todas</option></select></label>
-      </div>
+      </CollapsibleFilters>
 
       {accountsQuery.isLoading ? <LoadingState label="Carregando contas a pagar..." /> : accountsQuery.isError ? <ErrorState message={apiErrorMessage(accountsQuery.error)} onRetry={() => accountsQuery.refetch()} /> : accounts.length === 0 ? <EmptyState title="Nenhuma conta encontrada" description="Altere os filtros ou cadastre uma nova conta a pagar." /> : <div className={`table-wrap ${accountsQuery.isFetching ? 'table-wrap--refreshing' : ''}`}>
         <table className="data-table payables-table"><thead><tr><th>Código</th><th>Descrição</th><th>Fornecedor</th><th>Pedido / OS</th><th>Vencimento</th><th>Pagamento</th><th>Devido</th><th>Pago</th><th>Saldo</th><th>Status</th><th /></tr></thead><tbody>{accounts.map((account) => <tr key={account.id} onClick={() => openEdit(account)}>

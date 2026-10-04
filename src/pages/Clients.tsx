@@ -8,7 +8,7 @@ import { useRouter } from '../router'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money } from '../lib/format'
 import type { Client, ClientAddress, ClientAddressPayload, ClientKind, ClientListSortBy, ClientPayload, SortDirection } from '../types'
-import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
+import { Badge, Button, CollapsibleFilters, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 const referralDescriptionsQueryKey = [...queryKeys.clients, 'referral-descriptions'] as const
 
@@ -500,14 +500,14 @@ export function Clients() {
       </section>
 
       <section className="panel data-panel">
-        <div className="data-toolbar data-toolbar--clients">
+        <CollapsibleFilters summary="Nome, código, CPF, CNPJ e ordenação" activeCount={[search, clientCode, cpfFilter, cnpjFilter, sortBy].filter(Boolean).length} onClear={() => { setSearch(''); setClientCode(''); setCpfFilter(''); setCnpjFilter(''); setSortBy(''); setDirection('ASC'); resetPage() }} contentClassName="data-toolbar data-toolbar--clients">
           <label className="structured-filter-field"><span>Nome do cliente</span><div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); resetPage() }} placeholder="Razão social ou nome fantasia" /></div></label>
           <label className="structured-filter-field"><span>Código do cliente</span><input type="number" min="1" value={clientCode} onChange={(event) => { setClientCode(event.target.value); resetPage() }} placeholder="Ex.: 5035" /></label>
           <label className="structured-filter-field"><span>CPF</span><input inputMode="numeric" value={cpfFilter} onChange={(event) => { setCpfFilter(event.target.value.replace(/\D/g, '')); resetPage() }} placeholder="Somente números" /></label>
           <label className="structured-filter-field"><span>CNPJ</span><input inputMode="numeric" value={cnpjFilter} onChange={(event) => { setCnpjFilter(event.target.value.replace(/\D/g, '')); resetPage() }} placeholder="Somente números" /></label>
           <label className="toolbar-select"><span>Ordenar por</span><select value={sortBy} onChange={(event) => { setSortBy(event.target.value as '' | ClientListSortBy); resetPage() }}>{sortOptions.map((option) => <option key={option.value || 'default'} value={option.value}>{option.label}</option>)}</select></label>
           <label className="toolbar-select toolbar-select--compact"><span>Direção</span><select value={direction} disabled={!sortBy} onChange={(event) => { setDirection(event.target.value as SortDirection); resetPage() }}><option value="ASC">Crescente</option><option value="DESC">Decrescente</option></select></label>
-        </div>
+        </CollapsibleFilters>
 
         {clientsQuery.isLoading ? <LoadingState label="Carregando clientes..." /> : clientsQuery.isError ? <ErrorState message={apiErrorMessage(clientsQuery.error)} onRetry={() => clientsQuery.refetch()} /> : clients.length === 0 ? <EmptyState title="Nenhum cliente encontrado" description="Altere os filtros ou cadastre um novo cliente." /> : (
           <div className={`table-wrap ${clientsQuery.isFetching ? 'table-wrap--refreshing' : ''}`}>

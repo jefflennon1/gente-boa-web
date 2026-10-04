@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, Mail, Search, Send } from 'lucide-react'
 import { useState } from 'react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
-import { Badge, Button, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, PageHeader, Toast } from '../components/ui'
+import { Badge, Button, CollapsibleFilters, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, PageHeader, Toast } from '../components/ui'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { formatDate } from '../lib/format'
 import type { ClientEmailPayload } from '../types'
@@ -83,10 +83,10 @@ export function ClientEmailsPage() {
     />
 
     <section className="panel data-panel client-emails-panel">
-      <div className="data-toolbar data-toolbar--clients">
+      <CollapsibleFilters summary="Código, nome, CPF ou CNPJ" activeCount={search.trim() ? 1 : 0} onClear={() => { setSearch(''); setPage(0) }} contentClassName="data-toolbar data-toolbar--clients">
         <div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }} placeholder="Buscar por código, nome fantasia, razão social, CPF ou CNPJ..." /></div>
         <span className="client-emails-total"><strong>{total.toLocaleString('pt-BR')}</strong> clientes</span>
-      </div>
+      </CollapsibleFilters>
 
       {clientsQuery.isLoading ? <LoadingState label="Carregando clientes..." /> : clientsQuery.isError ? <ErrorState message={apiErrorMessage(clientsQuery.error)} onRetry={() => clientsQuery.refetch()} /> : clients.length === 0 ? <EmptyState title="Nenhum cliente encontrado" description="Altere os termos da busca." /> : <div className={`table-wrap ${clientsQuery.isFetching ? 'table-wrap--refreshing' : ''}`}>
         <table className="data-table client-emails-table">

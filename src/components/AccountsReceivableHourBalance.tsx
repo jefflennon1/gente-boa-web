@@ -4,7 +4,7 @@ import { AlertTriangle, ChevronLeft, ChevronRight, Clock3, RefreshCw, Search, Ti
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
-import { Badge, Button, EmptyState, ErrorState, LoadingState, StatCard } from './ui'
+import { Badge, Button, CollapsibleFilters, EmptyState, ErrorState, LoadingState, StatCard } from './ui'
 
 export function AccountsReceivableHourBalance() {
   const [referenceMonth, setReferenceMonth] = useState(currentReferenceMonth)
@@ -75,7 +75,7 @@ export function AccountsReceivableHourBalance() {
     </section>
 
     <section className="panel data-panel hour-balance-panel">
-      <div className="billing-filter-panel">
+      <CollapsibleFilters summary="Cliente, contrato ou mês de referência" activeCount={(search.trim() ? 1 : 0) + (referenceMonth !== currentReferenceMonth() ? 1 : 0)} onClear={() => { setSearch(''); setReferenceMonth(currentReferenceMonth()); setPage(0) }} contentClassName="billing-filter-panel collapsible-filter-content--block">
         <div className="billing-filter-panel__heading">
           <div><strong>Acompanhamento de saldo de horas</strong><small>Compare as horas contratadas com as utilizadas antes de faturar as contas do cliente.</small></div>
           <Badge tone="blue">Conferência mensal</Badge>
@@ -85,7 +85,7 @@ export function AccountsReceivableHourBalance() {
           <label className="billing-filter-group"><span>Mês de referência</span><input type="month" value={referenceMonth} onChange={(event) => changeFilter(() => setReferenceMonth(event.target.value))} /></label>
           <Button type="button" variant="secondary" icon={<RefreshCw size={16} />} disabled={contractsQuery.isFetching || balancesFetching} onClick={refresh}>{contractsQuery.isFetching || balancesFetching ? 'Atualizando...' : 'Atualizar saldos'}</Button>
         </div>
-      </div>
+      </CollapsibleFilters>
 
       {!period ? <EmptyState title="Mês de referência inválido" description="Selecione o mês que deseja conferir." /> : contractsQuery.isLoading ? <LoadingState label="Carregando contratos ativos..." /> : contractsQuery.isError ? <ErrorState message={apiErrorMessage(contractsQuery.error)} onRetry={() => contractsQuery.refetch()} /> : rows.length === 0 ? <EmptyState title="Nenhum contrato ativo encontrado" description="Ajuste o mês ou a busca para consultar outros contratos." /> : <>
         <div className="hour-balance-help"><AlertTriangle size={16} /><span>Saldo negativo indica que as horas utilizadas ultrapassaram as contratadas. Confira as OS do mês antes de gerar o boleto.</span></div>

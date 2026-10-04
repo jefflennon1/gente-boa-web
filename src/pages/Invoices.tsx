@@ -6,7 +6,7 @@ import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money, toDateInput } from '../lib/format'
 import type { Invoice, InvoicePayload, InvoiceStatus } from '../types'
-import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
+import { Badge, Button, CollapsibleFilters, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 const steps = [
   { label: 'Fechamento', detail: 'Dados conferidos', icon: CheckCircle2 },
@@ -176,7 +176,7 @@ export function Invoices() {
       </section>
 
       <section className="panel data-panel invoice-panel">
-        <div className="data-toolbar"><div className="segmented-control">{(['Pendentes', 'Emitidas', 'Todas'] as const).map((item) => <button key={item} className={tab === item ? 'active' : ''} onClick={() => { setTab(item); setSelectedIds([]) }}>{item}</button>)}</div><div className="search-box search-box--push"><Search size={18} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar cliente, documento ou nota..." /></div></div>
+        <CollapsibleFilters summary="Situação, cliente, documento ou nota" activeCount={(search.trim() ? 1 : 0) + (tab !== 'Pendentes' ? 1 : 0)} onClear={() => { setSearch(''); setTab('Pendentes'); setSelectedIds([]) }} contentClassName="data-toolbar"><div className="segmented-control">{(['Pendentes', 'Emitidas', 'Todas'] as const).map((item) => <button key={item} className={tab === item ? 'active' : ''} onClick={() => { setTab(item); setSelectedIds([]) }}>{item}</button>)}</div><div className="search-box search-box--push"><Search size={18} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar cliente, documento ou nota..." /></div></CollapsibleFilters>
         {selectedIds.length > 0 && <div className="selection-bar"><span><Check size={16} />{selectedIds.length} {selectedIds.length === 1 ? 'nota selecionada' : 'notas selecionadas'}</span><button onClick={() => setSelectedIds([])}>Limpar seleção</button></div>}
 
         {invoicesQuery.isLoading ? <LoadingState label="Carregando notas fiscais..." /> : invoicesQuery.isError ? <ErrorState message={apiErrorMessage(invoicesQuery.error)} onRetry={() => invoicesQuery.refetch()} /> : filtered.length === 0 ? <EmptyState title="Nenhuma nota encontrada" description="Altere os filtros ou cadastre uma nota fiscal." /> : (

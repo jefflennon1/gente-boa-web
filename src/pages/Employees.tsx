@@ -6,7 +6,7 @@ import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { formatDate } from '../lib/format'
 import type { Employee, EmployeePayload } from '../types'
-import { Button, ConfirmDialog, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
+import { Button, CollapsibleFilters, ConfirmDialog, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 function dateTimeInput(value?: string | null) {
   return value ? value.slice(0, 16) : ''
@@ -141,9 +141,9 @@ export function Employees() {
     </section>
 
     <section className="panel data-panel">
-      <div className="data-toolbar data-toolbar--clients">
+      <CollapsibleFilters summary="Código, nome, apelido, cargo ou CPF" activeCount={search.trim() ? 1 : 0} onClear={() => { setSearch(''); setPage(0) }} contentClassName="data-toolbar data-toolbar--clients">
         <div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }} placeholder="Buscar por código, nome, apelido, cargo ou CPF..." /></div>
-      </div>
+      </CollapsibleFilters>
 
       {employeesQuery.isLoading ? <LoadingState label="Carregando funcionários..." /> : employeesQuery.isError ? <ErrorState message={apiErrorMessage(employeesQuery.error)} onRetry={() => employeesQuery.refetch()} /> : employees.length === 0 ? <EmptyState title="Nenhum funcionário encontrado" description="Altere a busca ou cadastre um novo funcionário." /> : <div className={`table-wrap ${employeesQuery.isFetching ? 'table-wrap--refreshing' : ''}`}>
         <table className="data-table employees-table"><thead><tr><th>Código</th><th>Funcionário</th><th>Cargo</th><th>Telefone</th><th>E-mail</th><th>Contratação</th><th>Disponibilidade</th><th /></tr></thead><tbody>{employees.map((employee) => <tr key={employee.id} onClick={() => openEdit(employee)}>

@@ -6,7 +6,7 @@ import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money } from '../lib/format'
 import type { BillDetail, BillListItem, ClientBillingContext, ClientStatementDetail, ClientStatementSummary } from '../types'
-import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, LoadingState, Modal, PageHeader, StatCard, Toast } from '../components/ui'
+import { Badge, Button, CollapsibleFilters, ConfirmDialog, DetailModal, EmptyState, ErrorState, LoadingState, Modal, PageHeader, StatCard, Toast } from '../components/ui'
 import { AccountsReceivableReview } from '../components/AccountsReceivableReview'
 import { ClientHourTracking } from '../components/ClientHourTracking'
 
@@ -157,7 +157,7 @@ export function Statements() {
     </section>
 
     <section className="panel data-panel bill-panel">
-      <div className="billing-filter-panel">
+      <CollapsibleFilters summary="Cliente, boleto, OS, contrato, documentos, situação e períodos" contentClassName="billing-filter-panel collapsible-filter-content--block">
         <div className="billing-filter-panel__heading"><div><strong>Visualização do faturamento</strong><small>Consulte contratos fixos e atendimentos avulsos antes do vencimento.</small></div><Badge tone="green">Boletos gerados</Badge></div>
         <div className="billing-filter-grid">
           <label className="billing-filter-group"><span>Nome do cliente</span><div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }} placeholder="Razão social ou nome fantasia" /></div></label>
@@ -173,7 +173,7 @@ export function Statements() {
           <label className="billing-filter-group billing-filter-group--dates"><span>Vencimento</span><div><input type="date" value={billDueStart} max={billDueEnd || undefined} onChange={(event) => { setBillDueStart(event.target.value); setPage(0) }} /><i>até</i><input type="date" value={billDueEnd} min={billDueStart || undefined} onChange={(event) => { setBillDueEnd(event.target.value); setPage(0) }} /></div></label>
         </div>
         <div className="billing-search-row billing-search-row--actions"><Button variant="ghost" onClick={() => { setBillOrderStart(''); setBillOrderEnd(''); setBillDueStart(''); setBillDueEnd(''); setBillDueDay(''); setBillingType('ALL'); setPaymentStatus('ALL'); setSearch(''); setBillCpf(''); setBillCnpj(''); setBillNumber(''); setBillServiceOrder(''); setBillContract(''); setPage(0) }}>Limpar filtros</Button></div>
-      </div>
+      </CollapsibleFilters>
       {billsQuery.isLoading ? <LoadingState label="Carregando boletos..." /> : billsQuery.isError ? <ErrorState message={apiErrorMessage(billsQuery.error)} onRetry={() => billsQuery.refetch()} /> : bills.length === 0 ? <EmptyState title="Nenhum boleto encontrado" description="Os boletos serão gerados quando uma ordem de serviço for finalizada." /> : <div className="table-wrap"><table className="data-table bill-table"><thead><tr><th>Boleto</th><th>OS</th><th>Cliente</th><th>Contrato</th><th>Data cadastro</th><th>Processamento</th><th>Vencimento</th><th>Valor</th><th>Enviado e-mail</th><th>Pagamento</th><th>PDF</th><th /></tr></thead><tbody>{bills.map((bill) => <tr key={bill.id} onClick={() => setDetailId(bill.id)}>
         <td><strong>#{bill.number || bill.id}</strong><small className="table-secondary">Registro {bill.id}</small></td>
         <td><strong>{bill.serviceOrderId || 'CR'}</strong></td>
@@ -325,7 +325,7 @@ function ClientStatementsTab({ showToast }: { showToast: (message: string) => vo
     </section>
 
     <section className="panel data-panel client-statement-panel">
-      <div className="data-toolbar client-statement-toolbar">
+      <CollapsibleFilters summary="Cliente, local, documentos e período" activeCount={[search, clientCode, attendanceLocation, cpfFilter, cnpjFilter, startDate, endDate].filter(Boolean).length} onClear={() => { setSearch(''); setClientCode(''); setAttendanceLocation(''); setCpfFilter(''); setCnpjFilter(''); setStartDate(''); setEndDate(''); setPage(0); setDetailClientId(null) }} contentClassName="data-toolbar client-statement-toolbar">
         <label className="structured-filter-field"><span>Nome do cliente</span><div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }} placeholder="Razão social ou nome fantasia" /></div></label>
         <label className="structured-filter-field"><span>Código do cliente</span><input type="number" min="1" value={clientCode} onChange={(event) => { setClientCode(event.target.value); setPage(0) }} /></label>
         <label className="structured-filter-field structured-filter-field--wide"><span>Local de atendimento</span><input value={attendanceLocation} onChange={(event) => { setAttendanceLocation(event.target.value); setPage(0) }} placeholder="Nome, endereço ou bairro" /></label>
@@ -333,7 +333,7 @@ function ClientStatementsTab({ showToast }: { showToast: (message: string) => vo
         <label className="structured-filter-field"><span>CNPJ</span><input inputMode="numeric" value={cnpjFilter} onChange={(event) => { setCnpjFilter(event.target.value.replace(/\D/g, '')); setPage(0) }} /></label>
         <label className="statement-date-field"><span>De</span><input type="date" value={startDate} max={endDate || undefined} onChange={(event) => changePeriod(setStartDate, event.target.value)} /></label>
         <label className="statement-date-field"><span>Até</span><input type="date" value={endDate} min={startDate || undefined} onChange={(event) => changePeriod(setEndDate, event.target.value)} /></label>
-      </div>
+      </CollapsibleFilters>
       {!validPeriod ? <EmptyState title="Período inválido" description="A data inicial deve ser anterior ou igual à data final." /> : statementsQuery.isLoading ? <LoadingState label="Consolidando extratos dos clientes..." /> : statementsQuery.isError ? <ErrorState message={apiErrorMessage(statementsQuery.error)} onRetry={() => statementsQuery.refetch()} /> : statements.length === 0 ? <EmptyState title="Nenhum extrato encontrado" description="Não existem ordens de serviço para os clientes no período selecionado." /> : <div className="table-wrap"><table className="data-table client-statement-table"><thead><tr><th>Cliente</th><th>Contrato</th><th>Período</th><th>Contratado</th><th>Utilizado</th><th>Saldo</th><th>Excedente</th><th>OS</th><th>Locais</th><th>Serviços</th><th>Total</th><th>PDF</th><th /></tr></thead><tbody>{statements.map((statement) => <tr key={statement.clientId} onClick={() => setDetailClientId(statement.clientId)}>
         <td><strong className="table-primary">{statement.clientTradeName || statement.clientName || `Cliente #${statement.clientId}`}</strong><small className="table-secondary">{statement.clientTradeName && statement.clientName ? statement.clientName : statement.clientDocument || `Código ${statement.clientId}`}</small></td>
         <td>{statement.contractId ? `#${statement.contractId}` : <Badge tone="neutral">Avulso</Badge>}</td>

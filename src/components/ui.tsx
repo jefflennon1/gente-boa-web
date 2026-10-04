@@ -1,5 +1,6 @@
+import { useId, useState } from 'react'
 import type { ButtonHTMLAttributes, FormEvent, ReactNode } from 'react'
-import { AlertTriangle, CheckCircle2, LoaderCircle, RefreshCw, Trash2, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronRight, LoaderCircle, RefreshCw, Search, Trash2, X } from 'lucide-react'
 
 export function PageHeader({ eyebrow, title, subtitle, actions }: { eyebrow?: string; title: string; subtitle: string; actions?: ReactNode }) {
   return (
@@ -33,6 +34,26 @@ export function StatCard({ label, value, helper, icon, tone = 'blue' }: { label:
         <small>{helper}</small>
       </div>
     </article>
+  )
+}
+
+export function CollapsibleFilters({ children, summary = 'Abra para informar os critérios de pesquisa', activeCount = 0, onClear, contentClassName = '', title = 'Filtros avançados' }: { children: ReactNode; summary?: string; activeCount?: number; onClear?: () => void; contentClassName?: string; title?: string }) {
+  const [open, setOpen] = useState(false)
+  const contentId = useId()
+  const helper = activeCount > 0 ? `${activeCount} ${activeCount === 1 ? 'filtro informado' : 'filtros informados'}` : summary
+
+  return (
+    <div className={`os-advanced-filters ${open ? 'is-open' : ''}`}>
+      <div className="os-advanced-filters__header">
+        <button type="button" className="os-advanced-filters__trigger" aria-expanded={open} aria-controls={contentId} onClick={() => setOpen((value) => !value)}>
+          <span className="os-advanced-filters__icon"><Search size={17} /></span>
+          <span><strong>{title}</strong><small>{helper}</small></span>
+          <ChevronRight size={18} />
+        </button>
+        {activeCount > 0 && onClear && <button type="button" className="os-advanced-filters__clear" onClick={onClear}>Limpar filtros</button>}
+      </div>
+      <div id={contentId} className={`os-advanced-filters__fields ${contentClassName}`.trim()} hidden={!open}>{children}</div>
+    </div>
   )
 }
 

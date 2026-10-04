@@ -40,6 +40,7 @@ import type {
 import {
   Badge,
   Button,
+  CollapsibleFilters,
   ConfirmDialog,
   DetailModal,
   EmptyState,
@@ -729,14 +730,14 @@ export function NationalInvoices() {
       </section>
 
       <section className="panel data-panel invoice-panel">
-        <div className="structured-filters structured-filters--invoices">
+        <CollapsibleFilters summary="Cliente, número, CPF, CNPJ ou período de emissão" activeCount={[search, invoiceNumberFilter, cpfFilter, cnpjFilter, issueStart, issueEnd].filter(Boolean).length} onClear={() => { setSearch(''); setInvoiceNumberFilter(''); setCpfFilter(''); setCnpjFilter(''); setIssueStart(''); setIssueEnd(''); setPage(0) }} contentClassName="structured-filters structured-filters--invoices">
           <label><span>Nome do cliente</span><div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }} placeholder="Razão social ou nome fantasia" /></div></label>
           <label><span>Número da nota</span><input value={invoiceNumberFilter} onChange={(event) => { setInvoiceNumberFilter(event.target.value); setPage(0) }} /></label>
           <label><span>CPF</span><input inputMode="numeric" value={cpfFilter} onChange={(event) => { setCpfFilter(event.target.value.replace(/\D/g, '')); setPage(0) }} /></label>
           <label><span>CNPJ</span><input inputMode="numeric" value={cnpjFilter} onChange={(event) => { setCnpjFilter(event.target.value.replace(/\D/g, '')); setPage(0) }} /></label>
           <label><span>Emissão de</span><input type="date" value={issueStart} max={issueEnd || undefined} onChange={(event) => { setIssueStart(event.target.value); setPage(0) }} /></label>
           <label><span>Emissão até</span><input type="date" value={issueEnd} min={issueStart || undefined} onChange={(event) => { setIssueEnd(event.target.value); setPage(0) }} /></label>
-        </div>
+        </CollapsibleFilters>
         <div className="data-toolbar">
           <div className="segmented-control">
             {(['Pendentes', 'Emitidas', 'Canceladas', 'Todas'] as const).map((item) => (

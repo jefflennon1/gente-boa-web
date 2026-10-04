@@ -7,7 +7,7 @@ import { useRouter } from '../router'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money, toDateInput, toDateTimeInput } from '../lib/format'
 import type { ClientSearchOption, Contract, ContractListSortBy, ContractPayload, ContractServiceItem, ContractServicePayload, Employee, SortDirection, Supplier } from '../types'
-import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
+import { Badge, Button, CollapsibleFilters, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 type StatusFilter = 'TODOS' | 'ATIVO' | 'CANCELADO'
 
@@ -593,12 +593,12 @@ export function Contracts() {
 
       <section className="panel data-panel">
         {clientFilter !== null && <div className="contract-client-filter"><span className="contract-client-filter__icon"><Building2 size={17} /></span><div><small>Contratos filtrados por cliente</small><strong>{filteredClientQuery.isLoading ? `Carregando cliente #${clientFilter}...` : filteredClientName}</strong></div><button onClick={() => navigate('/contratos', { replace: true })}>Remover filtro <X size={15} /></button></div>}
-        <div className="data-toolbar data-toolbar--clients">
+        <CollapsibleFilters summary="Cliente, situação e ordenação" activeCount={(search.trim() ? 1 : 0) + (statusFilter !== 'TODOS' ? 1 : 0) + (sortBy !== 'CONTRACT_DATE' || direction !== 'DESC' ? 1 : 0)} onClear={() => { setSearch(''); setStatusFilter('TODOS'); setSortBy('CONTRACT_DATE'); setDirection('DESC'); resetPage() }} contentClassName="data-toolbar data-toolbar--clients">
           <label className="structured-filter-field"><span>Cliente ou contrato</span><div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); resetPage() }} placeholder="Nome, código do cliente ou contrato" /></div></label>
           <div className="structured-filter-field"><span>Situação</span><div className="segmented-control" aria-label="Filtrar contratos">{(['TODOS', 'ATIVO', 'CANCELADO'] as const).map((item) => <button key={item} className={statusFilter === item ? 'active' : ''} onClick={() => { setStatusFilter(item); resetPage() }}>{item === 'TODOS' ? 'Todos' : item === 'ATIVO' ? 'Ativos' : 'Cancelados'}</button>)}</div></div>
           <label className="toolbar-select"><span>Ordenar por</span><select value={sortBy} onChange={(event) => { setSortBy(event.target.value as ContractListSortBy); resetPage() }}>{sortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
           <label className="toolbar-select toolbar-select--compact"><span>Direção</span><select value={direction} onChange={(event) => { setDirection(event.target.value as SortDirection); resetPage() }}><option value="ASC">Crescente</option><option value="DESC">Decrescente</option></select></label>
-        </div>
+        </CollapsibleFilters>
 
         {contractsQuery.isLoading ? <LoadingState label="Carregando contratos..." /> : contractsQuery.isError ? <ErrorState message={apiErrorMessage(contractsQuery.error)} onRetry={() => contractsQuery.refetch()} /> : contracts.length === 0 ? <EmptyState title="Nenhum contrato encontrado" description="Altere os filtros ou cadastre um novo contrato." /> : (
           <div className={`table-wrap ${contractsQuery.isFetching ? 'table-wrap--refreshing' : ''}`}>

@@ -7,7 +7,7 @@ import { useAuth } from '../auth'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, initials } from '../lib/format'
 import type { AppUser, CreateUserPayload, UpdateUserPayload, UserRole, UserStatus } from '../types'
-import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
+import { Badge, Button, CollapsibleFilters, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 const permissionOptions = ['Dashboard', 'Clientes', 'Ordens de servico', 'Financeiro', 'Notas fiscais', 'Relatorios', 'Usuarios']
 
@@ -131,7 +131,7 @@ export function Users() {
       </section>
 
       <section className="panel data-panel">
-        <div className="data-toolbar"><div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }} placeholder="Buscar usuário, e-mail ou perfil..." /></div><div className="users-security"><KeyRound size={17} /><span>Senhas protegidas pelo backend</span></div></div>
+        <CollapsibleFilters summary="Usuário, e-mail ou perfil" activeCount={search.trim() ? 1 : 0} onClear={() => { setSearch(''); setPage(0) }} contentClassName="data-toolbar"><div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }} placeholder="Buscar usuário, e-mail ou perfil..." /></div><div className="users-security"><KeyRound size={17} /><span>Senhas protegidas pelo backend</span></div></CollapsibleFilters>
 
         {usersQuery.isLoading ? <LoadingState label="Carregando usuários..." /> : usersQuery.isError ? <ErrorState message={apiErrorMessage(usersQuery.error)} onRetry={() => usersQuery.refetch()} /> : users.length === 0 ? <EmptyState title="Nenhum usuário encontrado" description="Altere a busca ou cadastre um usuário." /> : (
           <div className="user-list">{users.map((user) => (

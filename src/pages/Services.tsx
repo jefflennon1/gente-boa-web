@@ -3,7 +3,7 @@ import { BriefcaseBusiness, ChevronLeft, ChevronRight, CircleDollarSign, Edit3, 
 import { useState } from 'react'
 import { apiErrorMessage } from '../api/client'
 import { api, queryKeys } from '../api/services'
-import { Button, ConfirmDialog, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
+import { Button, CollapsibleFilters, ConfirmDialog, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { money } from '../lib/format'
 import type { ServiceCatalogItem, ServiceCatalogPayload } from '../types'
@@ -146,9 +146,9 @@ export function Services() {
     </section>
 
     <section className="panel data-panel">
-      <div className="data-toolbar data-toolbar--clients">
+      <CollapsibleFilters summary="Código, serviço ou unidade" activeCount={search.trim() ? 1 : 0} onClear={() => { setSearch(''); setPage(0) }} contentClassName="data-toolbar data-toolbar--clients">
         <div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }} placeholder="Buscar por código, serviço ou unidade..." /></div>
-      </div>
+      </CollapsibleFilters>
 
       {servicesQuery.isLoading ? <LoadingState label="Carregando serviços..." /> : servicesQuery.isError ? <ErrorState message={apiErrorMessage(servicesQuery.error)} onRetry={() => servicesQuery.refetch()} /> : services.length === 0 ? <EmptyState title="Nenhum serviço encontrado" description="Altere a busca ou cadastre um novo serviço." /> : <div className={`table-wrap ${servicesQuery.isFetching ? 'table-wrap--refreshing' : ''}`}>
         <table className="data-table services-table"><thead><tr><th>Código</th><th>Serviço</th><th>Unidade</th><th>Valor minuto</th><th>Valor contrato</th><th>Valor extra</th><th>Valor avulso</th><th /></tr></thead><tbody>{services.map((service) => <tr key={service.id} onClick={() => openEdit(service)}>
