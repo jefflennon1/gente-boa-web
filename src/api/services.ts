@@ -10,6 +10,7 @@ import type {
   AttendanceLocationPayload,
   AuthResponse,
   Client,
+  ClientBillingContext,
   ClientContractContext,
   CepAddressResponse,
   ClientListItem,
@@ -43,6 +44,7 @@ import type {
   Employee,
   EmployeePayload,
   GeneratedBill,
+  GeneratedBills,
   Material,
   MaterialPayload,
   PagedResponse,
@@ -572,6 +574,8 @@ export const api = {
       query?: string
       dueStart?: string
       dueEnd?: string
+      competenceStart?: string
+      competenceEnd?: string
       dueDay?: 1 | 10 | 20
       billingType?: 'ALL' | 'CONTRACT' | 'ONE_OFF'
       generatedStatus?: 'ALL' | 'GENERATED' | 'PENDING'
@@ -590,6 +594,10 @@ export const api = {
     },
     async generateBill(receivableIds: number[]) {
       const { data } = await http.post<GeneratedBill>('/accounts-receivable/generate-bill', { receivableIds })
+      return data
+    },
+    async generateBills(receivableIds: number[]) {
+      const { data } = await http.post<GeneratedBills>('/accounts-receivable/generate-bills', { receivableIds })
       return data
     },
   },
@@ -626,6 +634,14 @@ export const api = {
     },
     async find(id: number) {
       const { data } = await http.get<BillDetail>(`/bills/${id}`)
+      return data
+    },
+    async previewByServiceOrder(serviceOrderId: number) {
+      const { data } = await http.get<BillDetail>(`/bills/preview/service-order/${serviceOrderId}`)
+      return data
+    },
+    async clientContext(clientId: number) {
+      const { data } = await http.get<ClientBillingContext>(`/bills/client/${clientId}/context`)
       return data
     },
     async pdf(id: number) {

@@ -5,9 +5,10 @@ import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money } from '../lib/format'
-import type { BillDetail, BillListItem, ClientStatementDetail, ClientStatementSummary } from '../types'
+import type { BillDetail, BillListItem, ClientBillingContext, ClientStatementDetail, ClientStatementSummary } from '../types'
 import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, LoadingState, Modal, PageHeader, StatCard, Toast } from '../components/ui'
 import { AccountsReceivableReview } from '../components/AccountsReceivableReview'
+import { ClientHourTracking } from '../components/ClientHourTracking'
 
 export function Statements() {
   const queryClient = useQueryClient()
@@ -21,6 +22,7 @@ export function Statements() {
   const [billContract, setBillContract] = useState('')
   const [page, setPage] = useState(0)
   const [detailId, setDetailId] = useState<number | null>(null)
+  const [relatedModal, setRelatedModal] = useState<'receivables' | 'tracking' | null>(null)
   const [visualPaid, setVisualPaid] = useState<Record<number, boolean>>({})
   const [toast, setToast] = useState('')
   const [emailTarget, setEmailTarget] = useState<BillDetail | null>(null)
@@ -59,6 +61,11 @@ export function Statements() {
     enabled: section === 'bills' && billingView === 'generated',
   })
   const detailQuery = useQuery({ queryKey: [...queryKeys.bills, 'detail', detailId], queryFn: () => api.bills.find(detailId!), enabled: detailId !== null })
+  const clientContextQuery = useQuery({
+    queryKey: [...queryKeys.bills, 'client-context', detailQuery.data?.clientId],
+    queryFn: () => api.bills.clientContext(detailQuery.data!.clientId!),
+    enabled: detailQuery.data?.clientId != null && relatedModal !== null,
+  })
   const pdfMutation = useMutation({
     mutationFn: async (bill: Pick<BillListItem, 'id' | 'number'>) => ({ bill, blob: await api.bills.pdf(bill.id) }),
     onSuccess: ({ bill, blob }) => {
@@ -138,7 +145,7 @@ export function Statements() {
     </nav>
     {section === 'bills' ? <>
     <nav className="system-parameters-menu billing-sections" aria-label="Etapas do faturamento">
-      <button type="button" className={billingView === 'receivables' ? 'active' : ''} onClick={() => { setBillingView('receivables'); setPage(0) }}><ReceiptText size={17} />Contas a receber</button>
+      <button type="button" className={billingView === 'receivables' ? 'active' : ''} onClick={() => { setBillingView('receivables'); setPage(0) }}><ReceiptText size={17} />Competência de boletos</button>
       <button type="button" className={billingView === 'generated' ? 'active' : ''} onClick={() => { setBillingView('generated'); setPage(0) }}><WalletCards size={17} />Boletos gerados</button>
     </nav>
     {billingView === 'receivables' ? <AccountsReceivableReview showToast={showToast} /> : <>
@@ -183,8 +190,14 @@ export function Statements() {
     </>}
     </> : <ClientStatementsTab showToast={showToast} />}
 
-    <DetailModal open={detailId !== null} onClose={() => setDetailId(null)} title={detail ? `Boleto #${detail.number || detail.id}` : 'Detalhes do boleto'} description="Cliente, composição da cobrança e atendimentos vinculados." size="xlarge" actions={detail ? <><Button variant="secondary" icon={<Mail size={16} />} disabled={emailMutation.isPending} onClick={() => { setEmailError(''); setEmailTarget(detail) }}>{detail.emailSent ? 'Reenviar e-mail' : 'Enviar por e-mail'}</Button><Button icon={<Eye size={16} />} disabled={pdfMutation.isPending} onClick={() => previewBillPdf(detail)}>{pdfMutation.isPending ? 'Gerando PDF...' : 'Visualizar PDF'}</Button></> : undefined}>
+    <DetailModal open={detailId !== null && relatedModal === null} onClose={() => { setDetailId(null); setRelatedModal(null) }} title={detail ? `Boleto #${detail.number || detail.id}` : 'Detalhes do boleto'} description="Cliente e dados completos da cobrança selecionada." size="xlarge" actions={detail ? <><Button variant="secondary" icon={<ReceiptText size={16} />} onClick={() => setRelatedModal('receivables')}>Contas a receber</Button><Button variant="secondary" icon={<Timer size={16} />} onClick={() => setRelatedModal('tracking')}>Acompanhamento de horas</Button><Button variant="secondary" icon={<Mail size={16} />} disabled={emailMutation.isPending} onClick={() => { setEmailError(''); setEmailTarget(detail) }}>{detail.emailSent ? 'Reenviar e-mail' : 'Enviar por e-mail'}</Button><Button icon={<Eye size={16} />} disabled={pdfMutation.isPending} onClick={() => previewBillPdf(detail)}>{pdfMutation.isPending ? 'Gerando PDF...' : 'Visualizar PDF'}</Button></> : undefined}>
       {detailQuery.isLoading ? <LoadingState label="Carregando boleto..." /> : detailQuery.isError ? <ErrorState message={apiErrorMessage(detailQuery.error)} onRetry={() => detailQuery.refetch()} /> : detail ? <BillDetails bill={detail} paid={isPaid(detail)} /> : null}
+    </DetailModal>
+    <DetailModal open={relatedModal === 'receivables' && Boolean(detail)} onClose={() => setRelatedModal(null)} title={detail ? `Contas a receber · ${detail.clientTradeName || detail.clientName || `Cliente #${detail.clientId}`}` : 'Contas a receber'} description="Todos os títulos ainda não pagos deste cliente." size="xlarge" actions={<Button variant="secondary" onClick={() => setRelatedModal(null)}>Voltar ao boleto</Button>}>
+      {clientContextQuery.isLoading ? <LoadingState label="Carregando contas do cliente..." /> : clientContextQuery.isError ? <ErrorState message={apiErrorMessage(clientContextQuery.error)} onRetry={() => clientContextQuery.refetch()} /> : detail ? <BillReceivables bill={detail} context={clientContextQuery.data} /> : null}
+    </DetailModal>
+    <DetailModal open={relatedModal === 'tracking' && Boolean(detail)} onClose={() => setRelatedModal(null)} title={detail ? `Acompanhamento de horas · ${detail.clientTradeName || detail.clientName || `Cliente #${detail.clientId}`}` : 'Acompanhamento de horas'} description="Histórico completo de acompanhamento de horas deste cliente." size="xlarge" actions={<Button variant="secondary" onClick={() => setRelatedModal(null)}>Voltar ao boleto</Button>}>
+      {clientContextQuery.isLoading ? <LoadingState label="Carregando acompanhamento do cliente..." /> : clientContextQuery.isError ? <ErrorState message={apiErrorMessage(clientContextQuery.error)} onRetry={() => clientContextQuery.refetch()} /> : detail ? <BillTracking bill={detail} context={clientContextQuery.data} /> : null}
     </DetailModal>
     <Modal open={billPdfPreview !== null} onClose={closeBillPdfPreview} title={billPdfPreview ? `Boleto #${billPdfPreview.bill.number || billPdfPreview.bill.id}` : 'Boleto'} description="Visualização do documento antes de imprimir ou baixar." size="xlarge">
       <div className="modal__body contract-document-modal__body">
@@ -420,11 +433,24 @@ function BillDetails({ bill, paid }: { bill: BillDetail; paid: boolean }) {
     <section className="drawer-section bill-composition"><h3>Composição da cobrança</h3><div className="bill-composition__grid"><Value label="Serviços e minutos extras" value={bill.serviceAmount} /><Value label="Materiais" value={bill.materialAmount} /><Value label="Taxa do boleto" value={bill.billFeeAmount} /><Value label="Transporte" value={bill.transportAmount} /><Value label="Aluguel" value={bill.rentalAmount} /><Value label="Outros" value={bill.otherAmount} /><Value label="Desconto" value={-bill.discountAmount} /><Value label="Total" value={bill.amount} total /></div></section>
     <DetailTable title="Serviços cobrados" empty="Nenhum serviço vinculado." headers={['Código', 'Descrição', 'Qtd.', 'Tempo', 'Valor mínimo', 'Minuto', 'Extra', 'Avulso', 'Total']} rows={bill.services.map((item) => [item.serviceId, item.description || 'Não informado', item.quantity || 0, item.hours || '00:00', money(item.minimumAmount), money(item.minuteAmount), money(item.extraMinuteAmount), money(item.oneOffMinuteAmount), money(item.totalAmount)])} />
     <DetailTable title="Materiais utilizados" empty="Nenhum material cobrado." headers={['Código', 'Material', 'Unidade', 'Marca', 'Qtd.', 'Unitário', 'Total']} rows={bill.materials.map((item) => [item.materialId, item.description || 'Não informado', item.unit || '—', item.brand || '—', item.quantity || 0, money(item.unitAmount), money(item.totalAmount)])} />
-    <DetailTable title="Atendimentos realizados" empty="Nenhum atendimento vinculado." headers={['Agenda', 'Data', 'Início', 'Fim', 'Duração', 'Profissional']} rows={bill.attendances.map((item) => [item.scheduleId, formatDate(item.date), item.start || '—', item.end || '—', item.duration || '00:00', item.professional || 'Não informado'])} />
-    <DetailTable title="Lançamentos do Contas a Receber" empty="Nenhuma CR vinculada." headers={['CR', 'OS', 'Contrato', 'Descrição', 'Vencimento', 'Valor']} rows={(bill.receivables || []).map((item) => [item.id, item.serviceOrderId || '—', item.contractId || '—', item.description || 'Não informada', formatDate(item.dueAt), money(item.amount)])} />
     {bill.serviceOrderNotes && <section className="drawer-section"><h3>Observações</h3><p>{bill.serviceOrderNotes}</p></section>}
     <div className="bill-detail__dates"><span><CalendarDays size={15} /> Processado em {formatDate(bill.processedAt, true)}</span><span><FileText size={15} /> Vencimento em {formatDate(bill.dueAt)}</span><span><Mail size={15} /> E-mail: {bill.emailSentAt ? `enviado em ${formatDate(bill.emailSentAt, true)}` : 'ainda não enviado'}</span></div>
   </div>
+}
+
+function BillReceivables({ bill, context }: { bill: BillDetail; context?: ClientBillingContext }) {
+  const receivables = context?.openReceivables || []
+  const total = receivables.reduce((sum, item) => sum + Number(item.amount || 0), 0)
+  const balance = receivables.reduce((sum, item) => sum + Number(item.balance || 0), 0)
+  return <div className="detail-modal-content bill-related-detail">
+    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><ReceiptText /></span><div><span>Cliente #{bill.clientId || '—'}</span><h2>{bill.clientTradeName || bill.clientName || 'Cliente não identificado'}</h2><p>{bill.clientDocument || 'CPF/CNPJ não informado'} · histórico financeiro em aberto</p></div></div><Badge tone={balance > 0 ? 'orange' : 'green'}>{balance > 0 ? 'Em aberto' : 'Quitado'}</Badge></div>
+    <div className="detail-metrics bill-detail__metrics"><span><small>Títulos vinculados</small><strong>{receivables.length}</strong></span><span><small>Valor lançado</small><strong>{money(total)}</strong></span><span><small>Saldo em aberto</small><strong>{money(balance)}</strong></span><span><small>Valor do boleto</small><strong>{money(bill.amount)}</strong></span></div>
+    <DetailTable title="Contas a receber em aberto do cliente" empty="Este cliente não possui contas a receber em aberto." headers={['CR', 'OS', 'Contrato', 'Descrição', 'Cadastro', 'Vencimento', 'Valor', 'Saldo', 'Status']} rows={receivables.map((item) => [item.id, item.serviceOrderId || '—', item.contractId || '—', item.description || 'Não informada', formatDate(item.createdAt), formatDate(item.dueAt), money(item.amount), money(item.balance), 'Em aberto'])} />
+  </div>
+}
+
+function BillTracking({ bill, context }: { bill: BillDetail; context?: ClientBillingContext }) {
+  return <ClientHourTracking clientId={bill.clientId} clientName={bill.clientTradeName || bill.clientName || `Cliente #${bill.clientId}`} context={context} />
 }
 
 function Value({ label, value = 0, valueText, total = false }: { label: string; value?: number; valueText?: string; total?: boolean }) {

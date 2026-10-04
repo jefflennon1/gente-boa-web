@@ -603,7 +603,7 @@ export interface ClientContractContext {
 }
 
 export interface ContractTimeBalance {
-  contractId: number
+  contractId: number | null
   clientId: number
   year: number
   month: number
@@ -1321,6 +1321,21 @@ export interface BillDetail extends BillListItem {
   materials: BillMaterialLine[]
   attendances: BillAttendanceLine[]
   receivables: BillReceivableLine[]
+  trackings: ServiceOrderTracking[]
+}
+
+export interface ClientBillingContext {
+  clientId: number
+  openReceivables: BillReceivableLine[]
+  monthlyBalances: ContractTimeBalance[]
+  trackings: ServiceOrderTracking[]
+}
+
+export interface GeneratedBills {
+  bills: GeneratedBill[]
+  billCount: number
+  receivableCount: number
+  invoiceCount: number
 }
 
 export interface ClientStatementSummary {
