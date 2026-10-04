@@ -6,7 +6,7 @@ import { apiErrorMessage } from '../api/client'
 import { useAuth } from '../auth'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money, toDateInput } from '../lib/format'
-import type { AttendanceLocation, AttendanceLocationPayload, Client, ClientSearchOption, Employee, Material, PagedResponse, ServiceCatalogItem, ServiceCategory, ServiceOrder, ServiceOrderListItem, ServiceOrderMaterialItem, ServiceOrderMaterialOrder, ServiceOrderOrigin, ServiceOrderPayload, ServiceOrderSchedule, ServiceOrderServiceItem, ServiceOrderStatus, ServiceOrderTracking, Supplier } from '../types'
+import type { AttendanceLocation, AttendanceLocationPayload, Client, ClientSearchOption, Employee, Material, PagedResponse, ServiceCatalogItem, ServiceCategory, ServiceOrder, ServiceOrderListItem, ServiceOrderMaterialItem, ServiceOrderMaterialOrder, ServiceOrderOperationalFlag, ServiceOrderOrigin, ServiceOrderPayload, ServiceOrderSchedule, ServiceOrderServiceItem, ServiceOrderStatus, ServiceOrderTracking, Supplier } from '../types'
 import { Badge, Button, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 import { useRouter } from '../router'
 
@@ -170,8 +170,60 @@ function scheduleEmployeeDisplay(schedule: ServiceOrderSchedule) {
   return schedule.employeeName || schedule.employeeNickname || (schedule.employeeId && schedule.employeeId !== 1 ? `Funcionário #${schedule.employeeId}` : 'AGUARDANDO')
 }
 
-function OperationalSeal({ active, label, tone }: { active: boolean; label: string; tone: 'red' | 'orange' | 'blue' | 'green' | 'purple' }) {
-  return active ? <span className={`os-operational-seal os-operational-seal--${tone}`} aria-label={label} title={label}><CheckCircle2 size={16} strokeWidth={2.5} /></span> : <span className="os-operational-empty">—</span>
+const operationalFlags: Array<{ flag: ServiceOrderOperationalFlag; label: string; tone: 'red' | 'orange' | 'blue' | 'purple' | 'green' }> = [
+  { flag: 'URGENT', label: 'Urgente', tone: 'red' },
+  { flag: 'SCHEDULED_TIME', label: 'Hora marcada', tone: 'orange' },
+  { flag: 'ROUTED', label: 'Encaminhada', tone: 'blue' },
+  { flag: 'STARTED', label: 'Iniciada', tone: 'purple' },
+  { flag: 'FINISHED', label: 'Finalizada', tone: 'green' },
+]
+
+function listFlagValue(order: ServiceOrderListItem, flag: ServiceOrderOperationalFlag) {
+  if (flag === 'URGENT') return order.priority === 'URGENTE'
+  if (flag === 'SCHEDULED_TIME') return order.scheduledTime
+  if (flag === 'ROUTED') return order.routed
+  if (flag === 'STARTED') return order.started
+  return order.finished
+}
+
+function detailFlagValue(order: ServiceOrder, flag: ServiceOrderOperationalFlag) {
+  const schedules = order.schedules ?? []
+  if (flag === 'URGENT') return order.priority === 'URGENTE' || schedules.some((item) => item.urgentFlag === 'S')
+  if (flag === 'SCHEDULED_TIME') return schedules.some((item) => item.scheduledTimeFlag === 'S')
+  if (flag === 'ROUTED') return schedules.some((item) => item.routedFlag === 'S')
+  if (flag === 'STARTED') return schedules.some((item) => item.startedFlag === 'S')
+  return order.status === 'FINALIZADA' || schedules.some((item) => item.finishedFlag === 'S')
+}
+
+function OperationalCheckbox({ active, label, tone, disabled, onChange }: { active: boolean; label: string; tone: 'red' | 'orange' | 'blue' | 'purple' | 'green'; disabled?: boolean; onChange: (checked: boolean) => void }) {
+  return <label className={`os-operational-check os-operational-check--${tone} ${active ? 'is-checked' : ''}`} title={`${label}: ${active ? 'marcado' : 'desmarcado'}`} onClick={(event) => event.stopPropagation()}>
+    <input type="checkbox" checked={active} disabled={disabled} aria-label={label} onChange={(event) => onChange(event.target.checked)} />
+    <span aria-hidden="true"><CheckCircle2 size={16} strokeWidth={2.5} /></span>
+  </label>
+}
+
+function patchListFlag(order: ServiceOrderListItem, flag: ServiceOrderOperationalFlag, checked: boolean): ServiceOrderListItem {
+  if (flag === 'URGENT') return { ...order, priority: checked ? 'URGENTE' : 'NORMAL' }
+  if (flag === 'SCHEDULED_TIME') return { ...order, scheduledTime: checked }
+  if (flag === 'ROUTED') return { ...order, routed: checked }
+  if (flag === 'STARTED') return { ...order, started: checked }
+  return { ...order, finished: checked, status: checked ? 'FINALIZADA' : 'ABERTA' }
+}
+
+function patchDetailFlag(order: ServiceOrder, flag: ServiceOrderOperationalFlag, checked: boolean): ServiceOrder {
+  const field = flag === 'URGENT' ? 'urgentFlag' : flag === 'SCHEDULED_TIME' ? 'scheduledTimeFlag' : flag === 'ROUTED' ? 'routedFlag' : flag === 'STARTED' ? 'startedFlag' : 'finishedFlag'
+  const value = checked ? 'S' : 'N'
+  const currentSchedules = order.schedules ?? []
+  const schedules = currentSchedules.length
+    ? currentSchedules.map((item) => ({ ...item, [field]: value }))
+    : flag === 'FINISHED' ? currentSchedules : [{ serviceOrderId: order.id, scheduleId: 1, expectedDate: order.dtordem || localDateTimeNow(), [field]: value }]
+  return {
+    ...order,
+    schedules,
+    priority: flag === 'URGENT' ? checked ? 'URGENTE' : 'NORMAL' : order.priority,
+    status: flag === 'FINISHED' ? checked ? 'FINALIZADA' : 'ABERTA' : order.status,
+    flstatu: flag === 'FINISHED' ? checked ? 'F' : 'A' : order.flstatu,
+  }
 }
 
 function finalizationError(
@@ -211,6 +263,7 @@ export function ServiceOrders() {
   const [orderNumber, setOrderNumber] = useState('')
   const [contractCode, setContractCode] = useState('')
   const [attendanceLocationId, setAttendanceLocationId] = useState('')
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false)
   const [orderFilter, setOrderFilter] = useState<ServiceOrderFilter>('Todas')
   const [dateFilterMode, setDateFilterMode] = useState<DateFilterMode>('day')
   const [date, setDate] = useState(localToday())
@@ -302,11 +355,40 @@ export function ServiceOrders() {
       queryClient.setQueryData<ServiceOrder>([...queryKeys.serviceOrders, 'detail', variables.id], (current) => current ? { ...current, status: variables.status, flstatu: variables.status === 'FINALIZADA' ? 'F' : variables.status === 'CANCELADA' ? 'C' : 'A' } : current)
       await queryClient.invalidateQueries({ queryKey: queryKeys.serviceOrders })
       setDetailId(null)
-      showToast(`OS-${updated.id} alterada para “${enumLabel(updated.status)}”.`)
+      showToast(`${updated.id} alterada para “${enumLabel(updated.status)}”.`)
     },
     onError: (error, _variables, context) => {
       if (context?.previous) queryClient.setQueryData(ordersQueryKey, context.previous)
       showToast(apiErrorMessage(error))
+    },
+  })
+  const operationalFlagMutation = useMutation({
+    mutationFn: ({ id, flag, checked }: { id: number; flag: ServiceOrderOperationalFlag; checked: boolean }) => api.serviceOrders.updateOperationalFlag(id, flag, checked),
+    onMutate: async ({ id, flag, checked }) => {
+      const detailKey = [...queryKeys.serviceOrders, 'detail', id] as const
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ordersQueryKey, exact: true }),
+        queryClient.cancelQueries({ queryKey: detailKey, exact: true }),
+      ])
+      const previousList = queryClient.getQueryData<PagedResponse<ServiceOrderListItem>>(ordersQueryKey)
+      const previousDetail = queryClient.getQueryData<ServiceOrder>(detailKey)
+      queryClient.setQueryData<PagedResponse<ServiceOrderListItem>>(ordersQueryKey, (current) => current ? {
+        ...current,
+        content: current.content.map((order) => order.id === id ? patchListFlag(order, flag, checked) : order),
+      } : current)
+      queryClient.setQueryData<ServiceOrder>(detailKey, (current) => current ? patchDetailFlag(current, flag, checked) : current)
+      return { previousList, previousDetail, detailKey }
+    },
+    onSuccess: async (updated, variables) => {
+      queryClient.setQueryData<ServiceOrder>([...queryKeys.serviceOrders, 'detail', variables.id], updated)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.serviceOrders })
+      const label = operationalFlags.find((item) => item.flag === variables.flag)?.label || 'Indicador'
+      showToast(`${label} ${variables.checked ? 'marcada' : 'desmarcada'} na OS ${variables.id}.`)
+    },
+    onError: (error, _variables, context) => {
+      if (context?.previousList) queryClient.setQueryData(ordersQueryKey, context.previousList)
+      if (context?.previousDetail) queryClient.setQueryData(context.detailKey, context.previousDetail)
+      showToast(apiErrorMessage(error, 'Não foi possível salvar o indicador da ordem de serviço.'))
     },
   })
   const trackingMutation = useMutation({
@@ -323,8 +405,8 @@ export function ServiceOrders() {
       setTimerAction(null)
       setTimerError('')
       showToast(tracking.running
-        ? `Atendimento da OS-${tracking.serviceOrderId} iniciado às ${tracking.startTime}.`
-        : `Atendimento da OS-${tracking.serviceOrderId} encerrado com ${tracking.duration || '00:00'}.`)
+        ? `Atendimento da ${tracking.serviceOrderId} iniciado às ${tracking.startTime}.`
+        : `Atendimento da ${tracking.serviceOrderId} encerrado com ${tracking.duration || '00:00'}.`)
     },
     onError: (error) => setTimerError(apiErrorMessage(error)),
   })
@@ -354,6 +436,7 @@ export function ServiceOrders() {
   const totalPages = ordersQuery.data?.totalPages ?? 0
   const firstResult = total === 0 ? 0 : page * pageSize + 1
   const lastResult = Math.min((page + 1) * pageSize, total)
+  const advancedFilterCount = [search, orderNumber, contractCode, attendanceLocationId, cpfFilter, cnpjFilter].filter((value) => value.trim()).length
 
   function showToast(message: string) {
     setToast(message)
@@ -384,6 +467,16 @@ export function ServiceOrders() {
     setRangeEnd('')
     setMonth('')
     setWeekDate(localToday())
+    resetPage()
+  }
+
+  function clearAdvancedFilters() {
+    setSearch('')
+    setOrderNumber('')
+    setContractCode('')
+    setAttendanceLocationId('')
+    setCpfFilter('')
+    setCnpjFilter('')
     resetPage()
   }
 
@@ -504,13 +597,21 @@ export function ServiceOrders() {
     </section>
 
     <section className="panel data-panel os-panel">
+      <div className={`os-advanced-filters ${advancedFiltersOpen ? 'is-open' : ''}`}>
+        <div className="os-advanced-filters__header">
+          <button type="button" className="os-advanced-filters__trigger" aria-expanded={advancedFiltersOpen} aria-controls="os-advanced-filter-fields" onClick={() => setAdvancedFiltersOpen((value) => !value)}><span className="os-advanced-filters__icon"><Search size={17} /></span><span><strong>Filtros avançados</strong><small>{advancedFilterCount ? `${advancedFilterCount} ${advancedFilterCount === 1 ? 'filtro informado' : 'filtros informados'}` : 'Cliente, OS, contrato, local, CPF ou CNPJ'}</small></span><ChevronRight size={18} /></button>
+          {advancedFilterCount > 0 && <button type="button" className="os-advanced-filters__clear" onClick={clearAdvancedFilters}>Limpar filtros</button>}
+        </div>
+        <div id="os-advanced-filter-fields" className="os-advanced-filters__fields" hidden={!advancedFiltersOpen}>
+          <label className="structured-filter-field"><span>Nome do cliente</span><div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); resetPage() }} placeholder="Razão social ou nome fantasia" /></div></label>
+          <label className="structured-filter-field"><span>Número da OS</span><input type="number" min="1" value={orderNumber} onChange={(event) => { setOrderNumber(event.target.value); resetPage() }} /></label>
+          <label className="structured-filter-field"><span>Contrato</span><input type="number" min="1" value={contractCode} onChange={(event) => { setContractCode(event.target.value); resetPage() }} /></label>
+          <label className="structured-filter-field"><span>Código do local</span><input type="number" min="1" value={attendanceLocationId} onChange={(event) => { setAttendanceLocationId(event.target.value); resetPage() }} /></label>
+          <label className="structured-filter-field"><span>CPF</span><input inputMode="numeric" value={cpfFilter} onChange={(event) => { setCpfFilter(event.target.value.replace(/\D/g, '')); resetPage() }} placeholder="Somente números" /></label>
+          <label className="structured-filter-field"><span>CNPJ</span><input inputMode="numeric" value={cnpjFilter} onChange={(event) => { setCnpjFilter(event.target.value.replace(/\D/g, '')); resetPage() }} placeholder="Somente números" /></label>
+        </div>
+      </div>
       <div className="data-toolbar data-toolbar--orders">
-        <label className="structured-filter-field"><span>Nome do cliente</span><div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); resetPage() }} placeholder="Razão social ou nome fantasia" /></div></label>
-        <label className="structured-filter-field"><span>Número da OS</span><input type="number" min="1" value={orderNumber} onChange={(event) => { setOrderNumber(event.target.value); resetPage() }} /></label>
-        <label className="structured-filter-field"><span>Contrato</span><input type="number" min="1" value={contractCode} onChange={(event) => { setContractCode(event.target.value); resetPage() }} /></label>
-        <label className="structured-filter-field"><span>Código do local</span><input type="number" min="1" value={attendanceLocationId} onChange={(event) => { setAttendanceLocationId(event.target.value); resetPage() }} /></label>
-        <label className="structured-filter-field"><span>CPF</span><input inputMode="numeric" value={cpfFilter} onChange={(event) => { setCpfFilter(event.target.value.replace(/\D/g, '')); resetPage() }} placeholder="Somente números" /></label>
-        <label className="structured-filter-field"><span>CNPJ</span><input inputMode="numeric" value={cnpjFilter} onChange={(event) => { setCnpjFilter(event.target.value.replace(/\D/g, '')); resetPage() }} placeholder="Somente números" /></label>
         <div className="segmented-control os-status-filter"><button className={orderFilter === 'Todas' ? 'active' : ''} onClick={() => { setOrderFilter('Todas'); resetPage() }}>Todas</button><button className={orderFilter === 'Urgentes' ? 'active' : ''} onClick={() => { setOrderFilter('Urgentes'); resetPage() }}>Urgentes</button><button className={orderFilter === 'ABERTA' ? 'active' : ''} onClick={() => { setOrderFilter('ABERTA'); resetPage() }}>Abertas</button><button className={orderFilter === 'FINALIZADA' ? 'active' : ''} onClick={() => { setOrderFilter('FINALIZADA'); resetPage() }}>Finalizadas</button><button className={orderFilter === 'CANCELADA' ? 'active' : ''} onClick={() => { setOrderFilter('CANCELADA'); resetPage() }}>Canceladas</button></div>
         <label className="toolbar-select toolbar-select--compact os-period-mode"><span>Período</span><select value={dateFilterMode} onChange={(event) => changeDateFilterMode(event.target.value as DateFilterMode)}><option value="day">Dia</option><option value="range">Entre datas</option><option value="week">Semana</option><option value="month">Mês</option><option value="none">Todas as datas</option></select></label>
         {dateFilterMode === 'day' && <label className="os-date-field"><span>Dia</span><div><CalendarDays size={15} /><input type="date" value={date} onChange={(event) => { setDate(event.target.value); resetPage() }} aria-label="Filtrar por dia" /></div></label>}
@@ -551,28 +652,30 @@ export function ServiceOrders() {
             {stageOrders.length === 0 && <div className="kanban-empty">Nenhuma OS nesta etapa.</div>}
           </div></section>
         })}
-      </div> : <div className={`table-wrap ${ordersQuery.isFetching ? 'table-wrap--refreshing' : ''}`}><table className="data-table os-table"><thead><tr><th>OS</th><th>Cliente</th><th>Solicitante</th><th>Descrição / Serviço</th><th>Abertura</th><th>Profissional</th><th>Dt. prevista</th><th>H. inicial</th><th>H. final</th><th>Tipo</th><th>Valor</th><th>Situação</th><th className="os-status-heading">Urgente</th><th className="os-status-heading">Hora marcada</th><th className="os-status-heading">Encaminhada</th><th className="os-status-heading">Iniciada</th><th className="os-status-heading">Finalizada</th><th /></tr></thead><tbody>{orders.map((order) => {
+      </div> : <div className={`table-wrap ${ordersQuery.isFetching ? 'table-wrap--refreshing' : ''}`}><table className="data-table os-table"><thead><tr><th>OS</th><th>Cliente</th>
+      {/* <th>Solicitante</th> */}
+      <th>Descrição / Serviço</th><th>Abertura</th><th>Profissional</th><th>Dt. prevista</th><th>H. inicial</th><th>H. final</th>
+      {/* <th>Tipo</th> */}
+      <th>Valor</th>
+      {/* <th>Situação</th> */}
+      <th className="os-status-heading">Urgente</th><th className="os-status-heading">Hora marcada</th><th className="os-status-heading">Encaminhada</th><th className="os-status-heading">Iniciada</th><th className="os-status-heading">Finalizada</th> </tr></thead><tbody>{orders.map((order) => {
         const professionals = order.professionalNames?.length ? order.professionalNames : ['AGUARDANDO']
         const waitingProfessional = professionals.some((name) => name.trim().toUpperCase().includes('AGUARDANDO'))
         return <tr key={order.id} onClick={() => setDetailId(order.id)}>
-          <td><strong>OS-{order.id}</strong></td>
+          <td><strong>{order.id}</strong></td>
           <td><strong className="table-primary">{order.clientTradeName || order.clientName || 'Cliente não identificado'}</strong><small className="table-secondary">Cliente #{order.clientId || '—'}</small></td>
-          <td>{order.requester || '—'}</td>
+          {/* <td>{order.requester || '—'}</td> */}
           <td><strong className="table-primary">{order.description || 'Não informado'}</strong><small className={`table-secondary ${order.serviceDescriptions.length === 0 ? 'service-description-empty' : ''}`}>{order.serviceDescriptions.length ? order.serviceDescriptions.join(' · ') : 'NENHUM SERVIÇO VINCULADO'}</small></td>
           <td>{formatDate(order.orderedAt)}</td>
           <td><span className={waitingProfessional ? 'os-professional os-professional--waiting' : 'os-professional'} title={professionals.join(', ')}>{professionals.join(', ')}</span></td>
           <td>{order.forecastAt ? formatDate(order.forecastAt) : '—'}</td>
           <td>{order.forecastStart || '—'}</td>
           <td>{order.forecastEnd || '—'}</td>
-          <td>{order.origin === 'C' ? 'Contrato' : 'Avulsa'}</td>
+          {/* <td>{order.origin === 'C' ? 'Contrato' : 'Avulsa'}</td> */}
           <td>{money(order.totalValue)}</td>
-          <td><Badge tone={statusTone[order.status]}>{enumLabel(order.status)}</Badge></td>
-          <td className="os-status-cell"><OperationalSeal active={order.priority === 'URGENTE'} label="Urgente" tone="red" /></td>
-          <td className="os-status-cell"><OperationalSeal active={order.scheduledTime} label="Marcada" tone="orange" /></td>
-          <td className="os-status-cell"><OperationalSeal active={order.routed} label="Encaminhada" tone="blue" /></td>
-          <td className="os-status-cell"><OperationalSeal active={order.started} label="Iniciada" tone="purple" /></td>
-          <td className="os-status-cell"><OperationalSeal active={order.finished} label="Finalizada" tone="green" /></td>
-          <td><button className="row-action" aria-label={`Visualizar OS-${order.id}`}><ChevronRight size={18} /></button></td>
+          {/* <td><Badge tone={statusTone[order.status]}>{enumLabel(order.status)}</Badge></td> */}
+          {operationalFlags.map((item) => <td className="os-status-cell" key={item.flag}><OperationalCheckbox active={listFlagValue(order, item.flag)} label={item.label} tone={item.tone} disabled={order.status === 'CANCELADA' || operationalFlagMutation.isPending} onChange={(checked) => operationalFlagMutation.mutate({ id: order.id, flag: item.flag, checked })} /></td>)}
+          {/* <td><button className="row-action" aria-label={`Visualizar ${order.id}`}><ChevronRight size={18} /></button></td> */}
         </tr>
       })}</tbody></table></div>}
       <footer className="table-footer table-footer--pagination">
@@ -590,11 +693,11 @@ export function ServiceOrders() {
       </footer>
     </section>
 
-    <DetailModal open={detailId !== null} onClose={() => setDetailId(null)} title={detail ? `Ordem de serviço OS-${detail.id}` : 'Detalhes da ordem de serviço'} description="Dados do atendimento, agenda, serviços e valores registrados." size="xlarge" actions={detail ? <><Button variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending} onClick={() => setOrderToDelete(detail.id)}>Excluir</Button>{detail.status === 'FINALIZADA' && <Button variant="secondary" icon={<FilePlus2 size={16} />} disabled={invoiceMutation.isPending} onClick={() => invoiceMutation.mutate(detail.id)}>{invoiceMutation.isPending ? 'Gerando NF...' : 'Gerar NF'}</Button>}{!['FINALIZADA', 'CANCELADA'].includes(detail.status) && <Button variant="secondary" icon={detail.trackingDetails?.some((tracking) => tracking.running) ? <Square size={16} /> : <Play size={16} />} disabled={!detail.serviceItems?.length || trackingMutation.isPending || timerLoadingId === detail.id} title={!detail.serviceItems?.length ? 'Nenhum serviço vinculado à ordem de serviço' : undefined} onClick={() => openTimer(detail)}>{detail.trackingDetails?.some((tracking) => tracking.running) ? 'Parar atendimento' : 'Iniciar atendimento'}</Button>}{!['FINALIZADA', 'CANCELADA'].includes(detail.status) && <Button variant="secondary" icon={<CheckCircle2 size={16} />} disabled={advanceMutation.isPending} onClick={() => advance(detail)}>Finalizar OS</Button>}<Button icon={<Edit3 size={16} />} onClick={() => openEdit(detail)}>Editar OS</Button></> : undefined}>
-      {detailQuery.isLoading ? <LoadingState label="Carregando a ordem de serviço..." /> : detailQuery.isError ? <ErrorState message={apiErrorMessage(detailQuery.error)} onRetry={() => detailQuery.refetch()} /> : detail ? <ServiceOrderDetail order={detail} catalog={catalogQuery.data?.content ?? []} /> : null}
+    <DetailModal open={detailId !== null} onClose={() => setDetailId(null)} title={detail ? `Ordem de serviço ${detail.id}` : 'Detalhes da ordem de serviço'} description="Dados do atendimento, agenda, serviços e valores registrados." size="xlarge" actions={detail ? <><Button variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending} onClick={() => setOrderToDelete(detail.id)}>Excluir</Button>{detail.status === 'FINALIZADA' && <Button variant="secondary" icon={<FilePlus2 size={16} />} disabled={invoiceMutation.isPending} onClick={() => invoiceMutation.mutate(detail.id)}>{invoiceMutation.isPending ? 'Gerando NF...' : 'Gerar NF'}</Button>}{!['FINALIZADA', 'CANCELADA'].includes(detail.status) && <Button variant="secondary" icon={detail.trackingDetails?.some((tracking) => tracking.running) ? <Square size={16} /> : <Play size={16} />} disabled={!detail.serviceItems?.length || trackingMutation.isPending || timerLoadingId === detail.id} title={!detail.serviceItems?.length ? 'Nenhum serviço vinculado à ordem de serviço' : undefined} onClick={() => openTimer(detail)}>{detail.trackingDetails?.some((tracking) => tracking.running) ? 'Parar atendimento' : 'Iniciar atendimento'}</Button>}{!['FINALIZADA', 'CANCELADA'].includes(detail.status) && <Button variant="secondary" icon={<CheckCircle2 size={16} />} disabled={advanceMutation.isPending} onClick={() => advance(detail)}>Finalizar OS</Button>}<Button icon={<Edit3 size={16} />} onClick={() => openEdit(detail)}>Editar OS</Button></> : undefined}>
+      {detailQuery.isLoading ? <LoadingState label="Carregando a ordem de serviço..." /> : detailQuery.isError ? <ErrorState message={apiErrorMessage(detailQuery.error)} onRetry={() => detailQuery.refetch()} /> : detail ? <ServiceOrderDetail order={detail} catalog={catalogQuery.data?.content ?? []} flagSaving={operationalFlagMutation.isPending} onFlagChange={(flag, checked) => operationalFlagMutation.mutate({ id: detail.id, flag, checked })} /> : null}
     </DetailModal>
 
-    <Modal open={timerAction !== null} onClose={() => !trackingMutation.isPending && setTimerAction(null)} title={timerAction?.mode === 'stop' ? 'Parar atendimento' : 'Iniciar atendimento'} description={timerAction ? `OS-${timerAction.orderId} · ${timerAction.serviceDescription}` : undefined} size="medium">
+    <Modal open={timerAction !== null} onClose={() => !trackingMutation.isPending && setTimerAction(null)} title={timerAction?.mode === 'stop' ? 'Parar atendimento' : 'Iniciar atendimento'} description={timerAction ? `${timerAction.orderId} · ${timerAction.serviceDescription}` : undefined} size="medium">
       <ModalForm onSubmit={submitTimer} onCancel={() => setTimerAction(null)} submitting={trackingMutation.isPending} submitLabel={trackingMutation.isPending ? 'Registrando...' : timerAction?.mode === 'stop' ? 'Confirmar parada' : 'Confirmar início'}>
         {timerError && <FormError message={timerError} />}
         <div className="os-timer-confirmation"><span className={timerAction?.mode === 'stop' ? 'os-timer-confirmation__icon os-timer-confirmation__icon--stop' : 'os-timer-confirmation__icon'}>{timerAction?.mode === 'stop' ? <Square size={22} /> : <Play size={22} />}</span><div><strong>{timerAction?.mode === 'stop' ? 'Confirma o horário final' : 'Confirma o horário inicial'} do serviço {timerAction?.serviceDescription}?</strong><small><UserRound size={13} /> {timerAction?.employeeName}</small></div></div>
@@ -602,10 +705,10 @@ export function ServiceOrders() {
       </ModalForm>
     </Modal>
 
-    <Modal open={modalOpen} onClose={() => !saveMutation.isPending && setModalOpen(false)} title={selected ? `Editar OS-${selected.id}` : 'Nova ordem de serviço'} description="Preenchimento baseado na tela operacional do sistema Delphi." size="xlarge">
+    <Modal open={modalOpen} onClose={() => !saveMutation.isPending && setModalOpen(false)} title={selected ? `Editar ${selected.id}` : 'Nova ordem de serviço'} description="Preenchimento baseado na tela operacional do sistema Delphi." size="xlarge">
       <ServiceOrderForm key={formKey} selected={selected} catalog={catalogQuery.data?.content ?? []} formError={formError} submitting={saveMutation.isPending} onCancel={() => setModalOpen(false)} onDelete={(id) => setOrderToDelete(id)} onNotify={showToast} onSubmit={(payload) => saveMutation.mutate({ id: selected?.id, payload })} />
     </Modal>
-    <ConfirmDialog open={orderToDelete !== null} title={`Excluir OS-${orderToDelete ?? ''}?`} description="A ordem de serviço e seus agendamentos e serviços serão removidos permanentemente." confirmLabel="Excluir ordem" busy={deleteMutation.isPending} onCancel={() => setOrderToDelete(null)} onConfirm={() => orderToDelete !== null && !deleteMutation.isPending && deleteMutation.mutate(orderToDelete)} />
+    <ConfirmDialog open={orderToDelete !== null} title={`Excluir ${orderToDelete ?? ''}?`} description="A ordem de serviço e seus agendamentos e serviços serão removidos permanentemente." confirmLabel="Excluir ordem" busy={deleteMutation.isPending} onCancel={() => setOrderToDelete(null)} onConfirm={() => orderToDelete !== null && !deleteMutation.isPending && deleteMutation.mutate(orderToDelete)} />
     {toast && <Toast message={toast} onClose={() => setToast('')} />}
   </>
 }
@@ -1152,7 +1255,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
         <span className="os-contract-balance__projected"><small>Saldo após esta OS</small><strong>{asDuration(projectedBalanceMinutes)}</strong></span>
       </div>}
     </aside>}
-    <div className="os-form-tabs" role="tablist"><button type="button" className={tab === 'general' ? 'active' : ''} onClick={() => setTab('general')}>Dados gerais</button><button type="button" className={tab === 'materials' ? 'active' : ''} onClick={() => setTab('materials')}>Pedido de compra</button></div>
+    <div className="os-form-tabs" role="tablist"><button type="button" className={tab === 'general' ? 'active' : ''} onClick={() => setTab('general')}>Dados gerais</button><button type="button" className={tab === 'materials' ? 'active' : ''} onClick={() => setTab('materials')}>Materiais</button></div>
 
     {tab === 'general' ? <>
       <section className="os-form-section">
@@ -1316,7 +1419,7 @@ function supplierDisplay(supplier: Supplier) {
   return `${name}${supplier.tradeName && supplier.legalName ? ` — ${supplier.legalName}` : ''} · #${supplier.id}`
 }
 
-function ServiceOrderDetail({ order, catalog }: { order: ServiceOrder; catalog: ServiceCatalogItem[] }) {
+function ServiceOrderDetail({ order, catalog, flagSaving, onFlagChange }: { order: ServiceOrder; catalog: ServiceCatalogItem[]; flagSaving: boolean; onFlagChange: (flag: ServiceOrderOperationalFlag, checked: boolean) => void }) {
   const tradeName = order.client?.nmfanta
   const legalName = order.clientName || order.client?.nmrazao || order.client?.name
   const attendanceLocationQuery = useQuery({
@@ -1328,6 +1431,7 @@ function ServiceOrderDetail({ order, catalog }: { order: ServiceOrder; catalog: 
   const attendanceLocation = attendanceLocationQuery.data
   return <div className="detail-modal-content">
     <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><Wrench /></span><div><span>OS-{order.id} · {order.flordem === 'C' ? 'Contrato' : 'Avulsa'}</span><h2>{tradeName || legalName || 'Cliente não identificado'}</h2>{tradeName && legalName && <p>{legalName}</p>}</div></div><div className="detail-status-stack">{order.priority === 'URGENTE' && <Badge tone="red">Urgente</Badge>}<Badge tone={statusTone[order.status]}>{enumLabel(order.status)}</Badge></div></div>
+    <div className="os-detail-operational-flags" aria-label="Indicadores operacionais da ordem de serviço">{operationalFlags.map((item) => <div key={item.flag} className={`os-detail-operational-flag os-detail-operational-flag--${item.tone} ${detailFlagValue(order, item.flag) ? 'is-checked' : ''}`}><OperationalCheckbox active={detailFlagValue(order, item.flag)} label={item.label} tone={item.tone} disabled={order.status === 'CANCELADA' || flagSaving} onChange={(checked) => onFlagChange(item.flag, checked)} /><span><small>Status rápido</small><strong>{item.label}</strong></span></div>)}</div>
     <div className="detail-metrics"><span><small>Data da requisição</small><strong>{formatDate(order.dtordem)}</strong></span><span><small>Agendamentos</small><strong>{order.schedules?.length ?? 0}</strong></span><span><small>Tempo realizado</small><strong>{order.qthorat || '00:00'}</strong></span><span><small>{order.flordem === 'C' ? 'Tempo descontado' : 'Tempo cobrado'}</small><strong>{order.qthorac || '00:00'}</strong></span><span><small>Valor a cobrar</small><strong>{money(order.vlcobra)}</strong></span></div>
     <div className="detail-sections-grid">
       <section className="drawer-section"><h3>Atendimento</h3><dl><div><dt>Solicitante</dt><dd>{order.nmsolic || 'Não informado'}</dd></div><div><dt>Categoria</dt><dd>{enumLabel(order.category)}</dd></div><div><dt>Tipo de serviço</dt><dd>{serviceTypes.find((item) => item.value === order.tpservic)?.label || 'Não informado'}</dd></div><div><dt>Procurar por</dt><dd>{order.procurarpor || 'Não informado'}</dd></div><div><dt>Local</dt><dd>{attendanceLocation ? attendanceLocationDisplay(attendanceLocation) : order.idlocal ? `Local #${order.idlocal}` : 'Não informado'}</dd></div></dl></section>

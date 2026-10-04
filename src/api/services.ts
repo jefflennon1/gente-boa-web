@@ -55,6 +55,7 @@ import type {
   ServiceOrderListItem,
   ServiceOrderTracking,
   ServiceOrderStatus,
+  ServiceOrderOperationalFlag,
   ServiceOrderPayload,
   ServiceOrderMaterialOrder,
   ServiceCatalogItem,
@@ -450,6 +451,10 @@ export const api = {
     },
     async updateStatus(id: number, status: ServiceOrderStatus) {
       const { data } = await http.put<ServiceOrder>(`/service-orders/${id}/status`, null, { params: { status } })
+      return data
+    },
+    async updateOperationalFlag(id: number, flag: ServiceOrderOperationalFlag, checked: boolean) {
+      const { data } = await http.put<ServiceOrder>(`/service-orders/${id}/operational-flag`, { flag, checked })
       return data
     },
     async startTracking(id: number, payload: { scheduleId: number; serviceId?: number | null; employeeId?: number | null; startedAt: string }) {

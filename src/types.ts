@@ -6,6 +6,7 @@ export type Priority = 'NORMAL' | 'URGENTE'
 export type ServiceCategory = 'MAO_DE_OBRA' | 'GARANTIA' | 'VISITA_TECNICA' | 'CANCELAMENTO' | 'DESLOCAMENTO'
 export type ServiceSearchType = 'ELETRICOS' | 'AMBOS' | 'ALVENARIA' | 'HIDRAULICO' | 'HIDRO' | 'OUTROS'
 export type ServiceOrderStatus = 'ABERTA' | 'ENCAMINHADA' | 'AGENDADA' | 'EM_ATENDIMENTO' | 'FINALIZADA' | 'CANCELADA'
+export type ServiceOrderOperationalFlag = 'URGENT' | 'SCHEDULED_TIME' | 'ROUTED' | 'STARTED' | 'FINISHED'
 export type ServiceOrderOrigin = 'A' | 'C'
 export type InvoiceStatus =
   | 'RASCUNHO'
