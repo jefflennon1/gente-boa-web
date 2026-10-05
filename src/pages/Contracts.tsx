@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Ban, Building2, ChevronLeft, ChevronRight, CircleDollarSign, Download, Edit3, ExternalLink, FileSignature, MapPin, Plus, Printer, RefreshCw, Search, Settings2, Trash2, Upload, UserRound, X } from 'lucide-react'
+import { Ban, Building2, ChevronLeft, ChevronRight, CircleDollarSign, Download, Edit3, ExternalLink, FileSignature, Mail, MapPin, Plus, Printer, RefreshCw, Search, Settings2, Trash2, Upload, X } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
+import { modulesApi, modulesKeys, openPdf, summaryNumber } from '../api/modules'
 import { apiErrorMessage } from '../api/client'
 import { useRouter } from '../router'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money, toDateInput, toDateTimeInput } from '../lib/format'
-import type { ClientSearchOption, Contract, ContractListSortBy, ContractPayload, ContractServiceItem, ContractServicePayload, Employee, SortDirection, Supplier } from '../types'
+import type { ClientSearchOption, Contract, ContractListSortBy, ContractPayload, ContractServiceItem, ContractServicePayload, SortDirection } from '../types'
 import { Badge, Button, CollapsibleFilters, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 type StatusFilter = 'TODOS' | 'ATIVO' | 'CANCELADO'
@@ -100,14 +101,6 @@ function contractClientAddress(client: ClientSearchOption) {
   return [client.street, client.complement, client.district, client.city, client.state].filter(Boolean).join(' · ')
 }
 
-function contractEmployeeDisplay(employee: Employee) {
-  return employee.name || employee.nickname || `Funcionário #${employee.id}`
-}
-
-function contractSupplierDisplay(supplier: Supplier) {
-  return supplier.tradeName || supplier.legalName || `Fornecedor #${supplier.id}`
-}
-
 export function Contracts() {
   const queryClient = useQueryClient()
   const signedDocumentInputRef = useRef<HTMLInputElement>(null)
@@ -128,17 +121,10 @@ export function Contracts() {
   const [contractClient, setContractClient] = useState<ClientSearchOption | null>(null)
   const [clientPickerOpen, setClientPickerOpen] = useState(false)
   const [clientPickerSearch, setClientPickerSearch] = useState('')
-  const [contractEmployeeId, setContractEmployeeId] = useState('')
-  const [contractEmployee, setContractEmployee] = useState<Employee | null>(null)
-  const [employeePickerOpen, setEmployeePickerOpen] = useState(false)
-  const [employeePickerSearch, setEmployeePickerSearch] = useState('')
-  const [contractSupplierId, setContractSupplierId] = useState('')
-  const [contractSupplier, setContractSupplier] = useState<Supplier | null>(null)
-  const [supplierPickerOpen, setSupplierPickerOpen] = useState(false)
-  const [supplierPickerSearch, setSupplierPickerSearch] = useState('')
   const [serviceRows, setServiceRows] = useState<ServiceRow[]>(() => [emptyServiceRow()])
   const [detailId, setDetailId] = useState<number | null>(null)
   const [documentLoadingId, setDocumentLoadingId] = useState<number | null>(null)
+  const [welcomeLoading, setWelcomeLoading] = useState(false)
   const [documentUrl, setDocumentUrl] = useState('')
   const [documentContract, setDocumentContract] = useState<Contract | null>(null)
   const [signedDocumentUploadingId, setSignedDocumentUploadingId] = useState<number | null>(null)
@@ -153,8 +139,6 @@ export function Contracts() {
   const [deleteError, setDeleteError] = useState('')
   const debouncedSearch = useDebouncedValue(search)
   const debouncedClientPickerSearch = useDebouncedValue(clientPickerSearch.trim())
-  const debouncedEmployeePickerSearch = useDebouncedValue(employeePickerSearch.trim())
-  const debouncedSupplierPickerSearch = useDebouncedValue(supplierPickerSearch.trim())
 
   const contractsQuery = useQuery({
     queryKey: [...queryKeys.contracts, 'list', debouncedSearch, statusFilter, sortBy, direction, page, pageSize, clientFilter],
@@ -169,6 +153,10 @@ export function Contracts() {
     }),
     placeholderData: keepPreviousData,
   })
+  const summaryQuery = useQuery({
+    queryKey: [...modulesKeys.summaries, 'contracts', debouncedSearch, statusFilter, clientFilter],
+    queryFn: () => modulesApi.summaries.get('contracts', { query: debouncedSearch || undefined, clientId: clientFilter ?? undefined, status: statusFilter === 'TODOS' ? undefined : statusFilter }),
+  })
 
   const clientsQuery = useQuery({
     queryKey: [...queryKeys.clients, 'contract-selector'],
@@ -180,18 +168,6 @@ export function Contracts() {
     queryKey: [...queryKeys.clients, 'contract-search', debouncedClientPickerSearch],
     queryFn: () => api.clients.search(debouncedClientPickerSearch),
     enabled: clientPickerOpen && clientPickerReady,
-  })
-
-  const employeePickerQuery = useQuery({
-    queryKey: [...queryKeys.employees, 'contract-search', debouncedEmployeePickerSearch],
-    queryFn: () => api.employees.search(debouncedEmployeePickerSearch),
-    enabled: employeePickerOpen,
-  })
-
-  const supplierPickerQuery = useQuery({
-    queryKey: [...queryKeys.suppliers, 'contract-search', debouncedSupplierPickerSearch],
-    queryFn: () => api.suppliers.list({ query: debouncedSupplierPickerSearch || undefined, page: 0, size: 50 }),
-    enabled: supplierPickerOpen,
   })
 
   const filteredClientQuery = useQuery({
@@ -246,8 +222,6 @@ export function Contracts() {
       setModalOpen(false)
       setSelected(null)
       setContractClient(null)
-      setContractEmployee(null)
-      setContractSupplier(null)
       setServiceRows([emptyServiceRow()])
       queryClient.setQueryData([...queryKeys.contracts, 'detail', contract.id], contract)
       setDetailId(contract.id)
@@ -285,6 +259,17 @@ export function Contracts() {
     },
     onError: (error) => setDeleteError(apiErrorMessage(error, 'Não foi possível excluir este contrato.')),
   })
+
+  async function openWelcomeLetter(contractId: number) {
+    setWelcomeLoading(true)
+    try {
+      openPdf(await modulesApi.templates.welcomeLetter(contractId))
+    } catch (error) {
+      showToast(apiErrorMessage(error, 'Não foi possível gerar a carta de boas-vindas.'))
+    } finally {
+      setWelcomeLoading(false)
+    }
+  }
 
   async function openContractDocument(contract: Contract) {
     const id = contract.id
@@ -374,10 +359,6 @@ export function Contracts() {
   const contracts = contractsQuery.data?.content ?? []
   const total = contractsQuery.data?.total ?? 0
   const totalPages = contractsQuery.data?.totalPages ?? 0
-  const activeOnPage = contracts.filter((contract) => contract.status === 'ATIVO').length
-  const canceledOnPage = contracts.filter((contract) => contract.status === 'CANCELADO').length
-  const renewalsOnPage = contracts.filter((contract) => contract.status === 'ATIVO' && renewalInNextDays(contract.renewalDate)).length
-  const adhesionOnPage = contracts.reduce((sum, contract) => sum + Number(contract.adhesionFee ?? 0), 0)
   const firstResult = total === 0 ? 0 : page * pageSize + 1
   const lastResult = Math.min((page + 1) * pageSize, total)
   const clientOptions = clientsQuery.data?.content ?? []
@@ -391,12 +372,6 @@ export function Contracts() {
       : clientFilter !== null && String(clientFilter) === contractClientId
         ? filteredClientName
         : contractClientId ? `Cliente #${contractClientId}` : 'Buscar cliente'
-  const contractEmployeeLabel = contractEmployee
-    ? contractEmployeeDisplay(contractEmployee)
-    : contractEmployeeId ? `Funcionário #${contractEmployeeId}` : 'Buscar funcionário'
-  const contractSupplierLabel = contractSupplier
-    ? contractSupplierDisplay(contractSupplier)
-    : contractSupplierId ? `Fornecedor #${contractSupplierId}` : 'Buscar fornecedor'
   const minimumContractMonths = systemParametersQuery.data?.minimumContractMonths ?? 3
   const configuredDueDays = Array.from(new Set([
     systemParametersQuery.data?.primaryDueDay ?? 10,
@@ -419,10 +394,6 @@ export function Contracts() {
     setSelected(null)
     setContractClientId(clientFilter === null ? '' : String(clientFilter))
     setContractClient(null)
-    setContractEmployeeId('')
-    setContractEmployee(null)
-    setContractSupplierId('')
-    setContractSupplier(null)
     setServiceRows([emptyServiceRow()])
     setFormError('')
     setFormLoading(false)
@@ -443,17 +414,7 @@ export function Contracts() {
       setSelected(contract)
       setContractClientId(String(contract.clientId))
       setContractClient(null)
-      setContractEmployeeId(contract.employeeId == null ? '' : String(contract.employeeId))
-      setContractEmployee(null)
-      setContractSupplierId(contract.supplierId == null ? '' : String(contract.supplierId))
-      setContractSupplier(null)
       setServiceRows(contract.services?.length ? contract.services.map(serviceRowFrom) : [emptyServiceRow()])
-      const [employeeResult, supplierResult] = await Promise.allSettled([
-        contract.employeeId == null ? Promise.resolve(null) : api.employees.find(contract.employeeId),
-        contract.supplierId == null ? Promise.resolve(null) : api.suppliers.find(contract.supplierId),
-      ])
-      if (employeeResult.status === 'fulfilled') setContractEmployee(employeeResult.value)
-      if (supplierResult.status === 'fulfilled') setContractSupplier(supplierResult.value)
     } catch (error) {
       setFormError(apiErrorMessage(error))
     } finally {
@@ -484,20 +445,6 @@ export function Contracts() {
     setContractClient(client)
     setClientPickerOpen(false)
     setClientPickerSearch('')
-  }
-
-  function selectContractEmployee(employee: Employee) {
-    setContractEmployeeId(String(employee.id))
-    setContractEmployee(employee)
-    setEmployeePickerOpen(false)
-    setEmployeePickerSearch('')
-  }
-
-  function selectContractSupplier(supplier: Supplier) {
-    setContractSupplierId(String(supplier.id))
-    setContractSupplier(supplier)
-    setSupplierPickerOpen(false)
-    setSupplierPickerSearch('')
   }
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -546,17 +493,9 @@ export function Contracts() {
       adhesionFee: nullableNumber(data, 'adhesionFee'),
       dueDay: nullableNumber(data, 'dueDay'),
       gracePeriod: textValue(data, 'gracePeriod') === 'true',
-      adjustmentIndexId: nullableNumber(data, 'adjustmentIndexId'),
-      salePercentage: nullableNumber(data, 'salePercentage'),
-      renewalPercentage: nullableNumber(data, 'renewalPercentage'),
       canceled: selected?.canceled ?? false,
       cancellationDate: selected?.cancellationDate ?? null,
       cancellationReason: selected?.cancellationReason ?? null,
-      employeeId: contractEmployeeId ? Number(contractEmployeeId) : null,
-      employeePercentage: nullableNumber(data, 'employeePercentage'),
-      supplierId: contractSupplierId ? Number(contractSupplierId) : null,
-      statusFlag: textValue(data, 'statusFlag') || null,
-      lastAdjustmentDate: textValue(data, 'lastAdjustmentDate') || null,
       services,
     }
     saveMutation.mutate({ id: selected?.id, payload })
@@ -585,10 +524,10 @@ export function Contracts() {
       <PageHeader eyebrow="Relacionamento" title="Contratos" subtitle="Contratos de manutenção, serviços vinculados, renovações e cancelamentos." actions={<Button icon={<Plus size={18} />} onClick={openNew}>Novo contrato</Button>} />
 
       <section className="stats-grid stats-grid--four">
-        <StatCard label="Ativos nesta página" value={String(activeOnPage)} helper={`${contracts.length} contratos exibidos`} icon={<FileSignature />} tone="blue" />
-        <StatCard label="Renovação em 60 dias" value={String(renewalsOnPage)} helper="Contratos ativos no período" icon={<RefreshCw />} tone="orange" />
-        <StatCard label="Cancelados nesta página" value={String(canceledOnPage)} helper="Histórico preservado" icon={<Ban />} tone="purple" />
-        <StatCard label="Taxas de adesão" value={money(adhesionOnPage)} helper="Soma da página atual" icon={<CircleDollarSign />} tone="green" />
+        <StatCard label="Contratos ativos" value={summaryNumber(summaryQuery.data, 'active').toLocaleString('pt-BR')} helper={`${summaryNumber(summaryQuery.data, 'total').toLocaleString('pt-BR')} contratos no filtro`} icon={<FileSignature />} tone="blue" />
+        <StatCard label="Renovação em 60 dias" value={summaryNumber(summaryQuery.data, 'renewingIn60Days').toLocaleString('pt-BR')} helper="Contratos ativos no período" icon={<RefreshCw />} tone="orange" />
+        <StatCard label="Cancelados" value={summaryNumber(summaryQuery.data, 'canceled').toLocaleString('pt-BR')} helper="Histórico preservado" icon={<Ban />} tone="purple" />
+        <StatCard label="Taxas de adesão" value={money(summaryNumber(summaryQuery.data, 'adhesionTotal'))} helper="Total geral do filtro" icon={<CircleDollarSign />} tone="green" />
       </section>
 
       <section className="panel data-panel">
@@ -644,26 +583,15 @@ export function Contracts() {
             <div className="form-section-title"><span>1</span><div><strong>Dados do contrato</strong><small>Cliente, vigência e vencimento</small></div></div>
             <div className="form-grid form-grid--four">
               <FormField label="Cliente"><button type="button" className="contract-reference-trigger" onClick={() => { setClientPickerSearch(''); setClientPickerOpen(true) }}><Search size={16} /><span><strong>{contractClientLabel}</strong><small>{contractClientId ? `Código #${contractClientId} · Clique para alterar` : 'Nome fantasia, razão social ou código'}</small></span></button></FormField>
-              <FormField label="Data do contrato"><input name="contractDate" type="date" required defaultValue={toDateInput(selected?.contractDate)} /></FormField>
-              <FormField label="Data de renovação"><input name="renewalDate" type="date" defaultValue={selected?.renewalDate?.slice(0, 10) ?? ''} /></FormField>
+              <FormField label="Data do contrato"><input name="contractDate" type="date" required defaultValue={toDateInput(selected?.contractDate)} onChange={(event) => { const input = event.currentTarget.form?.elements.namedItem('renewalDate') as HTMLInputElement | null; if (input && (!input.value || input.dataset.auto === 'true')) { input.value = nextRenewal(event.currentTarget.value, systemParametersQuery.data?.annualAdjustmentMonth ?? 5); input.dataset.auto = 'true' } }} /></FormField>
+              <FormField label="Data de renovação" hint="Automática: 1º dia do mês de reajuste seguinte"><input name="renewalDate" type="date" data-auto={selected?.renewalDate ? 'false' : 'true'} defaultValue={selected?.renewalDate?.slice(0, 10) ?? nextRenewal(toDateInput(selected?.contractDate), systemParametersQuery.data?.annualAdjustmentMonth ?? 5)} onChange={(event) => { event.currentTarget.dataset.auto = 'false' }} /></FormField>
               <FormField label="Dia do vencimento"><select name="dueDay" defaultValue={selected?.dueDay ?? configuredDueDays[0]}>{selected?.dueDay && !configuredDueDays.includes(selected.dueDay) && <option value={selected.dueDay}>Dia {selected.dueDay} (legado)</option>}{configuredDueDays.map((day) => <option key={day} value={day}>Dia {day}</option>)}</select></FormField>
               <FormField label="Taxa de adesão" hint="O banco aceita somente valor inteiro"><input name="adhesionFee" type="number" min="0" step="1" defaultValue={selected?.adhesionFee ?? 0} /></FormField>
               <FormField label="Possui carência"><select name="gracePeriod" defaultValue={String(selected?.gracePeriod ?? false)}><option value="false">Não</option><option value="true">Sim</option></select></FormField>
-              <FormField label="Código do índice"><input name="adjustmentIndexId" type="number" min="0" defaultValue={selected?.adjustmentIndexId ?? ''} /></FormField>
-              <FormField label="Último reajuste"><input name="lastAdjustmentDate" type="datetime-local" defaultValue={selected?.lastAdjustmentDate ? toDateTimeInput(selected.lastAdjustmentDate) : ''} /></FormField>
             </div>
 
-            <div className="form-section-title"><span>2</span><div><strong>Comercial e responsáveis</strong><small>Percentuais e referências do contrato</small></div></div>
-            <div className="form-grid form-grid--four">
-              <FormField label="% de venda"><input name="salePercentage" type="number" min="0" max="100" step="1" defaultValue={selected?.salePercentage ?? 0} /></FormField>
-              <FormField label="% de renovação"><input name="renewalPercentage" type="number" min="0" max="100" step="1" defaultValue={selected?.renewalPercentage ?? 0} /></FormField>
-              <FormField label="Funcionário"><div className="contract-reference-control"><button type="button" className="contract-reference-trigger" onClick={() => { setEmployeePickerSearch(''); setEmployeePickerOpen(true) }}><Search size={16} /><span><strong>{contractEmployeeLabel}</strong><small>{contractEmployeeId ? `Código #${contractEmployeeId} · Clique para alterar` : 'Nome, apelido, cargo ou código'}</small></span></button>{contractEmployeeId && <button type="button" className="contract-reference-clear" onClick={() => { setContractEmployeeId(''); setContractEmployee(null) }} aria-label="Remover funcionário" title="Remover funcionário"><X size={15} /></button>}</div></FormField>
-              <FormField label="% do funcionário"><input name="employeePercentage" type="number" min="0" max="100" step="0.01" defaultValue={selected?.employeePercentage ?? ''} /></FormField>
-              <FormField label="Fornecedor"><div className="contract-reference-control"><button type="button" className="contract-reference-trigger" onClick={() => { setSupplierPickerSearch(''); setSupplierPickerOpen(true) }}><Search size={16} /><span><strong>{contractSupplierLabel}</strong><small>{contractSupplierId ? `Código #${contractSupplierId} · Clique para alterar` : 'Nome fantasia, razão social ou código'}</small></span></button>{contractSupplierId && <button type="button" className="contract-reference-clear" onClick={() => { setContractSupplierId(''); setContractSupplier(null) }} aria-label="Remover fornecedor" title="Remover fornecedor"><X size={15} /></button>}</div></FormField>
-              <FormField label="Flag de situação"><input name="statusFlag" maxLength={2} defaultValue={selected?.statusFlag ?? ''} /></FormField>
-            </div>
 
-            <div className="form-section-title"><span>3</span><div><strong>Serviços do contrato</strong><small>Catálogo de tbservico e valores de tbcontratoservico</small></div></div>
+            <div className="form-section-title"><span>2</span><div><strong>Serviços do contrato</strong><small>Catálogo de tbservico e valores de tbcontratoservico</small></div></div>
             {servicesQuery.isError && <FormError message={`Não foi possível carregar o catálogo: ${apiErrorMessage(servicesQuery.error)}`} />}
             <div className="contract-service-list">
               {serviceRows.map((row, index) => {
@@ -702,39 +630,13 @@ export function Contracts() {
         </div>
       </Modal>
 
-      <Modal open={employeePickerOpen} onClose={() => setEmployeePickerOpen(false)} title="Selecionar funcionário" description="Somente funcionários ativos aparecem nesta pesquisa." size="large">
-        <div className="modal__body employee-picker-modal">
-          <div className="search-box employee-picker-modal__search"><Search size={18} /><input autoFocus value={employeePickerSearch} onChange={(event) => setEmployeePickerSearch(event.target.value)} placeholder="Digite o nome, apelido, cargo ou código..." /></div>
-          <div className="employee-picker-modal__results">
-            {employeePickerQuery.isLoading ? <LoadingState label="Buscando funcionários..." /> : employeePickerQuery.isError ? <ErrorState message={apiErrorMessage(employeePickerQuery.error)} onRetry={() => employeePickerQuery.refetch()} /> : (employeePickerQuery.data?.length ?? 0) === 0 ? <EmptyState title="Nenhum funcionário ativo encontrado" description="Tente outro nome, apelido, cargo ou código." /> : employeePickerQuery.data?.map((employee) => <button type="button" key={employee.id} onClick={() => selectContractEmployee(employee)}>
-              <span className="employee-picker-modal__avatar"><UserRound size={19} /></span>
-              <span className="employee-picker-modal__identity"><strong>{contractEmployeeDisplay(employee)}</strong><small>{employee.nickname && employee.nickname !== employee.name ? `${employee.nickname} · ` : ''}Código #{employee.id}</small></span>
-              <span className="employee-picker-modal__meta"><strong>{employee.position || 'Cargo não informado'}</strong><small>{employee.phone || employee.secondaryPhone || employee.tertiaryPhone || 'Telefone não informado'}</small></span>
-            </button>)}
-          </div>
-        </div>
-      </Modal>
-
-      <Modal open={supplierPickerOpen} onClose={() => setSupplierPickerOpen(false)} title="Selecionar fornecedor" description="Pesquise por nome fantasia, razão social, documento ou código." size="large">
-        <div className="modal__body employee-picker-modal">
-          <div className="search-box employee-picker-modal__search"><Search size={18} /><input autoFocus value={supplierPickerSearch} onChange={(event) => setSupplierPickerSearch(event.target.value)} placeholder="Digite o fornecedor, documento ou código..." /></div>
-          <div className="employee-picker-modal__results">
-            {supplierPickerQuery.isLoading ? <LoadingState label="Buscando fornecedores..." /> : supplierPickerQuery.isError ? <ErrorState message={apiErrorMessage(supplierPickerQuery.error)} onRetry={() => supplierPickerQuery.refetch()} /> : (supplierPickerQuery.data?.content.length ?? 0) === 0 ? <EmptyState title="Nenhum fornecedor encontrado" description="Tente outro nome, documento ou código." /> : supplierPickerQuery.data?.content.map((supplier) => <button type="button" key={supplier.id} onClick={() => selectContractSupplier(supplier)}>
-              <span className="employee-picker-modal__avatar"><Building2 size={19} /></span>
-              <span className="employee-picker-modal__identity"><strong>{contractSupplierDisplay(supplier)}</strong><small>{supplier.legalName && supplier.legalName !== supplier.tradeName ? supplier.legalName : 'Razão social não informada'}</small></span>
-              <span className="employee-picker-modal__meta"><strong>Código #{supplier.id}</strong><small>{supplier.document || supplier.phone || 'Documento não informado'}</small></span>
-            </button>)}
-          </div>
-        </div>
-      </Modal>
-
       <DetailModal
         open={detailId !== null}
         onClose={() => setDetailId(null)}
         title={detailQuery.data ? `Contrato #${detailQuery.data.id} · ${detailQuery.data.clientTradeName || detailQuery.data.clientName || `Cliente #${detailQuery.data.clientId}`}` : 'Detalhes do contrato'}
         description="Condições comerciais, vigência, serviços contratados e situação atual."
         size="xlarge"
-        actions={detailQuery.data ? <><Button variant="danger" icon={<Trash2 size={17} />} onClick={() => { setDeleteError(''); setContractToDelete(detailQuery.data) }}>Excluir</Button>{!detailQuery.data.canceled && <Button variant="secondary" icon={<Ban size={17} />} onClick={() => { setCancelError(''); setContractToCancel(detailQuery.data) }}>Cancelar contrato</Button>}<Button variant="secondary" icon={<Upload size={17} />} disabled={signedDocumentUploadingId === detailQuery.data.id} onClick={() => chooseSignedDocument(detailQuery.data)}>{signedDocumentUploadingId === detailQuery.data.id ? 'Enviando PDF...' : 'Atualizar contrato assinado'}</Button><Button variant="secondary" icon={<FileSignature size={17} />} disabled={documentLoadingId === detailQuery.data.id} onClick={() => openContractDocument(detailQuery.data)}>{documentLoadingId === detailQuery.data.id ? 'Gerando PDF...' : 'Exibir documento de contrato'}</Button><Button icon={<Edit3 size={17} />} onClick={() => openEdit(detailQuery.data)}>Editar</Button></> : undefined}
+        actions={detailQuery.data ? <><Button variant="danger" icon={<Trash2 size={17} />} onClick={() => { setDeleteError(''); setContractToDelete(detailQuery.data) }}>Excluir</Button>{!detailQuery.data.canceled && <Button variant="secondary" icon={<Ban size={17} />} onClick={() => { setCancelError(''); setContractToCancel(detailQuery.data) }}>Cancelar contrato</Button>}<Button variant="secondary" icon={<Upload size={17} />} disabled={signedDocumentUploadingId === detailQuery.data.id} onClick={() => chooseSignedDocument(detailQuery.data)}>{signedDocumentUploadingId === detailQuery.data.id ? 'Enviando PDF...' : 'Atualizar contrato assinado'}</Button><Button variant="secondary" icon={<Mail size={17} />} disabled={welcomeLoading} onClick={() => openWelcomeLetter(detailQuery.data!.id)}>{welcomeLoading ? 'Gerando...' : 'Carta de boas-vindas'}</Button><Button variant="secondary" icon={<FileSignature size={17} />} disabled={documentLoadingId === detailQuery.data.id} onClick={() => openContractDocument(detailQuery.data)}>{documentLoadingId === detailQuery.data.id ? 'Gerando PDF...' : 'Exibir documento de contrato'}</Button><Button icon={<Edit3 size={17} />} onClick={() => openEdit(detailQuery.data)}>Editar</Button></> : undefined}
       >
         {detailQuery.isLoading ? <LoadingState label="Carregando contrato..." /> : detailQuery.isError ? <ErrorState message={apiErrorMessage(detailQuery.error)} onRetry={() => detailQuery.refetch()} /> : detailQuery.data ? <ContractDetail contract={detailQuery.data} /> : null}
       </DetailModal>
@@ -806,16 +708,29 @@ function ContractDetail({ contract }: { contract: Contract }) {
     <div className="detail-sections-grid">
     <section className="drawer-section"><h3>Condições comerciais</h3><dl>
       <div><dt>Carência</dt><dd>{contract.gracePeriod ? 'Sim' : 'Não'}</dd></div>
-      <div><dt>Índice de reajuste</dt><dd>{contract.adjustmentIndexId ?? 'Não informado'}</dd></div>
-      <div><dt>Percentual de venda</dt><dd>{contract.salePercentage == null ? 'Não informado' : `${contract.salePercentage}%`}</dd></div>
-      <div><dt>Percentual de renovação</dt><dd>{contract.renewalPercentage == null ? 'Não informado' : `${contract.renewalPercentage}%`}</dd></div>
-      <div><dt>Funcionário</dt><dd>{contract.employeeId ?? 'Não informado'}</dd></div>
-      <div><dt>Percentual do funcionário</dt><dd>{contract.employeePercentage == null ? 'Não informado' : `${contract.employeePercentage}%`}</dd></div>
-      <div><dt>Fornecedor</dt><dd>{contract.supplierId ?? 'Não informado'}</dd></div>
       <div><dt>Último reajuste</dt><dd>{formatDate(contract.lastAdjustmentDate)}</dd></div>
     </dl></section>
     <section className="drawer-section drawer-section--wide"><h3>Serviços contratados</h3>{(contract.services?.length ?? 0) === 0 ? <p className="drawer-section__text">Nenhum serviço vinculado.</p> : <div className="contract-detail-services">{contract.services.map((service) => <article key={service.sequence}><span>{service.sequence}</span><div><strong>{service.serviceName || service.serviceDescription || `Serviço #${service.serviceId}`}</strong><small>{service.quantity} {service.unit || 'un.'} · {money(service.unitValue)} por unidade</small></div><b>{money(service.totalValue)}</b></article>)}</div>}</section>
+    <RenewalHistorySection contractId={contract.id} />
     {contract.canceled && <section className="drawer-section contract-cancellation drawer-section--wide"><h3>Cancelamento</h3><dl><div><dt>Data</dt><dd>{formatDate(contract.cancellationDate)}</dd></div><div><dt>Motivo</dt><dd>{contract.cancellationReason || 'Não informado'}</dd></div></dl></section>}
     </div>
   </div>
+}
+
+function nextRenewal(contractDate: string | undefined, month: number) {
+  if (!contractDate) return ''
+  const [year, contractMonth, day] = contractDate.split('-').map(Number)
+  const target = month >= 1 && month <= 12 ? month : 5
+  const sameYearIsAfter = contractMonth < target || (contractMonth === target && day < 1)
+  const renewalYear = sameYearIsAfter ? year : year + 1
+  return `${renewalYear}-${String(target).padStart(2, '0')}-01`
+}
+
+function RenewalHistorySection({ contractId }: { contractId: number }) {
+  const historyQuery = useQuery({ queryKey: [...modulesKeys.readjustment, 'history', 'contract', contractId], queryFn: () => modulesApi.readjustment.history({ contractId }) })
+  const rows = historyQuery.data ?? []
+  return <section className="drawer-section drawer-section--wide"><h3>Histórico de contratos renovados</h3>
+    {historyQuery.isLoading ? <p className="drawer-section__text">Carregando...</p> : rows.length === 0 ? <p className="drawer-section__text">Nenhum reajuste registrado.</p> : <div className="table-wrap"><table className="data-table"><thead><tr><th>Alterado em</th><th>Renovação</th><th className="num">Total anterior</th><th className="num">Total atualizado</th><th className="num">Minuto anterior</th><th className="num">Minuto atualizado</th><th className="num">%</th></tr></thead>
+      <tbody>{rows.map((row) => <tr key={row.id}><td>{formatDate(row.changedAt)}</td><td>{formatDate(row.renewalDate)}</td><td className="num">{money(row.previousTotal)}</td><td className="num">{money(row.newTotal)}</td><td className="num">{money(row.previousMinute)}</td><td className="num">{money(row.newMinute)}</td><td className="num">{row.percentage.toLocaleString('pt-BR')}%</td></tr>)}</tbody></table></div>}
+  </section>
 }

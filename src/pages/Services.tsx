@@ -3,6 +3,7 @@ import { BriefcaseBusiness, ChevronLeft, ChevronRight, CircleDollarSign, Edit3, 
 import { useState } from 'react'
 import { apiErrorMessage } from '../api/client'
 import { api, queryKeys } from '../api/services'
+import { modulesApi, modulesKeys, summaryNumber } from '../api/modules'
 import { Button, CollapsibleFilters, ConfirmDialog, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { money } from '../lib/format'
@@ -38,6 +39,10 @@ export function Services() {
   const servicesQuery = useQuery({
     queryKey: [...queryKeys.serviceCatalog, 'management', debouncedSearch, page, pageSize],
     queryFn: () => api.serviceCatalog.list({ query: debouncedSearch || undefined, page, size: pageSize }),
+  })
+  const summaryQuery = useQuery({
+    queryKey: [...modulesKeys.summaries, 'services', debouncedSearch],
+    queryFn: () => modulesApi.summaries.get('services', { query: debouncedSearch || undefined }),
     placeholderData: keepPreviousData,
   })
 
@@ -74,11 +79,6 @@ export function Services() {
   const totalPages = servicesQuery.data?.totalPages ?? 0
   const firstResult = total === 0 ? 0 : page * pageSize + 1
   const lastResult = Math.min((page + 1) * pageSize, total)
-  const averageMinuteValue = services.length
-    ? services.reduce((sum, service) => sum + Number(service.legacyMinuteValue ?? 0), 0) / services.length
-    : 0
-  const customExtraValues = services.filter((service) => !sameValue(service.extraValue, service.legacyMinuteValue)).length
-  const customOneOffValues = services.filter((service) => !sameValue(service.oneOffValue, service.legacyMinuteValue)).length
 
   function showToast(message: string, variant: 'success' | 'error' = 'success') {
     setToast({ message, variant })
@@ -139,10 +139,10 @@ export function Services() {
     <PageHeader eyebrow="Operação" title="Serviços" subtitle="Cadastro de serviços e valores utilizados em contratos e ordens de serviço." actions={<Button icon={<Plus size={18} />} onClick={openNew}>Novo serviço</Button>} />
 
     <section className="stats-grid stats-grid--four">
-      <StatCard label="Serviços cadastrados" value={total.toLocaleString('pt-BR')} helper={`${services.length} nesta página`} icon={<BriefcaseBusiness />} tone="blue" />
-      <StatCard label="Valor minuto médio" value={money(averageMinuteValue)} helper="Média da página atual" icon={<Timer />} tone="green" />
-      <StatCard label="Valores extras próprios" value={String(customExtraValues)} helper="Diferentes do valor minuto" icon={<CircleDollarSign />} tone="orange" />
-      <StatCard label="Valores avulsos próprios" value={String(customOneOffValues)} helper="Diferentes do valor minuto" icon={<CircleDollarSign />} tone="purple" />
+      <StatCard label="Serviços cadastrados" value={summaryNumber(summaryQuery.data, 'total').toLocaleString('pt-BR')} helper="Total geral do filtro" icon={<BriefcaseBusiness />} tone="blue" />
+      <StatCard label="Valor minuto médio" value={money(summaryNumber(summaryQuery.data, 'averageMinuteValue'))} helper="Média de todos os serviços" icon={<Timer />} tone="green" />
+      <StatCard label="Valores extras próprios" value={summaryNumber(summaryQuery.data, 'customExtraValues').toLocaleString('pt-BR')} helper="Diferentes do valor minuto" icon={<CircleDollarSign />} tone="orange" />
+      <StatCard label="Valores avulsos próprios" value={summaryNumber(summaryQuery.data, 'customOneOffValues').toLocaleString('pt-BR')} helper="Diferentes do valor minuto" icon={<CircleDollarSign />} tone="purple" />
     </section>
 
     <section className="panel data-panel">

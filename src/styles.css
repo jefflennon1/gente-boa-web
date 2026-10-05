@@ -310,6 +310,7 @@ h1, h2, h3, p { margin-top: 0; }
 .detail-modal__hero-row .detail-drawer__hero { min-width: 0; margin: 0; }
 .detail-modal__hero-row .detail-drawer__hero > div { min-width: 0; }
 .detail-modal__hero-row .detail-drawer__hero h2, .detail-modal__hero-row .detail-drawer__hero p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hour-tracking-toolbar { padding: 12px 14px; border: 1px solid var(--line); border-radius: 11px; display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; background: #fafaff; }.hour-tracking-toolbar > label { min-width: 210px; display: grid; gap: 5px; }.hour-tracking-toolbar > label > span { color: var(--muted); font-size: 7px; font-weight: 800; letter-spacing: .45px; text-transform: uppercase; }.hour-tracking-toolbar > label > small { color: var(--muted); font-size: 7.5px; }.hour-tracking-toolbar input { width: 100%; min-height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; color: var(--navy); background: white; font: inherit; }.hour-tracking-toolbar .button { min-width: 116px; }
 .detail-modal-content .detail-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .detail-modal-content .detail-metrics span { border-right: 1px solid var(--line); border-bottom: 0; }
 .detail-modal-content .detail-metrics span:nth-child(odd), .detail-modal-content .detail-metrics span:nth-child(-n+2) { border-bottom: 0; }
@@ -664,6 +665,16 @@ h1, h2, h3, p { margin-top: 0; }
 .receivable-actions > span strong { color: var(--navy); }
 .receivable-actions > div { display: flex; align-items: center; gap: 8px; }
 .receivable-action-error { margin-top: 10px; padding: 9px 11px; border: 1px solid #f1cfd2; border-radius: 8px; color: #ae3944; background: #fff6f7; font-size: 8.5px; font-weight: 700; }
+.receivable-action-warning { padding: 9px 11px; border: 1px solid #f2d79c; border-radius: 8px; color: #865b06; background: #fff9eb; font-size: 9px; font-weight: 700; }
+.receivable-selection-footer { position: sticky; bottom: 0; z-index: 3; min-height: 48px; padding: 10px 16px; border-top: 1px solid #dcdff0; display: flex; align-items: center; justify-content: flex-end; gap: 28px; color: var(--muted); background: rgba(255,255,255,.96); box-shadow: 0 -5px 14px rgba(28,35,64,.06); backdrop-filter: blur(8px); font-size: 9px; }
+.receivable-selection-footer strong { margin-left: 5px; color: var(--navy); font-size: 10px; }
+.bill-generation-preview { display: grid; gap: 16px; }
+.bill-generation-preview__groups { display: grid; gap: 10px; }
+.bill-generation-preview__group { padding: 14px; border: 1px solid var(--line); border-radius: 11px; background: #fff; }
+.bill-generation-preview__group > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.bill-generation-preview__group > header div strong, .bill-generation-preview__group > header div small { display: block; }
+.bill-generation-preview__group > header div small, .bill-generation-preview__group > p { margin-top: 4px; color: var(--muted); font-size: 8.5px; }
+.bill-generation-preview__option { margin-top: 10px; display: flex; align-items: center; gap: 8px; color: var(--navy); font-size: 9px; font-weight: 700; }
 .receivable-table { min-width: 1500px; }
 .receivable-table th:nth-child(3), .receivable-table td:nth-child(3) { min-width: 230px; }
 .receivable-table th:nth-child(6), .receivable-table td:nth-child(6) { min-width: 310px; }
@@ -1073,6 +1084,8 @@ h1, h2, h3, p { margin-top: 0; }
 }
 @media (max-width: 740px) {
   .data-toolbar--clients, .data-toolbar--orders, .client-statement-toolbar, .structured-filters, .structured-filters--invoices, .statement-location-list { grid-template-columns: 1fr; }
+  .hour-tracking-toolbar { align-items: stretch; flex-direction: column; }
+  .hour-tracking-toolbar > label, .hour-tracking-toolbar .button { width: 100%; min-width: 0; }
   .os-advanced-filters__header { align-items: stretch; flex-direction: column; }
   .os-advanced-filters__clear { align-self: flex-start; }
   .os-advanced-filters__fields { grid-template-columns: 1fr; }

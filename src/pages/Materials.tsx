@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { Boxes, ChevronLeft, ChevronRight, CircleDollarSign, ClipboardList, Edit3, PackageCheck, PackageMinus, Plus, Search, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { api, queryKeys } from '../api/services'
+import { modulesApi, modulesKeys, summaryNumber } from '../api/modules'
 import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { useRouter } from '../router'
@@ -29,6 +30,10 @@ export function Materials() {
   const materialsQuery = useQuery({
     queryKey: [...queryKeys.materials, 'list', debouncedSearch, page, pageSize],
     queryFn: () => api.materials.list({ query: debouncedSearch || undefined, page, size: pageSize }),
+  })
+  const summaryQuery = useQuery({
+    queryKey: [...modulesKeys.summaries, 'materials', debouncedSearch],
+    queryFn: () => modulesApi.summaries.get('materials', { query: debouncedSearch || undefined }),
     placeholderData: keepPreviousData,
   })
 
@@ -87,9 +92,6 @@ export function Materials() {
   const totalPages = materialsQuery.data?.totalPages ?? 0
   const firstResult = total === 0 ? 0 : page * pageSize + 1
   const lastResult = Math.min((page + 1) * pageSize, total)
-  const currentStock = materials.reduce((sum, material) => sum + Number(material.currentStock ?? 0), 0)
-  const belowMinimum = materials.filter((material) => Number(material.currentStock ?? 0) < Number(material.minimumStock ?? 0)).length
-  const inventoryValue = materials.reduce((sum, material) => sum + Number(material.currentStock ?? 0) * Number(material.unitValue ?? 0), 0)
   const supplierOptions = suppliersQuery.data?.content ?? []
   const visibleSupplierOptions = createdSupplier && !supplierOptions.some((supplier) => supplier.id === createdSupplier.id)
     ? [createdSupplier, ...supplierOptions]
@@ -168,10 +170,10 @@ export function Materials() {
     <PageHeader eyebrow="Estoque" title="Cadastro de materiais" subtitle="Produtos disponíveis para inclusão nos pedidos de compra das ordens de serviço." actions={<Button icon={<Plus size={18} />} onClick={openNew}>Novo material</Button>} />
 
     <section className="stats-grid stats-grid--four">
-      <StatCard label="Materiais cadastrados" value={total.toLocaleString('pt-BR')} helper={`${materials.length} nesta página`} icon={<Boxes />} tone="blue" />
-      <StatCard label="Estoque nesta página" value={currentStock.toLocaleString('pt-BR')} helper="Soma das quantidades atuais" icon={<PackageCheck />} tone="green" />
-      <StatCard label="Abaixo do mínimo" value={String(belowMinimum)} helper="Itens desta página" icon={<PackageMinus />} tone="orange" />
-      <StatCard label="Valor em estoque" value={money(inventoryValue)} helper="Estimativa da página atual" icon={<CircleDollarSign />} tone="purple" />
+      <StatCard label="Materiais cadastrados" value={summaryNumber(summaryQuery.data, 'total').toLocaleString('pt-BR')} helper="Total geral do filtro" icon={<Boxes />} tone="blue" />
+      <StatCard label="Com preço" value={summaryNumber(summaryQuery.data, 'withUnitValue').toLocaleString('pt-BR')} helper={`Preço médio ${money(summaryNumber(summaryQuery.data, 'averageUnitValue'))}`} icon={<CircleDollarSign />} tone="green" />
+      <StatCard label="Com fornecedor" value={summaryNumber(summaryQuery.data, 'withSupplier').toLocaleString('pt-BR')} helper="Fornecedor vinculado" icon={<PackageCheck />} tone="orange" />
+      <StatCard label="Marcas" value={summaryNumber(summaryQuery.data, 'brands').toLocaleString('pt-BR')} helper="Marcas distintas" icon={<PackageMinus />} tone="purple" />
     </section>
 
     <section className="panel data-panel">

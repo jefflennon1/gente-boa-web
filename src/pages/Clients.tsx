@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpRight, Building2, ChevronLeft, ChevronRight, CircleDollarSign, Edit3, FileSignature, Plus, RefreshCw, Search, Trash2, UserRoundCheck, UsersRound, Wrench } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
+import { modulesApi, modulesKeys, summaryNumber } from '../api/modules'
 import { apiErrorMessage } from '../api/client'
 import { useAuth } from '../auth'
 import { useRouter } from '../router'
@@ -176,6 +177,10 @@ export function Clients() {
     }),
     placeholderData: keepPreviousData,
   })
+  const summaryQuery = useQuery({
+    queryKey: [...modulesKeys.summaries, 'clients', debouncedClientName, debouncedCpf, debouncedCnpj, debouncedClientCode],
+    queryFn: () => modulesApi.summaries.get('clients', { name: debouncedClientName || undefined, cpf: debouncedCpf || undefined, cnpj: debouncedCnpj || undefined, clientCode: debouncedClientCode ? Number(debouncedClientCode) : undefined }),
+  })
 
   const detailQuery = useQuery({
     queryKey: [...queryKeys.clients, 'detail', detailId],
@@ -298,9 +303,6 @@ export function Clients() {
   const referralSelectValue = canonicalCurrentReferral ?? normalizedCurrentReferral
   const total = clientsQuery.data?.total ?? 0
   const totalPages = clientsQuery.data?.totalPages ?? 0
-  const ordersOnPage = clients.reduce((sum, client) => sum + client.serviceOrderCount, 0)
-  const valueOnPage = clients.reduce((sum, client) => sum + client.totalValue, 0)
-  const contractsOnPage = clients.filter((client) => client.contract).length
   const firstResult = total === 0 ? 0 : page * pageSize + 1
   const lastResult = Math.min((page + 1) * pageSize, total)
 
@@ -453,7 +455,7 @@ export function Clients() {
       dsemail: textValue(data, 'dsemail'),
       dsindic: textValue(data, 'dsindic'),
       idindic: nullableNumber(data, 'idindic'),
-      idfunci: nullableNumber(data, 'idfunci'),
+      idfunci: selected?.idfunci ?? null,
       nmcont1: textValue(data, 'nmcont1'),
       nrtelc1: textValue(data, 'nrtelc1'),
       nmcont2: textValue(data, 'nmcont2'),
@@ -493,10 +495,10 @@ export function Clients() {
       <PageHeader eyebrow="Relacionamento" title="Clientes" subtitle="Listagem paginada com contratos, volume de serviços e valor acumulado." actions={<Button icon={<Plus size={18} />} onClick={openNew}>Novo cliente</Button>} />
 
       <section className="stats-grid stats-grid--four">
-        <StatCard label="Clientes nesta página" value={String(clients.length)} helper={`${total.toLocaleString('pt-BR')} cadastros encontrados`} icon={<UsersRound />} tone="blue" />
-        <StatCard label="Contratos nesta página" value={String(contractsOnPage)} helper="Cadastros com tabela vinculada" icon={<UserRoundCheck />} tone="purple" />
-        <StatCard label="Ordens de serviço" value={String(ordersOnPage)} helper="Total dos clientes exibidos" icon={<Wrench />} tone="orange" />
-        <StatCard label="Valor das OS" value={money(valueOnPage)} helper="Soma na página atual" icon={<CircleDollarSign />} tone="green" />
+        <StatCard label="Clientes" value={summaryNumber(summaryQuery.data, 'total').toLocaleString('pt-BR')} helper={`${summaryNumber(summaryQuery.data, 'companies').toLocaleString('pt-BR')} pessoas jurídicas · total geral`} icon={<UsersRound />} tone="blue" />
+        <StatCard label="Com contrato ativo" value={summaryNumber(summaryQuery.data, 'withContract').toLocaleString('pt-BR')} helper="Total geral do filtro" icon={<UserRoundCheck />} tone="purple" />
+        <StatCard label="Ordens de serviço" value={summaryNumber(summaryQuery.data, 'serviceOrders').toLocaleString('pt-BR')} helper="De todos os clientes do filtro" icon={<Wrench />} tone="orange" />
+        <StatCard label="Valor das OS" value={money(summaryNumber(summaryQuery.data, 'serviceOrdersValue'))} helper="Total geral do filtro" icon={<CircleDollarSign />} tone="green" />
       </section>
 
       <section className="panel data-panel">
@@ -566,7 +568,6 @@ export function Clients() {
             <FormField label="E-mail"><input name="dsemail" type="email" maxLength={50} defaultValue={selected?.dsemail ?? selected?.email ?? ''} /></FormField>
             <FormField label="Indicado por" hint={referralDescriptionsQuery.isLoading ? 'Carregando tipos de indicação...' : referralDescriptions.length > 0 ? `${referralDescriptions.length} tipo(s) de indicação cadastrado(s).` : 'Nenhum tipo de indicação foi cadastrado.'}><div className="referral-select-control"><select name="dsindic" value={referralSelectValue} onChange={(event) => setReferralDescription(event.target.value)}><option value="">Sem indicação</option>{referralOptions.map((description) => <option key={description.toLocaleLowerCase('pt-BR')} value={description}>{referralDisplayName(description)}</option>)}</select><button type="button" className="referral-select-add-button" title="Adicionar novo tipo de indicação" aria-label="Adicionar novo tipo de indicação" onClick={openReferralModal}><Plus size={18} /></button></div></FormField>
             <FormField label="Código do indicador"><input name="idindic" type="number" min="0" defaultValue={selected?.idindic ?? ''} /></FormField>
-            <FormField label="Código do promotor de vendas"><input name="idfunci" type="number" min="0" defaultValue={selected?.idfunci ?? ''} /></FormField>
           </div>
           <div className="form-grid form-grid--two form-grid--spaced">
             <FormField label="Contato 1 (nome)"><input name="nmcont1" maxLength={50} defaultValue={selected?.nmcont1 ?? ''} /></FormField>
@@ -739,6 +740,7 @@ function ClientDetail({ client }: { client: Client }) {
     <section className="drawer-section drawer-section--contract drawer-section--wide"><h3>Contratos</h3>
       {contractsQuery.isLoading ? <p className="drawer-section__text">Consultando histórico...</p> : contractsQuery.isError ? <p className="drawer-section__text">Não foi possível consultar os contratos deste cliente.</p> : (contractsQuery.data?.content.length ?? 0) === 0 ? <p className="drawer-section__text">Nenhum contrato cadastrado para este cliente.</p> : <div className="client-contract-history">{contractsQuery.data?.content.map((contract) => <article key={contract.id}><span><strong>Contrato #{contract.id}</strong><small>{formatDate(contract.contractDate)} · renovação {formatDate(contract.renewalDate)}</small></span><Badge tone={contract.status === 'ATIVO' ? 'green' : 'neutral'}>{enumLabel(contract.status)}</Badge></article>)}</div>}
       <button className="drawer-section__action" onClick={() => navigate(`/contratos?clientId=${client.id}`)}>Abrir contratos deste cliente <ChevronRight size={15} /></button>
+      <button className="drawer-section__action" onClick={() => navigate(`/contas-a-receber?clientId=${client.id}`)}>Abrir contas a receber deste cliente <ChevronRight size={15} /></button>
     </section>
     </div>
   </div>

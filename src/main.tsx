@@ -6,6 +6,7 @@ import { AuthProvider } from './auth'
 import { queryClient } from './query-client'
 import { RouterProvider } from './router'
 import './styles.css'
+import './styles-modules.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -3,11 +3,11 @@ export type ISODateTime = string
 
 export type ClientKind = 'PESSOA_FISICA' | 'PESSOA_JURIDICA'
 export type Priority = 'NORMAL' | 'URGENTE'
-export type ServiceCategory = 'MAO_DE_OBRA' | 'GARANTIA' | 'VISITA_TECNICA' | 'CANCELAMENTO' | 'DESLOCAMENTO'
+export type ServiceCategory = 'MAO_DE_OBRA' | 'GARANTIA' | 'VISITA_TECNICA' | 'CANCELAMENTO' | 'DESLOCAMENTO' | 'ORCAMENTO' | 'TRANSPORTE' | 'SERVICO_TERCEIRIZADO'
 export type ServiceSearchType = 'ELETRICOS' | 'AMBOS' | 'ALVENARIA' | 'HIDRAULICO' | 'HIDRO' | 'OUTROS'
 export type ServiceOrderStatus = 'ABERTA' | 'ENCAMINHADA' | 'AGENDADA' | 'EM_ATENDIMENTO' | 'FINALIZADA' | 'CANCELADA'
 export type ServiceOrderOperationalFlag = 'URGENT' | 'SCHEDULED_TIME' | 'ROUTED' | 'STARTED' | 'FINISHED'
-export type ServiceOrderOrigin = 'A' | 'C'
+export type ServiceOrderOrigin = 'A' | 'C' | 'E' | 'O'
 export type InvoiceStatus =
   | 'RASCUNHO'
   | 'PRONTA'
@@ -110,6 +110,13 @@ export interface SystemParameters {
   invoiceApproximateFederalTaxRate?: number | null
   invoiceApproximateStateTaxRate?: number | null
   invoiceApproximateMunicipalTaxRate?: number | null
+  serviceAdjustmentIncludeServices?: boolean
+  serviceAdjustmentIncludeContracts?: boolean
+  serviceAdjustmentRenewContracts?: boolean
+  serviceAdjustmentAffectedContracts?: number | null
+  birthdayEmailEnabled?: boolean
+  birthdayEmailOnlyContracted?: boolean
+  birthdayEmailOnlyOptedIn?: boolean
 }
 
 export type SystemParametersPayload = SystemParameters
@@ -118,6 +125,47 @@ export interface ServicePriceAdjustmentPayload {
   enabled: boolean
   percentage: number | null
   scheduledDate: ISODate | null
+  /** Reajusta a tabela de serviços (tbservico). */
+  includeServices?: boolean
+  /** Reajusta os contratos ativos (regra da cliente, POP p.29). */
+  includeContracts?: boolean
+  /** Renova a vigência dos contratos reajustados. */
+  renewContracts?: boolean
+  /** Percentual próprio por contrato (os demais usam o percentual geral). */
+  contractOverrides?: Array<{ contractId: number; percentage: number }>
+}
+
+export interface BirthdayEmailSettingsPayload {
+  enabled: boolean
+  onlyContracted: boolean
+  onlyOptedIn: boolean
+  subject: string
+  body: string
+}
+
+export interface BirthdayEmailClient {
+  clientId: number
+  name: string | null
+  email: string | null
+  birthday: string | null
+  contracted: boolean
+  status: 'ENVIADO' | 'ERRO' | 'PENDENTE' | 'IGNORADO' | string
+  processedAt: ISODateTime | null
+  error: string | null
+}
+
+export interface BirthdayEmailSettings extends BirthdayEmailSettingsPayload {
+  variables: Array<{ name: string; description: string }>
+  mailEnabled: boolean
+  today: ISODate
+  todayClients: BirthdayEmailClient[]
+}
+
+export interface EmailProcessingResult {
+  queued: number
+  sent: number
+  failed: number
+  ignored: number
 }
 
 export interface BillEmailSettingsPayload {
@@ -407,6 +455,15 @@ export interface Supplier {
   contactName: string | null
   contactPhone: string | null
   contactEmail: string | null
+  phone2?: string | null
+  phone3?: string | null
+  phone4?: string | null
+  fax?: string | null
+  contact2Name?: string | null
+  contact2Phone?: string | null
+  contact2Email?: string | null
+  country?: string | null
+  notes?: string | null
 }
 
 export type SupplierPayload = Omit<Supplier, 'id' | 'registeredAt' | 'document'>
@@ -547,6 +604,8 @@ export interface ServiceOrderMaterialOrder {
   grossValue?: number | null
   payableDueDate?: ISODateTime | null
   payableStatus?: PayableStatus | null
+  /** Quantidade de prestações da conta a pagar do pedido (1 quando não parcelada). */
+  payableInstallments?: number | null
   items: ServiceOrderMaterialItem[]
 }
 
@@ -1219,6 +1278,7 @@ export interface BillListItem {
   clientTradeName: string | null
   dueAt: ISODateTime | null
   paidAt: ISODateTime | null
+  paid: boolean
   amount: number
   serviceOrderId: number | null
   contractId: number | null
@@ -1255,6 +1315,29 @@ export interface GeneratedBill {
   dueAt: ISODateTime
   amount: number
   receivableCount: number
+  invoiceCreated: boolean
+}
+
+export interface BillGenerationPreviewGroup {
+  clientId: number
+  clientName: string | null
+  dueDate: string
+  selectedReceivableIds: number[]
+  allReceivableIds: number[]
+  unselectedReceivableIds: number[]
+  amount: number
+  issRetained: boolean
+  hasIssLine: boolean
+  suggestedIssAmount: number
+  warning: string | null
+}
+
+export interface BillGenerationPreview {
+  billCount: number
+  receivableCount: number
+  clientCount: number
+  amount: number
+  groups: BillGenerationPreviewGroup[]
 }
 
 export interface BillServiceLine {
@@ -1305,6 +1388,9 @@ export interface BillDetail extends BillListItem {
   clientEmail: string | null
   clientPhone: string | null
   clientAddress: string | null
+  bankDocumentAvailable: boolean
+  bankDocumentName: string | null
+  bankDocumentUploadedAt: ISODateTime | null
   serviceOrderDescription: string | null
   serviceOrderNotes: string | null
   serviceOrderCategory: string | null
@@ -1323,6 +1409,32 @@ export interface BillDetail extends BillListItem {
   attendances: BillAttendanceLine[]
   receivables: BillReceivableLine[]
   trackings: ServiceOrderTracking[]
+}
+
+export interface BillPrintRow {
+  billId: number
+  clientId: number | null
+  clientName: string | null
+  dueAt: ISODateTime | null
+  billNumber: number | null
+  laborAmount: number
+  materialAmount: number
+  otherAmount: number
+  totalAmount: number
+  email: string | null
+  delivery: string | null
+  statementDelivery: string | null
+  audited: boolean
+  address: string | null
+  document: string | null
+  contractId: number | null
+  invoiceDescription: string
+  discountAmount: number
+  issRate: number
+  issAmount: number
+  invoiceAmount: number
+  approximateTaxAmount: number
+  issRetained: boolean
 }
 
 export interface ClientBillingContext {
@@ -1394,6 +1506,7 @@ export interface AppUser {
   id: number
   name: string
   initials: string | null
+  login: string | null
   email: string
   role: UserRole
   status: UserStatus
@@ -1404,6 +1517,7 @@ export interface AppUser {
 export interface CreateUserPayload {
   name: string
   initials: string
+  login: string
   email: string
   password: string
   role: UserRole

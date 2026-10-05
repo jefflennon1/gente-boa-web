@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { AlertTriangle, ChevronLeft, ChevronRight, Clock3, RefreshCw, Search, Timer, Users } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
+import { modulesApi, modulesKeys, summaryNumber } from '../api/modules'
 import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { Badge, Button, CollapsibleFilters, EmptyState, ErrorState, LoadingState, StatCard } from './ui'
@@ -43,13 +44,12 @@ export function AccountsReceivableHourBalance() {
     loading: balanceQueries[index]?.isLoading ?? false,
     error: balanceQueries[index]?.isError ? apiErrorMessage(balanceQueries[index].error) : '',
   }))
-  const loadedBalances = rows.flatMap((row) => row.balance ? [row.balance] : [])
-  const pageTotals = loadedBalances.reduce((totals, balance) => ({
-    contracted: totals.contracted + balance.contractedMinutes,
-    used: totals.used + balance.usedMinutes,
-    balance: totals.balance + balance.balanceMinutes,
-  }), { contracted: 0, used: 0, balance: 0 })
-  const negativeBalances = loadedBalances.filter((balance) => balance.balanceMinutes < 0).length
+  const summaryQuery = useQuery({
+    queryKey: [...modulesKeys.summaries, 'hour-balances', debouncedSearch, period?.endDate],
+    queryFn: () => modulesApi.summaries.get('hour-balances', { query: debouncedSearch || undefined, at: period!.endDate }),
+    enabled: period !== null,
+  })
+  const negativeBalances = summaryNumber(summaryQuery.data, 'negativeBalances')
   const total = contractsQuery.data?.total ?? 0
   const totalPages = contractsQuery.data?.totalPages ?? 0
   const firstResult = total === 0 ? 0 : page * pageSize + 1
@@ -69,9 +69,9 @@ export function AccountsReceivableHourBalance() {
   return <>
     <section className="stats-grid stats-grid--four statement-stats">
       <StatCard label="Contratos ativos" value={String(total)} helper="No contas a receber" icon={<Users />} tone="blue" />
-      <StatCard label="Horas contratadas" value={formatDuration(pageTotals.contracted)} helper="Total desta página" icon={<Clock3 />} tone="purple" />
-      <StatCard label="Horas utilizadas" value={formatDuration(pageTotals.used)} helper="Total desta página" icon={<Timer />} tone="orange" />
-      <StatCard label="Saldo de horas" value={formatDuration(pageTotals.balance)} helper={negativeBalances > 0 ? `${negativeBalances} contrato(s) com saldo negativo` : 'Nenhum saldo negativo nesta página'} icon={<AlertTriangle />} tone={negativeBalances > 0 ? 'orange' : 'green'} />
+      <StatCard label="Horas contratadas" value={formatDuration(summaryNumber(summaryQuery.data, 'contractedMinutes'))} helper="Total geral do filtro" icon={<Clock3 />} tone="purple" />
+      <StatCard label="Horas utilizadas" value={formatDuration(summaryNumber(summaryQuery.data, 'usedMinutes'))} helper="Total geral do filtro" icon={<Timer />} tone="orange" />
+      <StatCard label="Saldo de horas" value={formatDuration(summaryNumber(summaryQuery.data, 'balanceMinutes'))} helper={negativeBalances > 0 ? `${negativeBalances} contrato(s) com saldo negativo` : 'Nenhum saldo negativo'} icon={<AlertTriangle />} tone={negativeBalances > 0 ? 'orange' : 'green'} />
     </section>
 
     <section className="panel data-panel hour-balance-panel">

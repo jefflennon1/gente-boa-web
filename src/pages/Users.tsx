@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, ChevronLeft, ChevronRight, Clock3, Edit3, KeyRound, Mail, Plus, Search, ShieldCheck, Trash2, UserCheck, UserCog } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
+import { modulesApi, modulesKeys, summaryNumber } from '../api/modules'
+import { navGroups } from '../navigation'
 import { apiErrorMessage } from '../api/client'
 import { useAuth } from '../auth'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
@@ -9,12 +11,14 @@ import { enumLabel, formatDate, initials } from '../lib/format'
 import type { AppUser, CreateUserPayload, UpdateUserPayload, UserRole, UserStatus } from '../types'
 import { Badge, Button, CollapsibleFilters, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
-const permissionOptions = ['Dashboard', 'Clientes', 'Ordens de servico', 'Financeiro', 'Notas fiscais', 'Relatorios', 'Usuarios']
+/** Telas liberáveis por usuário (os itens exclusivos de administrador ficam fora). */
+const permissionGroups = navGroups.map((group) => ({ label: group.label, items: group.items.filter((item) => !item.adminOnly) })).filter((group) => group.items.length > 0)
 
 function updatePayload(user: AppUser, overrides: Partial<UpdateUserPayload> = {}): UpdateUserPayload {
   return {
     name: user.name,
     initials: user.initials || initials(user.name),
+    login: user.login ?? '',
     email: user.email,
     role: user.role,
     status: user.status,
@@ -42,10 +46,14 @@ export function Users() {
     queryFn: () => api.users.list({ query: debouncedSearch || undefined, page, size: pageSize }),
   })
 
+  const summaryQuery = useQuery({ queryKey: [...modulesKeys.summaries, 'users', debouncedSearch], queryFn: () => modulesApi.summaries.get('users', { query: debouncedSearch || undefined }) })
+  const catalogQuery = useQuery({ queryKey: [...queryKeys.users, 'permission-catalog'], queryFn: modulesApi.users.permissionCatalog, staleTime: Infinity })
+  const permissionLabel = (permission: string) => catalogQuery.data?.[permission] ?? permission
+
   const saveMutation = useMutation({
     mutationFn: ({ id, payload }: { id?: number; payload: CreateUserPayload | UpdateUserPayload }) => id ? api.users.update(id, payload) : api.users.create(payload),
     onSuccess: async (_, variables) => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.users })
+      await Promise.all([queryClient.invalidateQueries({ queryKey: queryKeys.users }), queryClient.invalidateQueries({ queryKey: [...modulesKeys.summaries, 'users'] })])
       setModalOpen(false)
       setSelected(null)
       showToast(variables.id ? 'Usuário atualizado.' : 'Usuário criado com sucesso.')
@@ -54,7 +62,7 @@ export function Users() {
   })
 
   const statusMutation = useMutation({
-    mutationFn: ({ user, status }: { user: AppUser; status: UserStatus }) => api.users.update(user.id, updatePayload(user, { status })),
+    mutationFn: async ({ user, status }: { user: AppUser; status: UserStatus }) => api.users.update(user.id, updatePayload(await api.users.find(user.id), { status })),
     onSuccess: async (updated) => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.users })
       setModalOpen(false)
@@ -93,11 +101,24 @@ export function Users() {
     setModalOpen(true)
   }
 
-  function openEdit(user: AppUser) {
+  async function openEdit(user: AppUser) {
     setDetail(null)
-    setSelected(user)
     setFormError('')
-    setModalOpen(true)
+    try {
+      setSelected(await api.users.find(user.id))
+      setModalOpen(true)
+    } catch (error) {
+      showToast(apiErrorMessage(error))
+    }
+  }
+
+  async function openDetail(user: AppUser) {
+    setDetail(user)
+    try {
+      setDetail(await api.users.find(user.id))
+    } catch {
+      // mantém os dados da listagem
+    }
   }
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -109,6 +130,7 @@ export function Users() {
     const base = {
       name,
       initials: initials(name),
+      login: String(data.get('login')).trim(),
       email: String(data.get('email')).trim(),
       role: String(data.get('role')) as UserRole,
       status: String(data.get('status')) as UserStatus,
@@ -124,10 +146,10 @@ export function Users() {
     <>
       <PageHeader eyebrow="Configurações" title="Usuários e acessos" subtitle="Contas e permissões gerenciadas pela API. Acesso restrito a administradores." actions={<Button icon={<Plus size={18} />} onClick={openNew}>Adicionar usuário</Button>} />
       <section className="stats-grid stats-grid--four">
-        <StatCard label="Usuários ativos" value={String(users.filter((user) => user.status === 'ATIVO').length)} helper={`${users.filter((user) => user.status === 'INATIVO').length} inativos`} icon={<UserCheck />} tone="green" />
-        <StatCard label="Administradores" value={String(users.filter((user) => user.role === 'ADMINISTRADOR').length)} helper="Acesso completo" icon={<ShieldCheck />} tone="blue" />
-        <StatCard label="Total de usuários" value={String(usersQuery.data?.total ?? 0)} helper="Cadastrados na API" icon={<Clock3 />} tone="purple" />
-        <StatCard label="Perfis em uso" value={String(new Set(users.map((user) => user.role)).size)} helper="Admin, operação e financeiro" icon={<UserCog />} tone="orange" />
+        <StatCard label="Usuários ativos" value={String(summaryNumber(summaryQuery.data, 'active'))} helper={`${summaryNumber(summaryQuery.data, 'total') - summaryNumber(summaryQuery.data, 'active')} inativos`} icon={<UserCheck />} tone="green" />
+        <StatCard label="Administradores" value={String(summaryNumber(summaryQuery.data, 'administrators'))} helper="Acesso completo" icon={<ShieldCheck />} tone="blue" />
+        <StatCard label="Total de usuários" value={String(summaryNumber(summaryQuery.data, 'total'))} helper="Total geral do filtro" icon={<Clock3 />} tone="purple" />
+        <StatCard label="Com acessos restritos" value={String(summaryNumber(summaryQuery.data, 'withCustomAccess'))} helper="Demais acessam todas as telas" icon={<UserCog />} tone="orange" />
       </section>
 
       <section className="panel data-panel">
@@ -135,11 +157,11 @@ export function Users() {
 
         {usersQuery.isLoading ? <LoadingState label="Carregando usuários..." /> : usersQuery.isError ? <ErrorState message={apiErrorMessage(usersQuery.error)} onRetry={() => usersQuery.refetch()} /> : users.length === 0 ? <EmptyState title="Nenhum usuário encontrado" description="Altere a busca ou cadastre um usuário." /> : (
           <div className="user-list">{users.map((user) => (
-            <article key={user.id} onClick={() => setDetail(user)}>
+            <article key={user.id} onClick={() => openDetail(user)}>
               <span className={`user-avatar user-avatar--${user.id % 4}`}>{user.initials || initials(user.name)}</span>
-              <div className="user-identity"><strong>{user.name}{user.id === currentUser?.id && <small>Você</small>}</strong><span><Mail size={13} />{user.email}</span></div>
+              <div className="user-identity"><strong>{user.name}{user.id === currentUser?.id && <small>Você</small>}</strong><span><KeyRound size={13} />{user.login || '—'}<Mail size={13} />{user.email}</span></div>
               <div className="user-role"><small>Perfil</small><strong>{enumLabel(user.role)}</strong></div>
-              <div className="user-permissions"><small>Acessos</small><span>{(user.permissions || []).slice(0, 3).map((permission) => <i key={permission}>{permission}</i>)}{(user.permissions || []).length > 3 && <b>+{user.permissions.length - 3}</b>}</span></div>
+              <div className="user-permissions"><small>Acessos</small><span>{user.role === 'ADMINISTRADOR' ? <i>Todas as telas</i> : (user.permissions || []).length === 0 ? <i>Todas (sem restrição)</i> : <>{user.permissions.slice(0, 3).map((permission) => <i key={permission}>{permissionLabel(permission)}</i>)}{user.permissions.length > 3 && <b>+{user.permissions.length - 3}</b>}</>}</span></div>
               <div className="user-access"><Badge tone={user.status === 'ATIVO' ? 'green' : 'neutral'}>{enumLabel(user.status)}</Badge><small>{user.lastAccessAt ? formatDate(user.lastAccessAt, true) : 'Sem registro de acesso'}</small></div>
               <button className="row-action" aria-label={`Visualizar ${user.name}`}><ChevronRight size={18} /></button>
             </article>
@@ -164,7 +186,7 @@ export function Users() {
         size="large"
         actions={detail ? <><Button variant={detail.status === 'ATIVO' ? 'danger' : 'secondary'} disabled={statusMutation.isPending || detail.id === currentUser?.id} onClick={() => statusMutation.mutate({ user: detail, status: detail.status === 'ATIVO' ? 'INATIVO' : 'ATIVO' })}>{detail.status === 'ATIVO' ? 'Desativar acesso' : 'Reativar acesso'}</Button><Button variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending || detail.id === currentUser?.id} onClick={() => setUserToDelete(detail)}>Excluir</Button><Button icon={<Edit3 size={16} />} onClick={() => openEdit(detail)}>Editar usuário</Button></> : undefined}
       >
-        {detail && <UserDetail user={detail} current={detail.id === currentUser?.id} />}
+        {detail && <UserDetail user={detail} current={detail.id === currentUser?.id} permissionLabel={permissionLabel} />}
       </DetailModal>
 
       <Modal open={modalOpen} onClose={() => !saveMutation.isPending && setModalOpen(false)} title={selected ? 'Editar usuário' : 'Adicionar usuário'} description="Conta criada diretamente no backend." size="large">
@@ -172,14 +194,15 @@ export function Users() {
           <FormError message={formError} />
           <div className="form-section-title"><span>1</span><div><strong>Identificação e perfil</strong><small>Dados usados na autenticação</small></div></div>
           <div className="form-grid form-grid--two">
-            <FormField label="Nome completo"><input name="name" required defaultValue={selected?.name ?? ''} /></FormField>
+            <FormField label="Nome"><input name="name" required maxLength={30} defaultValue={selected?.name ?? ''} /></FormField>
+            <FormField label="Login" hint="Usado para entrar no sistema (até 15 caracteres)."><input name="login" required maxLength={15} autoComplete="off" defaultValue={selected?.login ?? ''} /></FormField>
             <FormField label="E-mail"><input name="email" type="email" required defaultValue={selected?.email ?? ''} /></FormField>
             <FormField label={selected ? 'Nova senha' : 'Senha'} hint={selected ? 'Deixe em branco para manter a senha atual.' : 'Obrigatória para o primeiro acesso.'}><input name="password" type="password" minLength={6} required={!selected} autoComplete="new-password" /></FormField>
             <FormField label="Perfil"><select name="role" defaultValue={selected?.role || 'OPERACAO'}><option value="ADMINISTRADOR">Administrador</option><option value="OPERACAO">Operação</option><option value="FINANCEIRO">Financeiro</option></select></FormField>
             <FormField label="Situação"><select name="status" defaultValue={selected?.status || 'ATIVO'}><option value="ATIVO">Ativo</option><option value="INATIVO">Inativo</option></select></FormField>
           </div>
-          <div className="form-section-title"><span>2</span><div><strong>Permissões de acesso</strong><small>Valores enviados no campo permissions</small></div></div>
-          <div className="permission-grid">{permissionOptions.map((permission) => <label key={permission} className="permission-option"><input type="checkbox" name="permissions" value={permission} defaultChecked={selected ? (selected.permissions || []).includes(permission) : ['Dashboard', 'Clientes', 'Ordens de servico'].includes(permission)} /><span><i><Check size={15} /></i><strong>{permission}</strong><small>Acessar e gerenciar este módulo</small></span></label>)}</div>
+          <div className="form-section-title"><span>2</span><div><strong>Acessos por tela</strong><small>Sem nenhuma tela marcada, o usuário acessa todas. Administradores sempre acessam tudo.</small></div></div>
+          {permissionGroups.map((group) => <div key={group.label} className="permission-group"><h4>{group.label}</h4><div className="permission-grid">{group.items.map((item) => <label key={item.permission} className="permission-option"><input type="checkbox" name="permissions" value={item.permission} defaultChecked={(selected?.permissions || []).includes(item.permission)} /><span><i><Check size={15} /></i><strong>{item.label}</strong><small>{catalogQuery.data?.[item.permission] ?? 'Acessar e gerenciar esta tela'}</small></span></label>)}</div></div>)}
           {selected && <div className="user-modal-actions"><span><strong>Ações de segurança</strong><small>Altere o status ou remova a conta.</small></span><Button type="button" variant={selected.status === 'ATIVO' ? 'danger' : 'secondary'} disabled={statusMutation.isPending || selected.id === currentUser?.id} onClick={() => statusMutation.mutate({ user: selected, status: selected.status === 'ATIVO' ? 'INATIVO' : 'ATIVO' })}>{selected.status === 'ATIVO' ? 'Desativar acesso' : 'Reativar acesso'}</Button><Button type="button" variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending || selected.id === currentUser?.id} onClick={() => setUserToDelete(selected)}>Excluir</Button></div>}
         </ModalForm>
       </Modal>
@@ -189,12 +212,12 @@ export function Users() {
   )
 }
 
-function UserDetail({ user, current }: { user: AppUser; current: boolean }) {
+function UserDetail({ user, current, permissionLabel }: { user: AppUser; current: boolean; permissionLabel: (permission: string) => string }) {
   return <div className="detail-modal-content">
-    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className={`user-avatar user-avatar--${user.id % 4}`}>{user.initials || initials(user.name)}</span><div><span>Usuário #{user.id}{current ? ' · sua conta' : ''}</span><h2>{user.name}</h2><p>{user.email}</p></div></div><Badge tone={user.status === 'ATIVO' ? 'green' : 'neutral'}>{enumLabel(user.status)}</Badge></div>
-    <div className="detail-metrics"><span><small>Perfil</small><strong>{enumLabel(user.role)}</strong></span><span><small>Situação</small><strong>{enumLabel(user.status)}</strong></span><span><small>Último acesso</small><strong>{user.lastAccessAt ? formatDate(user.lastAccessAt, true) : 'Sem registro'}</strong></span><span><small>Total de permissões</small><strong>{user.permissions?.length ?? 0}</strong></span></div>
+    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className={`user-avatar user-avatar--${user.id % 4}`}>{user.initials || initials(user.name)}</span><div><span>Usuário #{user.id}{current ? ' · sua conta' : ''}</span><h2>{user.name}</h2><p>{user.login ? `${user.login} · ` : ''}{user.email}</p></div></div><Badge tone={user.status === 'ATIVO' ? 'green' : 'neutral'}>{enumLabel(user.status)}</Badge></div>
+    <div className="detail-metrics"><span><small>Perfil</small><strong>{enumLabel(user.role)}</strong></span><span><small>Situação</small><strong>{enumLabel(user.status)}</strong></span><span><small>Último acesso</small><strong>{user.lastAccessAt ? formatDate(user.lastAccessAt, true) : 'Sem registro'}</strong></span><span><small>Telas liberadas</small><strong>{user.role === 'ADMINISTRADOR' || (user.permissions?.length ?? 0) === 0 ? 'Todas' : user.permissions.length}</strong></span></div>
     <div className="detail-sections-grid">
-      <section className="drawer-section drawer-section--wide"><h3>Permissões de acesso</h3>{(user.permissions?.length ?? 0) === 0 ? <p className="drawer-section__text">Nenhuma permissão configurada.</p> : <div className="detail-permission-list">{user.permissions.map((permission) => <span key={permission}><Check size={14} />{permission}</span>)}</div>}</section>
+      <section className="drawer-section drawer-section--wide"><h3>Acessos por tela</h3>{user.role === 'ADMINISTRADOR' ? <p className="drawer-section__text">Administrador: acesso a todas as telas.</p> : (user.permissions?.length ?? 0) === 0 ? <p className="drawer-section__text">Sem restrição: o usuário acessa todas as telas não exclusivas de administrador.</p> : <div className="detail-permission-list">{user.permissions.map((permission) => <span key={permission}><Check size={14} />{permissionLabel(permission)}</span>)}</div>}</section>
     </div>
   </div>
 }

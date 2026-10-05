@@ -3,6 +3,7 @@ import type { ComponentType, LazyExoticComponent } from 'react'
 import { useAuth } from './auth'
 import { AppLayout } from './components/AppLayout'
 import { Login } from './pages/Login'
+import { canAccess, navItemForPath } from './navigation'
 import { useRouter } from './router'
 
 const pages: Partial<Record<string, LazyExoticComponent<ComponentType>>> = {
@@ -16,11 +17,24 @@ const pages: Partial<Record<string, LazyExoticComponent<ComponentType>>> = {
   '/contas-a-pagar': lazy(() => import('./pages/AccountsPayable').then((module) => ({ default: module.AccountsPayable }))),
   '/funcionarios': lazy(() => import('./pages/Employees').then((module) => ({ default: module.Employees }))),
   '/notas-fiscais': lazy(() => import('./pages/NationalInvoices').then((module) => ({ default: module.NationalInvoices }))),
+  '/boletos': lazy(() => import('./pages/Statements').then((module) => ({ default: module.Statements }))),
   '/extratos': lazy(() => import('./pages/Statements').then((module) => ({ default: module.Statements }))),
   '/relatorios': lazy(() => import('./pages/Reports').then((module) => ({ default: module.Reports }))),
   '/usuarios': lazy(() => import('./pages/Users').then((module) => ({ default: module.Users }))),
+  '/modelos-de-documentos': lazy(() => import('./pages/DocumentTemplates').then((module) => ({ default: module.DocumentTemplates }))),
   '/parametros-do-sistema': lazy(() => import('./pages/SystemParameters').then((module) => ({ default: module.SystemParametersPage }))),
   '/envio-de-emails': lazy(() => import('./pages/ClientEmails').then((module) => ({ default: module.ClientEmailsPage }))),
+  '/contas-a-receber': lazy(() => import('./pages/AccountsReceivable').then((module) => ({ default: module.AccountsReceivable }))),
+  '/caixa-diario': lazy(() => import('./pages/CashDaily').then((module) => ({ default: module.CashDaily }))),
+  '/centros-de-custo': lazy(() => import('./pages/CostCenters').then((module) => ({ default: module.CostCenters }))),
+  '/acompanhamento-colaboradores': lazy(() => import('./pages/EmployeeTracking').then((module) => ({ default: module.EmployeeTracking }))),
+  '/contratos-ativos': lazy(() => import('./pages/ActiveContracts').then((module) => ({ default: module.ActiveContracts }))),
+  '/relatorios-os': lazy(() => import('./pages/ServiceOrderReport').then((module) => ({ default: module.ServiceOrderReport }))),
+  '/relatorios-clientes': lazy(() => import('./pages/ClientReports').then((module) => ({ default: module.ClientReports }))),
+  '/canais-de-venda': lazy(() => import('./pages/SalesChannels').then((module) => ({ default: module.SalesChannels }))),
+  '/resumo-mensal': lazy(() => import('./pages/MonthlySummary').then((module) => ({ default: module.MonthlySummary }))),
+  '/relatorios-financeiros': lazy(() => import('./pages/FinancialReports').then((module) => ({ default: module.FinancialReports }))),
+  '/relatorios-atendimentos': lazy(() => import('./pages/AttendancePeriodReport').then((module) => ({ default: module.AttendancePeriodReport }))),
 }
 
 const publicPages: Partial<Record<string, LazyExoticComponent<ComponentType>>> = {
@@ -54,7 +68,7 @@ export default function App() {
     if (PublicPage) return
     if (!isAuthenticated && pathname !== '/login') navigate('/login', { replace: true })
     else if (isAuthenticated && pathname === '/login') navigate('/', { replace: true })
-    else if (isAuthenticated && ['/usuarios', '/parametros-do-sistema', '/envio-de-emails'].includes(pathname) && user?.role !== 'ADMINISTRADOR') navigate('/', { replace: true })
+    else if (isAuthenticated && navItemForPath(pathname) && !canAccess(navItemForPath(pathname), user) && pathname !== '/') navigate('/', { replace: true })
     else if (isAuthenticated && !Page) navigate('/', { replace: true })
   }, [Page, PublicPage, isAuthenticated, navigate, pathname, user?.role])
 

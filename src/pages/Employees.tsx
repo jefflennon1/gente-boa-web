@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { BriefcaseBusiness, ChevronLeft, ChevronRight, Edit3, Mail, Phone, Plus, Search, Trash2, UserRoundCog } from 'lucide-react'
 import { useState } from 'react'
 import { api, queryKeys } from '../api/services'
+import { modulesApi, modulesKeys, summaryNumber } from '../api/modules'
 import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { formatDate } from '../lib/format'
@@ -34,6 +35,10 @@ export function Employees() {
   const employeesQuery = useQuery({
     queryKey: [...queryKeys.employees, 'list', debouncedSearch, page, pageSize],
     queryFn: () => api.employees.list({ query: debouncedSearch || undefined, page, size: pageSize }),
+  })
+  const summaryQuery = useQuery({
+    queryKey: [...modulesKeys.summaries, 'employees', debouncedSearch],
+    queryFn: () => modulesApi.summaries.get('employees', { query: debouncedSearch || undefined }),
     placeholderData: keepPreviousData,
   })
 
@@ -134,10 +139,10 @@ export function Employees() {
     <PageHeader eyebrow="Equipe" title="Cadastro de funcionários" subtitle="Profissionais disponíveis para atendimento e agendamento das ordens de serviço." actions={<Button icon={<Plus size={18} />} onClick={openNew}>Novo funcionário</Button>} />
 
     <section className="stats-grid stats-grid--four">
-      <StatCard label="Funcionários cadastrados" value={total.toLocaleString('pt-BR')} helper={`${employees.length} nesta página`} icon={<UserRoundCog />} tone="blue" />
-      <StatCard label="Com telefone" value={String(employees.filter((employee) => employee.phone || employee.secondaryPhone || employee.tertiaryPhone).length)} helper="Contatos nesta página" icon={<Phone />} tone="green" />
-      <StatCard label="Cargos nesta página" value={String(new Set(employees.map((employee) => employee.position).filter(Boolean)).size)} helper="Funções distintas" icon={<BriefcaseBusiness />} tone="orange" />
-      <StatCard label="Com e-mail" value={String(employees.filter((employee) => employee.email).length)} helper="Contatos nesta página" icon={<Mail />} tone="purple" />
+      <StatCard label="Funcionários cadastrados" value={summaryNumber(summaryQuery.data, 'total').toLocaleString('pt-BR')} helper="Total geral do filtro" icon={<UserRoundCog />} tone="blue" />
+      <StatCard label="Com telefone" value={summaryNumber(summaryQuery.data, 'withPhone').toLocaleString('pt-BR')} helper="Telefone informado" icon={<Phone />} tone="green" />
+      <StatCard label="Cargos" value={summaryNumber(summaryQuery.data, 'positions').toLocaleString('pt-BR')} helper="Funções distintas" icon={<BriefcaseBusiness />} tone="orange" />
+      <StatCard label="Com e-mail" value={summaryNumber(summaryQuery.data, 'withEmail').toLocaleString('pt-BR')} helper="E-mail informado" icon={<Mail />} tone="purple" />
     </section>
 
     <section className="panel data-panel">

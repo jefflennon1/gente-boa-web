@@ -24,6 +24,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
+import { modulesApi, modulesKeys, summaryNumber } from '../api/modules'
 import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money, toDateInput } from '../lib/format'
@@ -244,6 +245,12 @@ export function NationalInvoices() {
       size: pageSize,
     }),
   })
+  const invoiceSummaryQuery = useQuery({
+    queryKey: [...modulesKeys.summaries, 'invoices', debouncedSearch, cpfFilter, cnpjFilter, invoiceNumberFilter, issueStart, issueEnd],
+    queryFn: () => modulesApi.summaries.get('invoices', { clientName: debouncedSearch || undefined, cpf: cpfFilter || undefined, cnpj: cnpjFilter || undefined, invoiceNumber: invoiceNumberFilter || undefined, startDate: issueStart || undefined, endDate: issueEnd || undefined }),
+  })
+  const invoicesByStatus = (invoiceSummaryQuery.data?.byStatus ?? {}) as Record<string, number>
+  const statusCount = (...statuses: string[]) => statuses.reduce((sum, status) => sum + Number(invoicesByStatus[status] ?? 0), 0)
   const integrationQuery = useQuery({
     queryKey: [...queryKeys.invoices, 'integration-status'],
     queryFn: api.invoices.integrationStatus,
@@ -428,7 +435,6 @@ export function NationalInvoices() {
   const filtered = useMemo(() => invoices.filter((invoice) => matchesTab(invoice, tab)), [invoices, tab])
   const issuable = filtered.filter((invoice) => issuableStatuses.includes(invoice.status))
   const selectedForIssue = invoices.filter((invoice) => selectedIds.includes(invoice.id) && issuableStatuses.includes(invoice.status))
-  const totalAmount = invoices.reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0)
 
   function openNew() {
     setFormError('')
@@ -723,10 +729,10 @@ export function NationalInvoices() {
       )}
 
       <section className="stats-grid stats-grid--four">
-        <StatCard label="Valor na página" value={money(totalAmount)} helper={`${invoices.length} registros carregados`} icon={<CircleDollarSign />} tone="blue" />
-        <StatCard label="Prontas para emitir" value={String(invoices.filter((item) => item.status === 'PRONTA').length)} helper="Aguardando autorização" icon={<FileCheck2 />} tone="green" />
-        <StatCard label="Com pendência" value={String(invoices.filter((item) => ['REVISAR', 'REJEITADA', 'CONSULTA_PENDENTE'].includes(item.status)).length)} helper="Revisão ou consulta" icon={<AlertTriangle />} tone="orange" />
-        <StatCard label="Emitidas" value={String(invoices.filter((item) => item.status === 'EMITIDA').length)} helper="Na página atual" icon={<ReceiptText />} tone="purple" />
+        <StatCard label="Valor total" value={money(summaryNumber(invoiceSummaryQuery.data, 'amount'))} helper={`${summaryNumber(invoiceSummaryQuery.data, 'total').toLocaleString('pt-BR')} notas no filtro`} icon={<CircleDollarSign />} tone="blue" />
+        <StatCard label="Prontas para emitir" value={String(statusCount('PRONTA'))} helper="Aguardando autorização" icon={<FileCheck2 />} tone="green" />
+        <StatCard label="Com pendência" value={String(statusCount('REVISAR', 'REJEITADA', 'CONSULTA_PENDENTE'))} helper="Revisão ou consulta" icon={<AlertTriangle />} tone="orange" />
+        <StatCard label="Emitidas" value={String(statusCount('EMITIDA'))} helper="Total geral do filtro" icon={<ReceiptText />} tone="purple" />
       </section>
 
       <section className="panel data-panel invoice-panel">

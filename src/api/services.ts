@@ -5,7 +5,9 @@ import type {
   BillEmailResponse,
   BillEmailSettings,
   BillEmailSettingsPayload,
+  BillGenerationPreview,
   BillListItem,
+  BillPrintRow,
   AttendanceLocation,
   AttendanceLocationPayload,
   AuthResponse,
@@ -67,6 +69,9 @@ import type {
   SystemParametersPayload,
   InvoiceFiscalSettingsPayload,
   ServicePriceAdjustmentPayload,
+  BirthdayEmailSettings,
+  BirthdayEmailSettingsPayload,
+  EmailProcessingResult,
   Supplier,
   SupplierPayload,
   PayableAccount,
@@ -77,6 +82,7 @@ import type {
   PurchaseOrderListItem,
   UpdateUserPayload,
 } from '../types'
+import type { ServicePriceAdjustmentPreview } from './modules'
 import { http } from './client'
 
 export type ListParams = {
@@ -122,9 +128,15 @@ export type ServiceOrderListParams = {
   endDate?: string
   urgentOnly?: boolean
   status?: ServiceOrderStatus
+  origin?: 'C' | 'A' | 'O' | 'E'
+  category?: string
+  technicianId?: number
+  clientId?: number
   page?: number
   size?: number
 }
+
+export type ServiceOrderSummary = { total: number; open: number; inProgress: number; finished: number; canceled: number; urgent: number }
 
 export type BillListParams = Pick<ListParams, 'query' | 'page' | 'size'> & {
   clientName?: string
@@ -137,9 +149,20 @@ export type BillListParams = Pick<ListParams, 'query' | 'page' | 'size'> & {
   serviceOrderEnd?: string
   dueStart?: string
   dueEnd?: string
-  dueDay?: 1 | 10 | 20
+  dueDay?: 10 | 20
   billingType?: 'ALL' | 'CONTRACT' | 'ONE_OFF'
   paymentStatus?: 'ALL' | 'PENDING' | 'PAID'
+}
+
+export type AccountsReceivableListParams = Pick<ListParams, 'query' | 'page' | 'size'> & {
+  dueStart?: string
+  dueEnd?: string
+  serviceOrderStart?: string
+  serviceOrderEnd?: string
+  dueDay?: 10 | 20
+  billingType?: 'ALL' | 'CONTRACT' | 'ONE_OFF'
+  generatedStatus?: 'ALL' | 'GENERATED' | 'PENDING'
+  paymentStatus?: 'ALL' | 'PAID' | 'PENDING'
 }
 
 export type PayableListParams = Pick<ListParams, 'query' | 'page' | 'size'> & {
@@ -256,6 +279,26 @@ export const api = {
     },
     async updateServiceAdjustment(payload: ServicePriceAdjustmentPayload) {
       const { data } = await http.put<SystemParameters>('/system-parameters/service-adjustment', payload)
+      return data
+    },
+    async previewServiceAdjustment(payload: ServicePriceAdjustmentPayload) {
+      const { data } = await http.post<ServicePriceAdjustmentPreview>('/system-parameters/service-adjustment/preview', payload, { timeout: 60_000 })
+      return data
+    },
+    async serviceAdjustmentOverrides() {
+      const { data } = await http.get<Array<{ contractId: number; percentage: number }>>('/system-parameters/service-adjustment/contract-overrides')
+      return data
+    },
+    async getBirthdayEmailSettings() {
+      const { data } = await http.get<BirthdayEmailSettings>('/system-parameters/birthday-email')
+      return data
+    },
+    async updateBirthdayEmailSettings(payload: BirthdayEmailSettingsPayload) {
+      const { data } = await http.put<BirthdayEmailSettings>('/system-parameters/birthday-email', payload)
+      return data
+    },
+    async sendBirthdayEmailsToday() {
+      const { data } = await http.post<EmailProcessingResult>('/system-parameters/birthday-email/send-today', undefined, { timeout: 120_000 })
       return data
     },
     async updateInvoiceSettings(payload: InvoiceFiscalSettingsPayload) {
@@ -441,6 +484,10 @@ export const api = {
       const { data } = await http.get<ServiceOrder>(`/service-orders/${id}`)
       return data
     },
+    async summary(params: Omit<ServiceOrderListParams, 'status' | 'urgentOnly' | 'page' | 'size'> = {}) {
+      const { data } = await http.get<ServiceOrderSummary>('/service-orders/summary', { params })
+      return data
+    },
     async create(payload: ServiceOrderPayload) {
       const { data } = await http.post<ServiceOrder>('/service-orders', payload)
       return data
@@ -575,22 +622,18 @@ export const api = {
   },
   statements: resource<Statement, StatementPayload>('/statements'),
   accountsReceivable: {
-    async list(params: {
-      query?: string
-      dueStart?: string
-      dueEnd?: string
-      competenceStart?: string
-      competenceEnd?: string
-      dueDay?: 1 | 10 | 20
-      billingType?: 'ALL' | 'CONTRACT' | 'ONE_OFF'
-      generatedStatus?: 'ALL' | 'GENERATED' | 'PENDING'
-      paymentStatus?: 'ALL' | 'PAID' | 'PENDING'
-      page?: number
-      size?: number
-    } = {}) {
+    async list(params: AccountsReceivableListParams = {}) {
       const { data } = await http.get<PagedResponse<AccountsReceivableListItem>>('/accounts-receivable', {
         params: { page: 0, size: 20, ...params },
       })
+      return data
+    },
+    async selection(params: AccountsReceivableListParams = {}) {
+      const { data } = await http.get<AccountsReceivableListItem[]>('/accounts-receivable/selection', { params })
+      return data
+    },
+    async previewBills(receivableIds: number[]) {
+      const { data } = await http.post<BillGenerationPreview>('/accounts-receivable/generate-bills/preview', { receivableIds })
       return data
     },
     async createIssWithholding(payload: { clientId: number; dueDate: string; amount: number; description?: string }) {
@@ -649,8 +692,30 @@ export const api = {
       const { data } = await http.get<ClientBillingContext>(`/bills/client/${clientId}/context`)
       return data
     },
+    async clientHourTrackingPdf(clientId: number, competence?: string) {
+      const { data } = await http.get<Blob>(`/bills/client/${clientId}/hour-tracking/pdf`, { params: { competence: competence || undefined }, responseType: 'blob' })
+      return data
+    },
     async pdf(id: number) {
       const { data } = await http.get<Blob>(`/bills/${id}/pdf`, { responseType: 'blob' })
+      return data
+    },
+    async uploadBankDocument(id: number, file: File) {
+      const form = new FormData()
+      form.append('file', file)
+      const { data } = await http.post<BillDetail>(`/bills/${id}/bank-document`, form, { timeout: 60_000 })
+      return data
+    },
+    async bankDocument(id: number) {
+      const { data } = await http.get<Blob>(`/bills/${id}/bank-document`, { responseType: 'blob' })
+      return data
+    },
+    async printing(dueStart: string, dueEnd: string) {
+      const { data } = await http.get<BillPrintRow[]>('/bills/printing', { params: { dueStart, dueEnd }, timeout: 60_000 })
+      return data
+    },
+    async statementsPdf(dueStart: string, dueEnd: string, onlyStatementClients: boolean) {
+      const { data } = await http.get<Blob>('/bills/statements', { params: { dueStart, dueEnd, onlyStatementClients }, responseType: 'blob', timeout: 120_000 })
       return data
     },
     async sendEmail(id: number) {

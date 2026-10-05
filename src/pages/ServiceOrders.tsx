@@ -9,6 +9,7 @@ import { enumLabel, formatDate, money, toDateInput } from '../lib/format'
 import type { AttendanceLocation, AttendanceLocationPayload, Client, ClientSearchOption, Employee, Material, PagedResponse, ServiceCatalogItem, ServiceCategory, ServiceOrder, ServiceOrderListItem, ServiceOrderMaterialItem, ServiceOrderMaterialOrder, ServiceOrderOperationalFlag, ServiceOrderOrigin, ServiceOrderPayload, ServiceOrderSchedule, ServiceOrderServiceItem, ServiceOrderStatus, ServiceOrderTracking, Supplier } from '../types'
 import { Badge, Button, CollapsibleFilters, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 import { useRouter } from '../router'
+import { EmployeePicker, SupplierPicker, type PickerValue } from '../components/AsyncPicker'
 
 const stages: ServiceOrderStatus[] = ['ABERTA', 'FINALIZADA', 'CANCELADA']
 const flowStages: ServiceOrderStatus[] = stages.filter((status) => status !== 'CANCELADA')
@@ -19,6 +20,13 @@ const categories: Array<{ value: ServiceCategory; label: string }> = [
   { value: 'CANCELAMENTO', label: 'Cancelamento' },
   { value: 'DESLOCAMENTO', label: 'Deslocamento' },
 ]
+const legacyCategories: Array<{ value: ServiceCategory; label: string }> = [
+  { value: 'ORCAMENTO', label: 'Orçamento' },
+  { value: 'TRANSPORTE', label: 'Transporte' },
+  { value: 'SERVICO_TERCEIRIZADO', label: 'Serviço terceirizado' },
+]
+const categoryFlags: Record<ServiceCategory, string> = { MAO_DE_OBRA: 'M', GARANTIA: 'G', VISITA_TECNICA: 'V', CANCELAMENTO: 'C', DESLOCAMENTO: 'D', ORCAMENTO: 'O', TRANSPORTE: 'T', SERVICO_TERCEIRIZADO: 'E' }
+const originLabels: Record<string, string> = { C: 'Contratada', A: 'Avulsa', E: 'Experiência', O: 'Obras' }
 const serviceTypes = [
   { value: 'E', label: 'Elétricos' },
   { value: 'H', label: 'Hidráulico' },
@@ -44,7 +52,7 @@ type ScheduleDraft = ServiceOrderSchedule & { rowKey: string }
 type ServiceDraft = ServiceOrderServiceItem & { rowKey: string }
 type MaterialDraft = ServiceOrderMaterialItem & { rowKey: string }
 type DateFilterMode = 'none' | 'day' | 'range' | 'month' | 'week'
-type ServiceOrderFilter = 'Todas' | 'Urgentes' | 'ABERTA' | 'FINALIZADA' | 'CANCELADA'
+type ServiceOrderFilter = 'Todas' | 'Urgentes' | 'ABERTA' | 'EM_ATENDIMENTO' | 'FINALIZADA' | 'CANCELADA'
 
 type DateBounds = {
   startDate?: string
@@ -264,6 +272,9 @@ export function ServiceOrders() {
   const [contractCode, setContractCode] = useState('')
   const [attendanceLocationId, setAttendanceLocationId] = useState('')
   const [orderFilter, setOrderFilter] = useState<ServiceOrderFilter>('Todas')
+  const [originFilter, setOriginFilter] = useState<'' | 'C' | 'A' | 'O' | 'E'>('')
+  const [categoryFilter, setCategoryFilter] = useState('')
+  const [technicianFilter, setTechnicianFilter] = useState<PickerValue>(null)
   const [dateFilterMode, setDateFilterMode] = useState<DateFilterMode>('day')
   const [date, setDate] = useState(localToday())
   const [rangeStart, setRangeStart] = useState('')
@@ -303,6 +314,9 @@ export function ServiceOrders() {
     dateBounds.startDate ?? '',
     dateBounds.endDate ?? '',
     orderFilter,
+    originFilter,
+    categoryFilter,
+    technicianFilter?.id ?? '',
     page,
     pageSize,
   ] as const
@@ -319,13 +333,35 @@ export function ServiceOrders() {
       startDate: dateBounds.startDate,
       endDate: dateBounds.endDate,
       urgentOnly: orderFilter === 'Urgentes' || undefined,
-      status: orderFilter === 'ABERTA' || orderFilter === 'FINALIZADA' || orderFilter === 'CANCELADA' ? orderFilter : undefined,
+      status: orderFilter === 'ABERTA' || orderFilter === 'EM_ATENDIMENTO' || orderFilter === 'FINALIZADA' || orderFilter === 'CANCELADA' ? orderFilter : undefined,
+      origin: originFilter || undefined,
+      category: categoryFilter || undefined,
+      technicianId: technicianFilter?.id,
       page,
       size: pageSize,
     }),
     enabled: !periodError,
     placeholderData: keepPreviousData,
   })
+  const summaryQuery = useQuery({
+    queryKey: [...queryKeys.serviceOrders, 'summary', ...ordersQueryKey.slice(2, 11), originFilter, categoryFilter, technicianFilter?.id ?? ''],
+    queryFn: () => api.serviceOrders.summary({
+      clientName: debouncedSearch || undefined,
+      cpf: cpfFilter || undefined,
+      cnpj: cnpjFilter || undefined,
+      orderNumber: orderNumber ? Number(orderNumber) : undefined,
+      contractCode: contractCode ? Number(contractCode) : undefined,
+      attendanceLocationId: attendanceLocationId ? Number(attendanceLocationId) : undefined,
+      startDate: dateBounds.startDate,
+      endDate: dateBounds.endDate,
+      origin: originFilter || undefined,
+      category: categoryFilter || undefined,
+      technicianId: technicianFilter?.id,
+    }),
+    enabled: !periodError,
+    placeholderData: keepPreviousData,
+  })
+  const summary = summaryQuery.data
   const catalogQuery = useQuery({ queryKey: queryKeys.serviceCatalog, queryFn: () => api.serviceCatalog.list({ size: 500 }) })
   const detailQuery = useQuery({ queryKey: [...queryKeys.serviceOrders, 'detail', detailId], queryFn: () => api.serviceOrders.find(detailId!), enabled: detailId !== null })
 
@@ -589,10 +625,10 @@ export function ServiceOrders() {
   return <>
     <PageHeader eyebrow="Operação" title="Ordens de serviço" subtitle="Cadastro operacional alinhado ao fluxo legado da Gente Boa." actions={<Button icon={<Plus size={18} />} onClick={openNew}>Nova OS</Button>} />
     <section className="stats-grid stats-grid--four">
-      <StatCard label="Abertas nesta página" value={String(orders.filter((order) => order.status === 'ABERTA').length)} helper={`${orders.length} registros exibidos`} icon={<CircleAlert />} tone="orange" />
-      <StatCard label="Urgentes nesta página" value={String(orders.filter((order) => order.priority === 'URGENTE').length)} helper="Sinalizadas na agenda" icon={<Clock3 />} tone="orange" />
-      <StatCard label="Finalizadas nesta página" value={String(orders.filter((order) => order.status === 'FINALIZADA').length)} helper="Atendimentos concluídos" icon={<CheckCircle2 />} tone="green" />
-      <StatCard label="Canceladas nesta página" value={String(orders.filter((order) => order.status === 'CANCELADA').length)} helper={`${total.toLocaleString('pt-BR')} no resultado filtrado`} icon={<Wrench />} tone="blue" />
+      <StatCard label="Total geral" value={(summary?.total ?? 0).toLocaleString('pt-BR')} helper={`${(summary?.urgent ?? 0).toLocaleString('pt-BR')} urgentes · ${(summary?.canceled ?? 0).toLocaleString('pt-BR')} canceladas`} icon={<Wrench />} tone="blue" />
+      <StatCard label="Abertas" value={(summary?.open ?? 0).toLocaleString('pt-BR')} helper="Ainda não iniciadas" icon={<CircleAlert />} tone="orange" />
+      <StatCard label="Em andamento" value={(summary?.inProgress ?? 0).toLocaleString('pt-BR')} helper="Atendimento iniciado" icon={<Clock3 />} tone="purple" />
+      <StatCard label="Concluídas" value={(summary?.finished ?? 0).toLocaleString('pt-BR')} helper="Finalizadas no filtro" icon={<CheckCircle2 />} tone="green" />
     </section>
 
     <section className="panel data-panel os-panel">
@@ -603,9 +639,12 @@ export function ServiceOrders() {
           <label className="structured-filter-field"><span>Código do local</span><input type="number" min="1" value={attendanceLocationId} onChange={(event) => { setAttendanceLocationId(event.target.value); resetPage() }} /></label>
           <label className="structured-filter-field"><span>CPF</span><input inputMode="numeric" value={cpfFilter} onChange={(event) => { setCpfFilter(event.target.value.replace(/\D/g, '')); resetPage() }} placeholder="Somente números" /></label>
           <label className="structured-filter-field"><span>CNPJ</span><input inputMode="numeric" value={cnpjFilter} onChange={(event) => { setCnpjFilter(event.target.value.replace(/\D/g, '')); resetPage() }} placeholder="Somente números" /></label>
+          <label className="structured-filter-field"><span>Tipo</span><select value={originFilter} onChange={(event) => { setOriginFilter(event.target.value as typeof originFilter); resetPage() }}><option value="">Geral</option><option value="C">Contratada</option><option value="A">Avulsa</option><option value="O">Obras</option><option value="E">Experiência</option></select></label>
+          <label className="structured-filter-field"><span>Categoria</span><select value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value); resetPage() }}><option value="">Geral</option>{[...categories, ...legacyCategories].map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+          <label className="structured-filter-field"><span>Técnico</span><EmployeePicker value={technicianFilter} onChange={(value) => { setTechnicianFilter(value); resetPage() }} /></label>
       </CollapsibleFilters>
       <div className="data-toolbar data-toolbar--orders">
-        <div className="segmented-control os-status-filter"><button className={orderFilter === 'Todas' ? 'active' : ''} onClick={() => { setOrderFilter('Todas'); resetPage() }}>Todas</button><button className={orderFilter === 'Urgentes' ? 'active' : ''} onClick={() => { setOrderFilter('Urgentes'); resetPage() }}>Urgentes</button><button className={orderFilter === 'ABERTA' ? 'active' : ''} onClick={() => { setOrderFilter('ABERTA'); resetPage() }}>Abertas</button><button className={orderFilter === 'FINALIZADA' ? 'active' : ''} onClick={() => { setOrderFilter('FINALIZADA'); resetPage() }}>Finalizadas</button><button className={orderFilter === 'CANCELADA' ? 'active' : ''} onClick={() => { setOrderFilter('CANCELADA'); resetPage() }}>Canceladas</button></div>
+        <div className="segmented-control os-status-filter"><button className={orderFilter === 'Todas' ? 'active' : ''} onClick={() => { setOrderFilter('Todas'); resetPage() }}>Todas</button><button className={orderFilter === 'Urgentes' ? 'active' : ''} onClick={() => { setOrderFilter('Urgentes'); resetPage() }}>Urgentes</button><button className={orderFilter === 'ABERTA' ? 'active' : ''} onClick={() => { setOrderFilter('ABERTA'); resetPage() }}>Abertas</button><button className={orderFilter === 'EM_ATENDIMENTO' ? 'active' : ''} onClick={() => { setOrderFilter('EM_ATENDIMENTO'); resetPage() }}>Em andamento</button><button className={orderFilter === 'FINALIZADA' ? 'active' : ''} onClick={() => { setOrderFilter('FINALIZADA'); resetPage() }}>Finalizadas</button><button className={orderFilter === 'CANCELADA' ? 'active' : ''} onClick={() => { setOrderFilter('CANCELADA'); resetPage() }}>Canceladas</button></div>
         <label className="toolbar-select toolbar-select--compact os-period-mode"><span>Período</span><select value={dateFilterMode} onChange={(event) => changeDateFilterMode(event.target.value as DateFilterMode)}><option value="day">Dia</option><option value="range">Entre datas</option><option value="week">Semana</option><option value="month">Mês</option><option value="none">Todas as datas</option></select></label>
         {dateFilterMode === 'day' && <label className="os-date-field"><span>Dia</span><div><CalendarDays size={15} /><input type="date" value={date} onChange={(event) => { setDate(event.target.value); resetPage() }} aria-label="Filtrar por dia" /></div></label>}
         {dateFilterMode === 'range' && <div className="os-period-fields">
@@ -728,7 +767,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   const [employeeSearch, setEmployeeSearch] = useState('')
   const [clientError, setClientError] = useState('')
   const [requestDate, setRequestDate] = useState(initialDate)
-  const [orderOrigin, setOrderOrigin] = useState<ServiceOrderOrigin>(selected?.flordem === 'C' ? 'C' : 'A')
+  const [orderOrigin, setOrderOrigin] = useState<ServiceOrderOrigin>(selected?.flordem === 'C' || selected?.flordem === 'E' || selected?.flordem === 'O' ? selected.flordem : 'A')
   const [requester, setRequester] = useState(selected?.nmsolic ?? '')
   const [locationId, setLocationId] = useState(selected?.idlocal ? String(selected.idlocal) : '')
   const [locationModalOpen, setLocationModalOpen] = useState(false)
@@ -748,7 +787,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   const [transport, setTransport] = useState(String(selected?.vltrans ?? 0))
   const [rental, setRental] = useState(String(selected?.vlalug ?? 0))
   const [supplierId, setSupplierId] = useState(selected?.materialOrder?.supplierId ? String(selected.materialOrder.supplierId) : '')
-  const [supplierSearch, setSupplierSearch] = useState(selected?.materialOrder?.supplierTradeName || selected?.materialOrder?.supplierName || '')
+  const [supplierLabel, setSupplierLabel] = useState(selected?.materialOrder?.supplierId ? `${selected.materialOrder.supplierTradeName || selected.materialOrder.supplierName || 'Fornecedor'} · #${selected.materialOrder.supplierId}` : '')
   const [materialSearch, setMaterialSearch] = useState('')
   const [materialToAdd, setMaterialToAdd] = useState('')
   const [purchaseEntryDate, setPurchaseEntryDate] = useState(toDateInput(selected?.materialOrder?.entryDate) || initialDate)
@@ -822,9 +861,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     onError: (error) => setLocationError(apiErrorMessage(error, 'Não foi possível cadastrar o local de atendimento.')),
   })
   const systemParametersQuery = useQuery({ queryKey: queryKeys.systemParameters, queryFn: api.systemParameters.get })
-  const debouncedSupplierSearch = useDebouncedValue(supplierSearch)
   const debouncedMaterialSearch = useDebouncedValue(materialSearch)
-  const suppliersQuery = useQuery({ queryKey: [...queryKeys.suppliers, 'order-form', debouncedSupplierSearch], queryFn: () => api.suppliers.list({ query: debouncedSupplierSearch || undefined, size: 50 }) })
   const materialsQuery = useQuery({ queryKey: [...queryKeys.materials, 'order-form', debouncedMaterialSearch], queryFn: () => api.materials.list({ query: debouncedMaterialSearch || undefined, size: 100 }) })
   const selectedClient = clientId
     ? clientQuery.data ?? (Number(clientId) === selected?.idclien ? selected?.client : null)
@@ -927,9 +964,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   const operationalRule = orderOrigin === 'C'
     ? systemParametersQuery.data?.contractRules || `Cada atendimento desconta no mínimo ${minimumMinutes} minutos das horas contratadas.`
     : systemParametersQuery.data?.oneOffRules || `Cada atendimento é cobrado pelo mínimo de ${minimumMinutes} minutos.`
-  const supplierOptions = suppliersQuery.data?.content ?? []
   const materialOptions = materialsQuery.data?.content ?? []
-  const selectedSupplierMissing = Boolean(supplierId) && !supplierOptions.some((supplier) => supplier.id === Number(supplierId))
 
   useEffect(() => {
     if (!shouldInferOrderOrigin || !contractContextQuery.isSuccess) return
@@ -1187,7 +1222,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       idclien: Number(clientId), idcontr: orderOrigin === 'C' ? activeContract?.id ?? selected?.idcontr ?? null : null, dtordem: dateTime(requestDate), flordem: orderOrigin, nmsolic: requester.trim() || null,
       idlocal: locationId ? Number(locationId) : null, idopera: selected?.idopera ?? user?.id ?? null, status,
       flstatu: status === 'FINALIZADA' ? 'F' : status === 'CANCELADA' ? 'C' : 'A', category,
-      flcateg: category === 'GARANTIA' ? 'G' : category === 'VISITA_TECNICA' ? 'V' : category === 'CANCELAMENTO' ? 'C' : category === 'DESLOCAMENTO' ? 'D' : 'M',
+      flcateg: selected && selected.category === category && selected.flcateg ? selected.flcateg : categoryFlags[category] ?? 'M',
       dsdescr: description.trim(), description: description.trim(), dsobser: notes.trim() || null, dscancel: cancellationReason.trim() || null,
       tpservic: serviceType, procurarpor: searchTarget.trim() || null, service: serviceType, priority: urgent ? 'URGENTE' : 'NORMAL', scheduledDate: firstSchedule ? toDateInput(firstSchedule.expectedDate) : requestDate,
       scheduledTime: firstSchedule?.expectedStart || null, technician: firstSchedule?.employeeId ? String(firstSchedule.employeeId) : null, location: locationId || null,
@@ -1206,7 +1241,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     <aside className={`os-accounting-rule os-accounting-rule--${orderOrigin === 'C' ? 'contract' : 'one-off'}`}><Clock3 size={18} /><span><strong>Contabilização mínima: {minimumMinutes} minutos por atendimento</strong><small>{operationalRule}</small></span></aside>
     <div className="os-form-identification">
       <FormField label="Código"><input value={selected?.id ?? 'Automático'} disabled /></FormField>
-      <FormField label="Tipo"><select value={orderOrigin} onChange={(event) => setOrderOrigin(event.target.value as ServiceOrderOrigin)}><option value="A">Avulsa</option><option value="C">Contrato</option></select></FormField>
+      <FormField label="Tipo"><select value={orderOrigin} onChange={(event) => setOrderOrigin(event.target.value as ServiceOrderOrigin)}><option value="A">Avulsa</option><option value="C">Contrato</option><option value="E">Experiência</option>{orderOrigin === 'O' && <option value="O">Obras (legado)</option>}</select></FormField>
       <FormField label="Data da requisição"><input type="date" value={requestDate} onChange={(event) => setRequestDate(event.target.value)} required /></FormField>
       <FormField label="Solicitante"><input maxLength={250} value={requester} onChange={(event) => setRequester(event.target.value)} /></FormField>
       <FormField label="Cliente">
@@ -1253,7 +1288,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     {tab === 'general' ? <>
       <section className="os-form-section">
         <div className="os-form-section__title"><strong>Categoria da OS</strong><span>Classificação do atendimento</span></div>
-        <div className="os-category-row"><div className="os-radio-group">{categories.map((item) => <label key={item.value}><input type="radio" name="os-category" checked={category === item.value} onChange={() => setCategory(item.value)} /><span>{item.label}</span></label>)}</div><div className="os-detail-flags"><label><input type="checkbox" checked={urgent} onChange={(event) => setUrgent(event.target.checked)} /><span>Urgente</span></label><label><input type="checkbox" checked={hourMarked} onChange={(event) => setHourMarked(event.target.checked)} /><span>Hora marcada</span></label></div></div>
+        <div className="os-category-row"><div className="os-radio-group">{[...categories, ...legacyCategories.filter((item) => item.value === category)].map((item) => <label key={item.value}><input type="radio" name="os-category" checked={category === item.value} onChange={() => setCategory(item.value)} /><span>{item.label}</span></label>)}</div><div className="os-detail-flags"><label><input type="checkbox" checked={urgent} onChange={(event) => setUrgent(event.target.checked)} /><span>Urgente</span></label><label><input type="checkbox" checked={hourMarked} onChange={(event) => setHourMarked(event.target.checked)} /><span>Hora marcada</span></label></div></div>
       </section>
       <div className="os-description-grid">
         <FormField label="Descrição"><textarea rows={3} value={description} onChange={(event) => setDescription(event.target.value)} required /></FormField>
@@ -1284,7 +1319,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
         <div className="os-grid-summary os-time-summary"><span><small>Tempo previsto</small><strong>{asDuration(totalMinutes)}</strong></span><span><small>Tempo realizado</small><strong>{asDuration(actualMinutes)}</strong></span><span className="os-time-summary__billable"><small>{orderOrigin === 'C' ? 'Tempo a descontar' : 'Tempo a cobrar'}</small><strong>{asDuration(billableMinutes)}</strong></span></div>
       </section>
       <div className="os-service-workspace">
-        <section className="os-additional-values"><header><strong>Valores adicionais</strong><span>Composição da cobrança</span></header><FormField label="Vencimento"><input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></FormField><FormField label="Taxa do boleto"><input type="number" min="0" step="0.01" value={ticketFee} onChange={(event) => setTicketFee(event.target.value)} /></FormField><FormField label="Desconto %"><input type="number" min="0" max="100" step="0.01" value={discount} onChange={(event) => setDiscount(event.target.value)} /></FormField><FormField label="Transporte"><input type="number" min="0" step="0.01" value={transport} onChange={(event) => setTransport(event.target.value)} /></FormField>
+        <section className="os-additional-values"><header><strong>Valores adicionais</strong><span>Composição da cobrança</span></header><FormField label="Vencimento"><input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></FormField><FormField label="Taxa do boleto"><input type="number" min="0" step="0.01" value={ticketFee} onChange={(event) => setTicketFee(event.target.value)} /></FormField><FormField label="Desconto %"><input type="number" min="0" max="100" step="0.01" value={discount} onChange={(event) => setDiscount(event.target.value)} /></FormField>{numberValue(transport) > 0 && <FormField label="Transporte (legado)" hint="Não é mais cobrado; zere para remover"><input type="number" min="0" step="0.01" value={transport} onChange={(event) => setTransport(event.target.value)} /></FormField>}
         {/* <FormField label="Aluguel"><input type="number" min="0" step="0.01" value={rental} onChange={(event) => setRental(event.target.value)} /></FormField> */}
         </section>
         <section className="os-grid-section os-services-section">
@@ -1298,24 +1333,24 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       </div>
       <div className="os-total-strip"><span><small>Serviços</small><strong>{money(serviceSubtotal)}</strong></span><span><small>Pedido de compra</small><strong>{money(materialAmount)}</strong></span><span><small>Desconto</small><strong>- {money(discountAmount)}</strong></span><span className="os-total-strip__primary"><small>Valor a cobrar</small><strong>{money(Math.max(0, total))}</strong></span></div>
     </> : <section className="os-material-tab">
-      <div><strong>Pedido de compra</strong><p>Selecione o fornecedor e os materiais adquiridos para reabastecer o estoque. Ao salvar, o pedido gera uma conta a pagar vinculada à OS.</p></div>
+      <div><strong>Pedido de compra</strong><p>Selecione o fornecedor e os materiais comprados para o atendimento. Ao salvar, o pedido gera a conta a pagar do fornecedor e, ao finalizar a OS, a conta a receber do cliente.</p></div>
       <FormError message={materialError} />
-      {suppliersQuery.isError && <FormError message={`Não foi possível consultar os fornecedores: ${apiErrorMessage(suppliersQuery.error)}`} />}
       {materialsQuery.isError && <FormError message={`Não foi possível consultar os materiais: ${apiErrorMessage(materialsQuery.error)}`} />}
 
       <div className="os-purchase-header">
         <FormField label="Pedido de compra"><input value={selected?.materialOrder?.id ?? selected?.idpedi ?? 'Gerado ao salvar'} disabled /></FormField>
         <FormField label="Data de entrada"><input type="date" value={purchaseEntryDate} onChange={(event) => setPurchaseEntryDate(event.target.value)} /></FormField>
-        <FormField label="Vencimento da conta"><input type="date" value={purchasePayableDueDate} onChange={(event) => setPurchasePayableDueDate(event.target.value)} /></FormField>
+        {(selected?.materialOrder?.payableInstallments ?? 1) > 1
+          ? <FormField label="Vencimento da conta a pagar" hint={`Conta parcelada em ${selected?.materialOrder?.payableInstallments} prestações: os vencimentos são ajustados em Contas a pagar. Alterações de valor do pedido são redistribuídas entre as prestações.`}><input type="date" value={purchasePayableDueDate} disabled /></FormField>
+          : <FormField label="Vencimento da conta a pagar" hint="Fornecedor. A cobrança do cliente usa o vencimento automático (dia do contrato ou próximo dia 10/20)."><input type="date" value={purchasePayableDueDate} onChange={(event) => setPurchasePayableDueDate(event.target.value)} /></FormField>}
         <FormField label="Nota fiscal"><input maxLength={50} value={purchaseInvoice} onChange={(event) => setPurchaseInvoice(event.target.value)} /></FormField>
-        {/* <FormField label="Buscar fornecedor" hint="Nome fantasia, razão social, CPF, CNPJ ou código"><input value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} placeholder="Digite para pesquisar..." /></FormField> */}
-        <FormField label="Fornecedor"><select value={supplierId} onChange={(event) => { setSupplierId(event.target.value); setMaterialError('') }} disabled={suppliersQuery.isLoading}><option value="">Selecione o fornecedor</option>{selectedSupplierMissing && <option value={supplierId}>{selected?.materialOrder?.supplierTradeName || selected?.materialOrder?.supplierName || `Fornecedor #${supplierId}`}</option>}{supplierOptions.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplierDisplay(supplier)}</option>)}</select></FormField>
+        <FormField label="Fornecedor"><SupplierPicker value={supplierId ? { id: Number(supplierId), label: supplierLabel || `Fornecedor #${supplierId}` } : null} onChange={(value) => { setSupplierId(value ? String(value.id) : ''); setSupplierLabel(value?.label ?? ''); setMaterialError('') }} /></FormField>
       </div>
 
       <section className="os-grid-section os-material-order-section">
         <header><div><strong>Relação de materiais</strong><span>Itens de tbordemservicomaterialitem</span></div></header>
         <div className="os-material-picker">
-          {/* <FormField label="Pesquisar material" hint="Descrição, marca, unidade ou código"><input value={materialSearch} onChange={(event) => { setMaterialSearch(event.target.value); setMaterialToAdd('') }} placeholder="Digite para pesquisar no cadastro..." /></FormField> */}
+          <FormField label="Pesquisar material" hint="Descrição, marca, unidade ou código"><input value={materialSearch} onChange={(event) => { setMaterialSearch(event.target.value); setMaterialToAdd('') }} placeholder="Digite para pesquisar no cadastro..." /></FormField>
           <FormField label="Material"><select value={materialToAdd} onChange={(event) => setMaterialToAdd(event.target.value)} disabled={materialsQuery.isLoading}><option value="">Selecione</option>{materialOptions.map((material) => <option key={material.id} value={material.id} disabled={materialItems.some((item) => item.materialId === material.id)}>{material.description || `Material #${material.id}`} · {material.brand || 'Sem marca'} · {material.unit || 'UN'}</option>)}</select></FormField>
           <Button type="button" variant="secondary"  style={{maxWidth: 150}} icon={<Plus size={15} />} onClick={addMaterial} disabled={!materialToAdd}>Adicionar material</Button>
         </div>
@@ -1331,10 +1366,10 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       </section>
 
       <div className="os-purchase-footer">
-        <section className="os-purchase-values"><FormField label="Desconto %"><input type="number" min="0" max="100" step="0.01" value={purchaseDiscount} onChange={(event) => setPurchaseDiscount(event.target.value)} /></FormField><FormField label="Frete"><input type="number" min="0" step="0.01" value={purchaseFreight} onChange={(event) => setPurchaseFreight(event.target.value)} /></FormField><FormField label="Seguro"><input type="number" min="0" step="0.01" value={purchaseInsurance} onChange={(event) => setPurchaseInsurance(event.target.value)} /></FormField><FormField label="Sprad"><input type="number" min="0" step="0.01" value={purchaseStandard} onChange={(event) => setPurchaseStandard(event.target.value)} /></FormField><FormField label="Margem GB"><input type="number" min="0" step="0.01" value={purchaseGbMargin} onChange={(event) => setPurchaseGbMargin(event.target.value)} /></FormField><FormField label="Aluguel"><input type="number" min="0" step="0.01" value={purchaseRental} onChange={(event) => setPurchaseRental(event.target.value)} /></FormField></section>
+        {(numberValue(purchaseDiscount) > 0 || numberValue(purchaseFreight) > 0 || numberValue(purchaseInsurance) > 0 || numberValue(purchaseStandard) > 0 || numberValue(purchaseGbMargin) > 0 || numberValue(purchaseRental) > 0) && <p className="finance-dialog__hint">Pedido do sistema anterior com desconto/frete/seguro/sprad/margem/aluguel (total líquido {money(materialAmount)}). Esses campos não são mais usados e foram mantidos como estavam.</p>}
         <FormField label="Observações"><textarea rows={3} maxLength={250} value={purchaseNotes} onChange={(event) => setPurchaseNotes(event.target.value)} /></FormField>
       </div>
-      <div className="os-purchase-totals"><span><small>Total bruto</small><strong>{money(materialGross)}</strong></span><span><small>Desconto</small><strong>- {money(materialDiscountValue)}</strong></span><span><small>Total FOB</small><strong>{money(materialFob)}</strong></span><span><small>Total CIF</small><strong>{money(materialCif)}</strong></span><span className="os-purchase-totals__primary"><small>Total líquido</small><strong>{money(materialAmount)}</strong></span></div>
+      <div className="os-purchase-totals"><span><small>Total bruto</small><strong>{money(materialGross)}</strong></span><span className="os-purchase-totals__primary"><small>Total do pedido</small><strong>{money(materialAmount)}</strong></span></div>
     </section>}
     {selected && <div className="destructive-row"><span><strong>Excluir ordem</strong><small>Também remove os agendamentos e serviços vinculados.</small></span><Button type="button" variant="danger" icon={<Trash2 size={16} />} onClick={() => onDelete(selected.id)}>Excluir</Button></div>}
   </ModalForm>
@@ -1437,7 +1472,7 @@ function ServiceOrderDetail({ order, catalog, flagSaving, onFlagChange }: { orde
         return <span key={item.scheduleId}><strong>Previsto: {formatDate(item.expectedDate)} · {item.expectedStart || '--:--'}–{item.expectedEnd || '--:--'}</strong><small>Funcionário: {item.employeeName || item.employeeNickname || (item.employeeId ? `#${item.employeeId}` : 'Aguardando')}{item.employeePosition ? ` · ${item.employeePosition}` : ''}{item.employeePhone ? ` · ${item.employeePhone}` : ''} · Serviço: {serviceName || (item.serviceId ? `#${item.serviceId}` : 'não vinculado')} · Realizado: {item.actualDate ? formatDate(item.actualDate) : 'sem data'} · {item.actualStart || '--:--'}–{item.actualEnd || '--:--'} ({item.actualDuration || '00:00'})</small></span>
       })}</div> : <p className="drawer-section__text">Nenhum agendamento vinculado.</p>}</section>
       <section className="drawer-section drawer-section--wide"><h3>Serviços</h3>{order.serviceItems?.length ? <div className="detail-list-grid">{order.serviceItems.map((item) => <span key={item.serviceId}><strong>{catalog.find((service) => service.id === item.serviceId)?.description || `Serviço #${item.serviceId}`}</strong><small>Horas oficiais: {item.hours || '00:00'} · {item.quantity || 0} × {money(item.unitValue)} · Total {money(item.totalValue)}</small></span>)}</div> : <p className="drawer-section__text service-description-empty">NENHUM SERVIÇO VINCULADO</p>}</section>
-      <section className="drawer-section drawer-section--wide"><h3>Pedido de compra</h3>{order.materialOrder ? <><dl><div><dt>Pedido</dt><dd>#{order.materialOrder.id}</dd></div><div><dt>Fornecedor</dt><dd>{order.materialOrder.supplierTradeName || order.materialOrder.supplierName || `#${order.materialOrder.supplierId}`}</dd></div><div><dt>Data de entrada</dt><dd>{formatDate(order.materialOrder.entryDate)}</dd></div><div><dt>Conta a pagar</dt><dd>{order.materialOrder.payableId ? `#${order.materialOrder.payableId} · ${order.materialOrder.payableStatus === 'PAID' ? 'Quitada' : 'Em aberto'}` : 'Não gerada'}</dd></div><div><dt>Vencimento</dt><dd>{formatDate(order.materialOrder.payableDueDate)}</dd></div><div><dt>Total líquido</dt><dd>{money(order.materialOrder.netValue)}</dd></div></dl>{order.materialOrder.items?.length ? <div className="detail-list-grid detail-purchase-items">{order.materialOrder.items.map((item) => <span key={`${item.purchaseOrderId}-${item.itemId}`}><strong>{item.materialDescription || `Material #${item.materialId}`}</strong><small>{item.quantity || 0} {item.materialUnit || 'UN'} × {money(item.unitValue)} · Total {money(item.totalValue)}</small></span>)}</div> : <p className="drawer-section__text detail-text-spaced">Nenhum item vinculado ao pedido.</p>}</> : <p className="drawer-section__text">Nenhum pedido de compra vinculado.</p>}</section>
+      <section className="drawer-section drawer-section--wide"><h3>Pedido de compra</h3>{order.materialOrder ? <><dl><div><dt>Pedido</dt><dd>#{order.materialOrder.id}</dd></div><div><dt>Fornecedor</dt><dd>{order.materialOrder.supplierTradeName || order.materialOrder.supplierName || `#${order.materialOrder.supplierId}`}</dd></div><div><dt>Data de entrada</dt><dd>{formatDate(order.materialOrder.entryDate)}</dd></div><div><dt>Conta a pagar</dt><dd>{order.materialOrder.payableId ? `#${order.materialOrder.payableId}${(order.materialOrder.payableInstallments ?? 1) > 1 ? ` (${order.materialOrder.payableInstallments} prestações)` : ''} · ${order.materialOrder.payableStatus === 'PAID' ? 'Quitada' : 'Em aberto'}` : 'Não gerada'}</dd></div><div><dt>{(order.materialOrder.payableInstallments ?? 1) > 1 ? 'Próximo vencimento' : 'Vencimento'}</dt><dd>{formatDate(order.materialOrder.payableDueDate)}</dd></div><div><dt>Total líquido</dt><dd>{money(order.materialOrder.netValue)}</dd></div></dl>{order.materialOrder.items?.length ? <div className="detail-list-grid detail-purchase-items">{order.materialOrder.items.map((item) => <span key={`${item.purchaseOrderId}-${item.itemId}`}><strong>{item.materialDescription || `Material #${item.materialId}`}</strong><small>{item.quantity || 0} {item.materialUnit || 'UN'} × {money(item.unitValue)} · Total {money(item.totalValue)}</small></span>)}</div> : <p className="drawer-section__text detail-text-spaced">Nenhum item vinculado ao pedido.</p>}</> : <p className="drawer-section__text">Nenhum pedido de compra vinculado.</p>}</section>
     </div>
   </div>
 }

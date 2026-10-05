@@ -1,19 +1,28 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, ExternalLink, Eye, FileBarChart, FileText, Landmark, Mail, Printer, ReceiptText, Search, Send, Timer, Users, WalletCards } from 'lucide-react'
+import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, ExternalLink, Eye, FileBarChart, FileSpreadsheet, FileText, Landmark, Mail, Printer, ReceiptText, Search, Send, Timer, Upload, Users, WalletCards } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money } from '../lib/format'
 import type { BillDetail, BillListItem, ClientBillingContext, ClientStatementDetail, ClientStatementSummary } from '../types'
 import { Badge, Button, CollapsibleFilters, ConfirmDialog, DetailModal, EmptyState, ErrorState, LoadingState, Modal, PageHeader, StatCard, Toast } from '../components/ui'
+import { financeApi } from '../api/finance'
+import { modulesApi, modulesKeys, openPdf, summaryNumber } from '../api/modules'
+import { MultipleSettlementDialog } from '../components/FinanceDialogs'
 import { AccountsReceivableReview } from '../components/AccountsReceivableReview'
 import { ClientHourTracking } from '../components/ClientHourTracking'
+import { dateText, downloadCsv, printElement } from '../lib/export'
+import { BillStatementModal } from '../components/BillStatementModal'
+import { BillStatementsTab } from '../components/BillStatementsTab'
+import { useRouter } from '../router'
+import type { BillStatementSource } from '../api/modules'
 
 export function Statements() {
   const queryClient = useQueryClient()
-  const [section, setSection] = useState<'bills' | 'statements'>('bills')
-  const [billingView, setBillingView] = useState<'receivables' | 'generated'>('receivables')
+  const { pathname, navigate } = useRouter()
+  const [billingView, setBillingView] = useState<'receivables' | 'generated' | 'statements' | 'printing'>(pathname === '/extratos' ? 'statements' : 'receivables')
+  const [statementSource, setStatementSource] = useState<BillStatementSource | null>(null)
   const [search, setSearch] = useState('')
   const [billCpf, setBillCpf] = useState('')
   const [billCnpj, setBillCnpj] = useState('')
@@ -23,25 +32,27 @@ export function Statements() {
   const [page, setPage] = useState(0)
   const [detailId, setDetailId] = useState<number | null>(null)
   const [relatedModal, setRelatedModal] = useState<'receivables' | 'tracking' | null>(null)
-  const [visualPaid, setVisualPaid] = useState<Record<number, boolean>>({})
+  const [settleTarget, setSettleTarget] = useState<BillDetail | null>(null)
+  const [selectedBills, setSelectedBills] = useState<Record<number, BillListItem>>({})
+  const [batchSettleOpen, setBatchSettleOpen] = useState(false)
+  const [settleError, setSettleError] = useState('')
   const [toast, setToast] = useState('')
   const [emailTarget, setEmailTarget] = useState<BillDetail | null>(null)
   const [emailError, setEmailError] = useState('')
   const [billPdfPreview, setBillPdfPreview] = useState<{ url: string; bill: Pick<BillListItem, 'id' | 'number'> } | null>(null)
   const initialBillPeriod = useMemo(currentMonthPeriod, [])
-  const [billOrderStart, setBillOrderStart] = useState(initialBillPeriod.startDate)
-  const [billOrderEnd, setBillOrderEnd] = useState(initialBillPeriod.endDate)
-  const [billDueStart, setBillDueStart] = useState('')
-  const [billDueEnd, setBillDueEnd] = useState('')
-  const [billDueDay, setBillDueDay] = useState<'' | 1 | 10 | 20>('')
+  const [billOrderStart, setBillOrderStart] = useState('')
+  const [billOrderEnd, setBillOrderEnd] = useState('')
+  const [billDueStart, setBillDueStart] = useState(initialBillPeriod.startDate)
+  const [billDueEnd, setBillDueEnd] = useState(initialBillPeriod.endDate)
+  const [openUntil, setOpenUntil] = useState('')
+  const [billDueDay, setBillDueDay] = useState<'' | 10 | 20>('')
   const [billingType, setBillingType] = useState<'ALL' | 'CONTRACT' | 'ONE_OFF'>('ALL')
   const [paymentStatus, setPaymentStatus] = useState<'ALL' | 'PENDING' | 'PAID'>('ALL')
   const debouncedSearch = useDebouncedValue(search)
   const [pageSize, setPageSize] = useState(10)
 
-  const billsQuery = useQuery({
-    queryKey: [...queryKeys.bills, debouncedSearch, billCpf, billCnpj, billNumber, billServiceOrder, billContract, billOrderStart, billOrderEnd, billDueStart, billDueEnd, billDueDay, billingType, paymentStatus, page, pageSize],
-    queryFn: () => api.bills.list({
+  const billFilters = {
       clientName: debouncedSearch || undefined,
       cpf: billCpf || undefined,
       cnpj: billCnpj || undefined,
@@ -50,15 +61,35 @@ export function Statements() {
       contractCode: billContract ? Number(billContract) : undefined,
       serviceOrderStart: billOrderStart || undefined,
       serviceOrderEnd: billOrderEnd || undefined,
-      dueStart: billDueStart || undefined,
-      dueEnd: billDueEnd || undefined,
+      dueStart: openUntil ? undefined : billDueStart || undefined,
+      dueEnd: openUntil || billDueEnd || undefined,
       dueDay: billDueDay || undefined,
       billingType,
-      paymentStatus,
-      page,
-      size: pageSize,
-    }),
-    enabled: section === 'bills' && billingView === 'generated',
+      paymentStatus: openUntil ? 'PENDING' as const : paymentStatus,
+  }
+  const billsQuery = useQuery({
+    queryKey: [...queryKeys.bills, debouncedSearch, billCpf, billCnpj, billNumber, billServiceOrder, billContract, billOrderStart, billOrderEnd, billDueStart, billDueEnd, openUntil, billDueDay, billingType, paymentStatus, page, pageSize],
+    queryFn: () => api.bills.list({ ...billFilters, page, size: pageSize }),
+    enabled: billingView === 'generated',
+  })
+  const billSummaryQuery = useQuery({
+    queryKey: [...modulesKeys.summaries, 'bills', billFilters],
+    queryFn: () => modulesApi.summaries.get('bills', billFilters),
+    enabled: billingView === 'generated',
+  })
+  const movementAccountsQuery = useQuery({ queryKey: [...queryKeys.payables, 'movement-accounts'], queryFn: () => api.payables.movementAccounts(), enabled: settleTarget !== null || batchSettleOpen })
+  const settleMutation = useMutation({
+    mutationFn: ({ billIds, paidAt, movementAccountId, paymentMethod }: { billIds: number[]; paidAt: string; movementAccountId: number; paymentMethod: string }) => billIds.length === 1
+      ? financeApi.receivables.settleBill(billIds[0], { paidAt, movementAccountId, paymentMethod })
+      : financeApi.receivables.settleBills(billIds, { paidAt, movementAccountId, paymentMethod }),
+    onSuccess: async (result) => {
+      await Promise.all([queryClient.invalidateQueries({ queryKey: queryKeys.bills }), queryClient.invalidateQueries({ queryKey: modulesKeys.summaries })])
+      setSettleTarget(null)
+      setBatchSettleOpen(false)
+      setSelectedBills({})
+      showToast(`Pagamento registrado: ${result.count} conta(s) a receber baixada(s), total ${money(result.totalAmount)}.`)
+    },
+    onError: (error) => setSettleError(apiErrorMessage(error, 'Não foi possível registrar o pagamento do boleto.')),
   })
   const detailQuery = useQuery({ queryKey: [...queryKeys.bills, 'detail', detailId], queryFn: () => api.bills.find(detailId!), enabled: detailId !== null })
   const clientContextQuery = useQuery({
@@ -87,28 +118,41 @@ export function Statements() {
     },
     onError: (error) => setEmailError(apiErrorMessage(error, 'Não foi possível enviar o boleto por e-mail.')),
   })
+  const uploadMutation = useMutation({
+    mutationFn: ({ id, file }: { id: number; file: File }) => api.bills.uploadBankDocument(id, file),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.bills })
+      showToast('PDF do boleto bancário anexado.')
+    },
+    onError: (error) => showToast(apiErrorMessage(error, 'Não foi possível anexar o boleto bancário.')),
+  })
 
   const bills = billsQuery.data?.content ?? []
   const total = billsQuery.data?.total ?? 0
   const totalPages = billsQuery.data?.totalPages ?? 0
-  const pageAmount = useMemo(() => bills.reduce((sum, bill) => sum + Number(bill.amount || 0), 0), [bills])
-  const pending = bills.filter((bill) => !isPaid(bill)).length
-  const paid = bills.length - pending
   const firstResult = total === 0 ? 0 : page * pageSize + 1
   const lastResult = Math.min((page + 1) * pageSize, total)
   const detail = detailQuery.data
+  const selectedBillRows = Object.values(selectedBills)
 
   useEffect(() => () => {
     if (billPdfPreview) URL.revokeObjectURL(billPdfPreview.url)
   }, [billPdfPreview])
 
-  function isPaid(bill: Pick<BillListItem, 'id' | 'paidAt'>) {
-    return visualPaid[bill.id] ?? Boolean(bill.paidAt)
+  function isPaid(bill: Pick<BillListItem, 'id' | 'paid'>) {
+    return bill.paid
   }
 
-  function togglePaid(event: React.MouseEvent, bill: BillListItem) {
-    event.stopPropagation()
-    setVisualPaid((current) => ({ ...current, [bill.id]: !isPaid(bill) }))
+  function openBillStatement(billId: number) {
+    setStatementSource({ billId })
+  }
+
+  function changeView(view: typeof billingView) {
+    setBillingView(view)
+    setPage(0)
+    // O menu lateral "Extratos" abre direto nesta aba; as demais ficam em /boletos.
+    if (view === 'statements' && pathname !== '/extratos') navigate('/extratos', { replace: true })
+    if (view !== 'statements' && pathname === '/extratos') navigate('/boletos', { replace: true })
   }
 
   function showToast(message: string) {
@@ -128,7 +172,7 @@ export function Statements() {
     if (!billPdfPreview) return
     const link = document.createElement('a')
     link.href = billPdfPreview.url
-    link.download = `boleto-${billPdfPreview.bill.number || billPdfPreview.bill.id}.pdf`
+    link.download = `demonstrativo-${billPdfPreview.bill.number || billPdfPreview.bill.id}.pdf`
     link.click()
   }
 
@@ -138,22 +182,19 @@ export function Statements() {
   }
 
   return <>
-    <PageHeader eyebrow="Financeiro" title="Boletos e extratos" subtitle="Cobranças individuais e demonstrativos consolidados dos clientes." />
-    <nav className="system-parameters-menu statement-sections" aria-label="Seções financeiras">
-      <button type="button" className={section === 'bills' ? 'active' : ''} onClick={() => setSection('bills')}><WalletCards size={17} />Boletos</button>
-      <button type="button" className={section === 'statements' ? 'active' : ''} onClick={() => setSection('statements')}><FileBarChart size={17} />Extratos</button>
-    </nav>
-    {section === 'bills' ? <>
+    <PageHeader eyebrow="Financeiro" title="Boletos" subtitle="Criação, impressão e pagamento de boletos no fluxo do sistema legado." />
     <nav className="system-parameters-menu billing-sections" aria-label="Etapas do faturamento">
-      <button type="button" className={billingView === 'receivables' ? 'active' : ''} onClick={() => { setBillingView('receivables'); setPage(0) }}><ReceiptText size={17} />Competência de boletos</button>
-      <button type="button" className={billingView === 'generated' ? 'active' : ''} onClick={() => { setBillingView('generated'); setPage(0) }}><WalletCards size={17} />Boletos gerados</button>
+      <button type="button" className={billingView === 'receivables' ? 'active' : ''} onClick={() => changeView('receivables')}><ReceiptText size={17} />Criação de boletos</button>
+      <button type="button" className={billingView === 'generated' ? 'active' : ''} onClick={() => changeView('generated')}><WalletCards size={17} />Boletos gerados e pagamento</button>
+      <button type="button" className={billingView === 'statements' ? 'active' : ''} onClick={() => changeView('statements')}><FileBarChart size={17} />Extratos</button>
+      <button type="button" className={billingView === 'printing' ? 'active' : ''} onClick={() => changeView('printing')}><Printer size={17} />Impressões</button>
     </nav>
-    {billingView === 'receivables' ? <AccountsReceivableReview showToast={showToast} /> : <>
+    {billingView === 'receivables' ? <AccountsReceivableReview showToast={showToast} onOpenStatement={setStatementSource} /> : billingView === 'statements' ? <BillStatementsTab onOpen={setStatementSource} showToast={showToast} /> : billingView === 'generated' ? <>
     <section className="stats-grid stats-grid--four statement-stats">
-      <StatCard label="Boletos" value={String(total)} helper="Registros encontrados" icon={<WalletCards />} tone="blue" />
-      <StatCard label="Valor nesta página" value={money(pageAmount)} helper={`${bills.length} cobranças exibidas`} icon={<Landmark />} tone="purple" />
-      <StatCard label="Pendentes nesta página" value={String(pending)} helper="Controle visual" icon={<Clock3 />} tone="orange" />
-      <StatCard label="Pagos nesta página" value={String(paid)} helper="Controle visual" icon={<CheckCircle2 />} tone="green" />
+      <StatCard label="Boletos" value={summaryNumber(billSummaryQuery.data, 'total').toLocaleString('pt-BR')} helper="Total geral do filtro" icon={<WalletCards />} tone="blue" />
+      <StatCard label="Valor total" value={money(summaryNumber(billSummaryQuery.data, 'amount'))} helper="Soma de todos os boletos do filtro" icon={<Landmark />} tone="purple" />
+      <StatCard label="Pendentes" value={summaryNumber(billSummaryQuery.data, 'pending').toLocaleString('pt-BR')} helper={money(summaryNumber(billSummaryQuery.data, 'pendingAmount'))} icon={<Clock3 />} tone="orange" />
+      <StatCard label="Pagos" value={summaryNumber(billSummaryQuery.data, 'paid').toLocaleString('pt-BR')} helper={money(summaryNumber(billSummaryQuery.data, 'paidAmount'))} icon={<CheckCircle2 />} tone="green" />
     </section>
 
     <section className="panel data-panel bill-panel">
@@ -166,40 +207,44 @@ export function Statements() {
           <label className="billing-filter-group"><span>Contrato</span><input type="number" min="1" value={billContract} onChange={(event) => { setBillContract(event.target.value); setPage(0) }} /></label>
           <label className="billing-filter-group"><span>CPF</span><input inputMode="numeric" value={billCpf} onChange={(event) => { setBillCpf(event.target.value.replace(/\D/g, '')); setPage(0) }} /></label>
           <label className="billing-filter-group"><span>CNPJ</span><input inputMode="numeric" value={billCnpj} onChange={(event) => { setBillCnpj(event.target.value.replace(/\D/g, '')); setPage(0) }} /></label>
-          <div className="billing-filter-group"><span>Dia fixo</span><div className="billing-day-options"><button type="button" className={billDueDay === '' ? 'active' : ''} onClick={() => { setBillDueDay(''); setPage(0) }}>Todos</button>{([1, 10, 20] as const).map((day) => <button type="button" key={day} className={billDueDay === day ? 'active' : ''} onClick={() => { setBillDueDay(day); setPage(0) }}>{day}</button>)}</div></div>
+          <div className="billing-filter-group"><span>Dia fixo</span><div className="billing-day-options"><button type="button" className={billDueDay === '' ? 'active' : ''} onClick={() => { setBillDueDay(''); setPage(0) }}>Todos</button>{([10, 20] as const).map((day) => <button type="button" key={day} className={billDueDay === day ? 'active' : ''} onClick={() => { setBillDueDay(day); setPage(0) }}>{day}</button>)}</div></div>
           <label className="billing-filter-group"><span>Faturamento</span><select value={billingType} onChange={(event) => { setBillingType(event.target.value as typeof billingType); setPage(0) }}><option value="ALL">Todos</option><option value="CONTRACT">Contratos fixos</option><option value="ONE_OFF">Avulsos</option></select></label>
           <label className="billing-filter-group"><span>Pagamento</span><select value={paymentStatus} onChange={(event) => { setPaymentStatus(event.target.value as typeof paymentStatus); setPage(0) }}><option value="ALL">Todos</option><option value="PENDING">Pendentes</option><option value="PAID">Pagos</option></select></label>
           <label className="billing-filter-group billing-filter-group--dates"><span>Data das OS</span><div><input type="date" value={billOrderStart} max={billOrderEnd || undefined} onChange={(event) => { setBillOrderStart(event.target.value); setPage(0) }} /><i>até</i><input type="date" value={billOrderEnd} min={billOrderStart || undefined} onChange={(event) => { setBillOrderEnd(event.target.value); setPage(0) }} /></div></label>
           <label className="billing-filter-group billing-filter-group--dates"><span>Vencimento</span><div><input type="date" value={billDueStart} max={billDueEnd || undefined} onChange={(event) => { setBillDueStart(event.target.value); setPage(0) }} /><i>até</i><input type="date" value={billDueEnd} min={billDueStart || undefined} onChange={(event) => { setBillDueEnd(event.target.value); setPage(0) }} /></div></label>
+          <label className="billing-filter-group"><span>Em aberto até a data</span><input type="date" value={openUntil} onChange={(event) => { setOpenUntil(event.target.value); setPage(0); setSelectedBills({}) }} /><small>Lista de inadimplentes conforme a situação das CRs.</small></label>
         </div>
-        <div className="billing-search-row billing-search-row--actions"><Button variant="ghost" onClick={() => { setBillOrderStart(''); setBillOrderEnd(''); setBillDueStart(''); setBillDueEnd(''); setBillDueDay(''); setBillingType('ALL'); setPaymentStatus('ALL'); setSearch(''); setBillCpf(''); setBillCnpj(''); setBillNumber(''); setBillServiceOrder(''); setBillContract(''); setPage(0) }}>Limpar filtros</Button></div>
+        <div className="billing-search-row billing-search-row--actions"><Button variant="ghost" onClick={() => { setBillOrderStart(''); setBillOrderEnd(''); setBillDueStart(initialBillPeriod.startDate); setBillDueEnd(initialBillPeriod.endDate); setOpenUntil(''); setBillDueDay(''); setBillingType('ALL'); setPaymentStatus('ALL'); setSearch(''); setBillCpf(''); setBillCnpj(''); setBillNumber(''); setBillServiceOrder(''); setBillContract(''); setPage(0); setSelectedBills({}) }}>Limpar filtros</Button></div>
+        <div className="receivable-actions"><span><strong>{selectedBillRows.length}</strong> boleto(s) selecionado(s)</span><Button disabled={!selectedBillRows.length} icon={<CheckCircle2 size={16} />} onClick={() => { setSettleError(''); setBatchSettleOpen(true) }}>Registrar pagamento em lote</Button></div>
       </CollapsibleFilters>
-      {billsQuery.isLoading ? <LoadingState label="Carregando boletos..." /> : billsQuery.isError ? <ErrorState message={apiErrorMessage(billsQuery.error)} onRetry={() => billsQuery.refetch()} /> : bills.length === 0 ? <EmptyState title="Nenhum boleto encontrado" description="Os boletos serão gerados quando uma ordem de serviço for finalizada." /> : <div className="table-wrap"><table className="data-table bill-table"><thead><tr><th>Boleto</th><th>OS</th><th>Cliente</th><th>Contrato</th><th>Data cadastro</th><th>Processamento</th><th>Vencimento</th><th>Valor</th><th>Enviado e-mail</th><th>Pagamento</th><th>PDF</th><th /></tr></thead><tbody>{bills.map((bill) => <tr key={bill.id} onClick={() => setDetailId(bill.id)}>
+      {billsQuery.isLoading ? <LoadingState label="Carregando boletos..." /> : billsQuery.isError ? <ErrorState message={apiErrorMessage(billsQuery.error)} onRetry={() => billsQuery.refetch()} /> : bills.length === 0 ? <EmptyState title="Nenhum boleto encontrado" description="Os boletos serão gerados quando uma ordem de serviço for finalizada." /> : <div className="table-wrap"><table className="data-table bill-table"><thead><tr><th><input type="checkbox" aria-label="Selecionar boletos em aberto desta página" checked={bills.some((bill) => !isPaid(bill)) && bills.filter((bill) => !isPaid(bill)).every((bill) => selectedBills[bill.id])} onChange={() => { const open = bills.filter((bill) => !isPaid(bill)); const all = open.every((bill) => selectedBills[bill.id]); setSelectedBills((current) => { const next = { ...current }; open.forEach((bill) => { if (all) delete next[bill.id]; else next[bill.id] = bill }); return next }) }} /></th><th>Boleto</th><th>OS</th><th>Cliente</th><th>Contrato</th><th>Data cadastro</th><th>Processamento</th><th>Vencimento</th><th>Valor</th><th>Enviado e-mail</th><th>Pagamento</th><th>Extrato</th><th>Demonstrativo</th><th /></tr></thead><tbody>{bills.map((bill) => <tr key={bill.id} onClick={() => setDetailId(bill.id)}>
+        <td><input type="checkbox" disabled={isPaid(bill)} checked={Boolean(selectedBills[bill.id])} onClick={(event) => event.stopPropagation()} onChange={() => setSelectedBills((current) => { const next = { ...current }; if (next[bill.id]) delete next[bill.id]; else next[bill.id] = bill; return next })} aria-label={`Selecionar boleto ${bill.number || bill.id}`} /></td>
         <td><strong>#{bill.number || bill.id}</strong><small className="table-secondary">Registro {bill.id}</small></td>
         <td><strong>{bill.serviceOrderId || 'CR'}</strong></td>
         <td><strong className="table-primary">{bill.clientTradeName || bill.clientName || `Cliente #${bill.clientId}`}</strong><small className="table-secondary">{bill.clientTradeName && bill.clientName ? bill.clientName : `Código ${bill.clientId || '—'}`}</small></td>
         <td>{bill.contractId ? `#${bill.contractId}` : 'Avulso'}</td>
         <td>{formatDate(bill.serviceOrderDate)}</td><td>{formatDate(bill.processedAt, true)}</td><td>{formatDate(bill.dueAt)}</td><td><strong>{money(bill.amount)}</strong></td>
         <td><Badge tone={bill.emailSent ? 'green' : 'neutral'}>{bill.emailSent ? 'Sim' : 'Não'}</Badge>{bill.emailSentAt && <small className="table-secondary">{formatDate(bill.emailSentAt, true)}</small>}</td>
-        <td><button type="button" className={`bill-paid-toggle ${isPaid(bill) ? 'bill-paid-toggle--on' : ''}`} role="switch" aria-checked={isPaid(bill)} onClick={(event) => togglePaid(event, bill)}><span /><strong>{isPaid(bill) ? 'Pago' : 'Pendente'}</strong></button></td>
-        <td><button type="button" className="bill-pdf-button" disabled={pdfMutation.isPending} onClick={(event) => { event.stopPropagation(); previewBillPdf(bill) }} aria-label={`Visualizar PDF do boleto ${bill.number || bill.id}`}><Eye size={16} /></button></td>
+        <td><Badge tone={isPaid(bill) ? 'green' : 'orange'}>{isPaid(bill) ? 'Pago' : 'Pendente'}</Badge>{bill.paidAt && <small className="table-secondary">{formatDate(bill.paidAt)}</small>}</td>
+        <td><button type="button" className="bill-pdf-button" onClick={(event) => { event.stopPropagation(); openBillStatement(bill.id) }} aria-label={`Abrir extrato do boleto ${bill.number || bill.id}`}><FileBarChart size={16} /></button></td>
+        <td><button type="button" className="bill-pdf-button" disabled={pdfMutation.isPending} onClick={(event) => { event.stopPropagation(); previewBillPdf(bill) }} aria-label={`Visualizar demonstrativo ${bill.number || bill.id}`}><Eye size={16} /></button></td>
         <td><button className="row-action" aria-label={`Visualizar boleto ${bill.number || bill.id}`}><ChevronRight size={18} /></button></td>
       </tr>)}</tbody></table></div>}
       <footer className="table-footer table-footer--pagination"><span>Mostrando <strong>{firstResult}–{lastResult}</strong> de <strong>{total.toLocaleString('pt-BR')}</strong> boletos</span><div className="pagination-controls"><label>Itens <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(0) }}>{[5, 10, 20, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label><button disabled={page === 0 || billsQuery.isFetching} onClick={() => setPage((value) => Math.max(0, value - 1))} aria-label="Página anterior"><ChevronLeft size={16} /></button><span>Página <strong>{totalPages ? page + 1 : 0}</strong> de <strong>{totalPages}</strong></span><button disabled={page + 1 >= totalPages || billsQuery.isFetching} onClick={() => setPage((value) => value + 1)} aria-label="Próxima página"><ChevronRight size={16} /></button></div></footer>
     </section>
-    </>}
-    </> : <ClientStatementsTab showToast={showToast} />}
+    </> : <BillPrintingTab showToast={showToast} />}
 
-    <DetailModal open={detailId !== null && relatedModal === null} onClose={() => { setDetailId(null); setRelatedModal(null) }} title={detail ? `Boleto #${detail.number || detail.id}` : 'Detalhes do boleto'} description="Cliente e dados completos da cobrança selecionada." size="xlarge" actions={detail ? <><Button variant="secondary" icon={<ReceiptText size={16} />} onClick={() => setRelatedModal('receivables')}>Contas a receber</Button><Button variant="secondary" icon={<Timer size={16} />} onClick={() => setRelatedModal('tracking')}>Acompanhamento de horas</Button><Button variant="secondary" icon={<Mail size={16} />} disabled={emailMutation.isPending} onClick={() => { setEmailError(''); setEmailTarget(detail) }}>{detail.emailSent ? 'Reenviar e-mail' : 'Enviar por e-mail'}</Button><Button icon={<Eye size={16} />} disabled={pdfMutation.isPending} onClick={() => previewBillPdf(detail)}>{pdfMutation.isPending ? 'Gerando PDF...' : 'Visualizar PDF'}</Button></> : undefined}>
+    <DetailModal open={detailId !== null && relatedModal === null} onClose={() => { setDetailId(null); setRelatedModal(null) }} title={detail ? `Boleto #${detail.number || detail.id}` : 'Detalhes do boleto'} description="Cliente e dados completos da cobrança selecionada." size="xlarge" actions={detail ? <><Button variant="secondary" icon={<ReceiptText size={16} />} onClick={() => setRelatedModal('receivables')}>Contas a receber</Button><Button variant="secondary" icon={<Timer size={16} />} onClick={() => setRelatedModal('tracking')}>Acompanhamento de horas</Button>{!isPaid(detail) && <Button variant="secondary" icon={<CheckCircle2 size={16} />} onClick={() => { setSettleError(''); setSettleTarget(detail) }}>Registrar pagamento</Button>}<Button variant="secondary" icon={<FileBarChart size={16} />} onClick={() => openBillStatement(detail.id)}>Extrato do boleto</Button><label className="button button--secondary"><Upload size={16} />{uploadMutation.isPending ? 'Anexando...' : detail.bankDocumentAvailable ? 'Substituir boleto bancário' : 'Anexar boleto bancário'}<input hidden type="file" accept="application/pdf,.pdf" disabled={uploadMutation.isPending} onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadMutation.mutate({ id: detail.id, file }); event.currentTarget.value = '' }} /></label><Button variant="secondary" icon={<Mail size={16} />} disabled={emailMutation.isPending} onClick={() => { setEmailError(''); setEmailTarget(detail) }}>{detail.emailSent ? 'Reenviar e-mail' : 'Enviar por e-mail'}</Button><Button icon={<Eye size={16} />} disabled={pdfMutation.isPending} onClick={() => previewBillPdf(detail)}>{pdfMutation.isPending ? 'Gerando PDF...' : 'Visualizar demonstrativo'}</Button></> : undefined}>
       {detailQuery.isLoading ? <LoadingState label="Carregando boleto..." /> : detailQuery.isError ? <ErrorState message={apiErrorMessage(detailQuery.error)} onRetry={() => detailQuery.refetch()} /> : detail ? <BillDetails bill={detail} paid={isPaid(detail)} /> : null}
     </DetailModal>
+    <MultipleSettlementDialog key={settleTarget ? `settle-${settleTarget.id}` : batchSettleOpen ? `settle-batch-${selectedBillRows.map((bill) => bill.id).join('-')}` : 'settle-closed'} open={settleTarget !== null || batchSettleOpen} title={settleTarget ? `Pagamento do boleto #${settleTarget.number || settleTarget.id}` : `Pagamento em lote de ${selectedBillRows.length} boleto(s)`} count={settleTarget?.receivables?.length || selectedBillRows.length} total={settleTarget?.amount ?? selectedBillRows.reduce((sum, bill) => sum + Number(bill.amount || 0), 0)} movementAccounts={movementAccountsQuery.data} busy={settleMutation.isPending} error={settleError} defaultMethod="BILL" onClose={() => { setSettleTarget(null); setBatchSettleOpen(false) }} onSubmit={(payload) => settleMutation.mutate({ billIds: settleTarget ? [settleTarget.id] : selectedBillRows.map((bill) => bill.id), paidAt: payload.paidAt, movementAccountId: payload.movementAccountId, paymentMethod: payload.paymentMethod })} />
     <DetailModal open={relatedModal === 'receivables' && Boolean(detail)} onClose={() => setRelatedModal(null)} title={detail ? `Contas a receber · ${detail.clientTradeName || detail.clientName || `Cliente #${detail.clientId}`}` : 'Contas a receber'} description="Todos os títulos ainda não pagos deste cliente." size="xlarge" actions={<Button variant="secondary" onClick={() => setRelatedModal(null)}>Voltar ao boleto</Button>}>
       {clientContextQuery.isLoading ? <LoadingState label="Carregando contas do cliente..." /> : clientContextQuery.isError ? <ErrorState message={apiErrorMessage(clientContextQuery.error)} onRetry={() => clientContextQuery.refetch()} /> : detail ? <BillReceivables bill={detail} context={clientContextQuery.data} /> : null}
     </DetailModal>
     <DetailModal open={relatedModal === 'tracking' && Boolean(detail)} onClose={() => setRelatedModal(null)} title={detail ? `Acompanhamento de horas · ${detail.clientTradeName || detail.clientName || `Cliente #${detail.clientId}`}` : 'Acompanhamento de horas'} description="Histórico completo de acompanhamento de horas deste cliente." size="xlarge" actions={<Button variant="secondary" onClick={() => setRelatedModal(null)}>Voltar ao boleto</Button>}>
       {clientContextQuery.isLoading ? <LoadingState label="Carregando acompanhamento do cliente..." /> : clientContextQuery.isError ? <ErrorState message={apiErrorMessage(clientContextQuery.error)} onRetry={() => clientContextQuery.refetch()} /> : detail ? <BillTracking bill={detail} context={clientContextQuery.data} /> : null}
     </DetailModal>
-    <Modal open={billPdfPreview !== null} onClose={closeBillPdfPreview} title={billPdfPreview ? `Boleto #${billPdfPreview.bill.number || billPdfPreview.bill.id}` : 'Boleto'} description="Visualização do documento antes de imprimir ou baixar." size="xlarge">
+    <Modal open={billPdfPreview !== null} onClose={closeBillPdfPreview} title={billPdfPreview ? `Demonstrativo #${billPdfPreview.bill.number || billPdfPreview.bill.id}` : 'Demonstrativo'} description="Este documento não é o boleto bancário; ele detalha a cobrança." size="xlarge">
       <div className="modal__body contract-document-modal__body">
         {billPdfPreview && <iframe id="bill-pdf-preview" className="contract-document-frame" src={billPdfPreview.url} title={`Visualização do boleto ${billPdfPreview.bill.number || billPdfPreview.bill.id}`} />}
       </div>
@@ -212,7 +257,7 @@ export function Statements() {
     <ConfirmDialog
       open={emailTarget !== null}
       title={emailTarget?.emailSent ? 'Reenviar este boleto por e-mail?' : 'Enviar este boleto por e-mail?'}
-      description={`O PDF será enviado para ${emailTarget?.clientEmail || 'o e-mail principal do cliente'}. Confirme somente depois de conferir o destinatário.`}
+      description={`O demonstrativo e os anexos configurados serão enviados para ${emailTarget?.clientEmail || 'o e-mail principal do cliente'}. O boleto bancário só acompanha o e-mail quando estiver anexado.`}
       confirmLabel={emailTarget?.emailSent ? 'Reenviar boleto' : 'Enviar boleto'}
       busyLabel="Enviando..."
       eyebrow="Envio por e-mail"
@@ -223,11 +268,65 @@ export function Statements() {
       onCancel={() => { if (!emailMutation.isPending) { setEmailTarget(null); setEmailError('') } }}
       onConfirm={() => emailTarget && !emailMutation.isPending && emailMutation.mutate(emailTarget)}
     />
+    <BillStatementModal source={statementSource} onClose={() => setStatementSource(null)} />
     {toast && <Toast message={toast} onClose={() => setToast('')} />}
   </>
 }
 
-function ClientStatementsTab({ showToast }: { showToast: (message: string) => void }) {
+function BillPrintingTab({ showToast }: { showToast: (message: string) => void }) {
+  const initial = useMemo(currentMonthPeriod, [])
+  const [dueStart, setDueStart] = useState(initial.startDate)
+  const [dueEnd, setDueEnd] = useState(initial.endDate)
+  const [relation, setRelation] = useState<'bills' | 'audited'>('bills')
+  const [onlyStatementClients, setOnlyStatementClients] = useState(true)
+  const printRef = useRef<HTMLDivElement>(null)
+  const valid = Boolean(dueStart && dueEnd && dueStart <= dueEnd)
+  const query = useQuery({
+    queryKey: [...queryKeys.bills, 'printing', dueStart, dueEnd],
+    queryFn: () => api.bills.printing(dueStart, dueEnd),
+    enabled: valid,
+  })
+  const statementMutation = useMutation({
+    mutationFn: () => api.bills.statementsPdf(dueStart, dueEnd, onlyStatementClients),
+    onSuccess: openPdf,
+    onError: (error) => showToast(apiErrorMessage(error, 'Não foi possível gerar o PDF consolidado de extratos.')),
+  })
+  const rows = query.data ?? []
+  const visible = relation === 'audited' ? rows.filter((row) => row.audited) : rows
+
+  function exportExcel() {
+    if (relation === 'audited') {
+      downloadCsv(`auditados-${dueStart}-${dueEnd}`, ['Cliente', 'Endereço', 'CNPJ/CPF', 'Descrição', 'Mão de obra', 'Materiais', 'Desconto', 'Alíquota ISS', 'Vr. ISS', 'Valor NF', 'Tributos aproximados', 'ISS retido'], visible.map((row) => [row.clientName, row.address, row.document, row.invoiceDescription, row.laborAmount, row.materialAmount, row.discountAmount, row.issRate, row.issAmount, row.invoiceAmount, row.approximateTaxAmount, row.issRetained ? 'SIM' : 'NÃO']))
+    } else {
+      downloadCsv(`boletos-${dueStart}-${dueEnd}`, ['Cliente', 'Vencimento', 'Nº boleto', 'Mão de obra', 'Material', 'Diversos', 'Total', 'E-mail', 'Envio', 'Extrato'], visible.map((row) => [row.clientName, dateText(row.dueAt), row.billNumber, row.laborAmount, row.materialAmount, row.otherAmount, row.totalAmount, row.email, row.delivery, row.statementDelivery]))
+    }
+  }
+
+  return <section className="panel data-panel bill-panel">
+    <div className="billing-filter-panel">
+      <div className="billing-filter-panel__heading"><div><strong>Impressões por vencimento</strong><small>Relações do fechamento mensal no formato do POP.</small></div><Badge tone="blue">POP p.48</Badge></div>
+      <div className="billing-filter-grid">
+        <label className="billing-filter-group billing-filter-group--dates"><span>Vencimento</span><div><input type="date" value={dueStart} max={dueEnd || undefined} onChange={(event) => setDueStart(event.target.value)} /><i>até</i><input type="date" value={dueEnd} min={dueStart || undefined} onChange={(event) => setDueEnd(event.target.value)} /></div></label>
+      </div>
+      <div className="billing-search-row billing-search-row--actions">
+        <Button variant={relation === 'bills' ? 'primary' : 'secondary'} onClick={() => setRelation('bills')}>Boletos</Button>
+        <Button variant={relation === 'audited' ? 'primary' : 'secondary'} onClick={() => setRelation('audited')}>Auditados</Button>
+        <label><input type="checkbox" checked={onlyStatementClients} onChange={(event) => setOnlyStatementClients(event.target.checked)} /> Extratos somente para clientes com Extrato = SIM</label>
+        <Button variant="secondary" icon={<FileBarChart size={16} />} disabled={!valid || statementMutation.isPending} onClick={() => statementMutation.mutate()}>{statementMutation.isPending ? 'Gerando extratos...' : 'Extratos (PDF único)'}</Button>
+        <Button variant="secondary" disabled title="aguardando modelo da cliente">Protocolo</Button>
+        <Button variant="secondary" icon={<FileSpreadsheet size={16} />} disabled={!visible.length} onClick={exportExcel}>Excel</Button>
+        <Button icon={<Printer size={16} />} disabled={!visible.length} onClick={() => printElement(printRef.current, relation === 'audited' ? 'Relação de Auditados' : 'Relação de Boletos')}>Imprimir / PDF</Button>
+      </div>
+    </div>
+    {!valid ? <EmptyState title="Período inválido" description="A data inicial deve ser anterior ou igual à final." /> : query.isLoading ? <LoadingState label="Carregando relação de boletos..." /> : query.isError ? <ErrorState message={apiErrorMessage(query.error)} onRetry={() => query.refetch()} /> : !visible.length ? <EmptyState title="Nenhum registro encontrado" description="Não há boletos no vencimento informado para esta relação." /> : <div ref={printRef}>
+      <div className="print-header"><div><h1>{relation === 'audited' ? 'Relação de clientes auditados' : 'Relação de boletos'}</h1><small>Vencimentos de {dateText(dueStart)} a {dateText(dueEnd)}</small></div><strong>{visible.length} registro(s)</strong></div>
+      <div className="table-wrap"><table className="data-table"><thead><tr>{(relation === 'audited' ? ['Cliente', 'Endereço / documento', 'Descrição', 'Mão de obra', 'Materiais', 'Desconto', 'Alíquota', 'Vr. ISS', 'Valor NF', 'Tributos aprox.', 'ISS retido'] : ['Cliente', 'Vencimento', 'Nº boleto', 'Mão de obra', 'Material', 'Diversos', 'Total', 'E-mail', 'Envio', 'Extrato']).map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{visible.map((row) => relation === 'audited' ? <tr key={row.billId}><td>{row.clientId} · {row.clientName}</td><td>{row.address}<small className="table-secondary">{row.document}</small></td><td>{row.invoiceDescription}</td><td>{money(row.laborAmount)}</td><td>{money(row.materialAmount)}</td><td>{money(row.discountAmount)}</td><td>{Number(row.issRate || 0).toLocaleString('pt-BR')}%</td><td>{money(row.issAmount)}</td><td><strong>{money(row.invoiceAmount)}</strong></td><td>{money(row.approximateTaxAmount)}</td><td>{row.issRetained ? 'SIM' : 'NÃO'}</td></tr> : <tr key={row.billId}><td>{row.clientId} · {row.clientName}</td><td>{formatDate(row.dueAt)}</td><td>{row.billNumber}</td><td>{money(row.laborAmount)}</td><td>{money(row.materialAmount)}</td><td>{money(row.otherAmount)}</td><td><strong>{money(row.totalAmount)}</strong></td><td>{row.email || '—'}</td><td>{row.delivery || '—'}</td><td>{row.statementDelivery || '—'}</td></tr>)}</tbody></table></div>
+      <footer className="table-footer"><span>Total: <strong>{money(visible.reduce((sum, row) => sum + Number(relation === 'audited' ? row.invoiceAmount : row.totalAmount), 0))}</strong></span></footer>
+    </div>}
+  </section>
+}
+
+export function ClientStatementsTab({ showToast }: { showToast: (message: string) => void }) {
   const initialPeriod = useMemo(previousMonthPeriod, [])
   const [startDate, setStartDate] = useState(initialPeriod.startDate)
   const [endDate, setEndDate] = useState(initialPeriod.endDate)
@@ -280,11 +379,11 @@ function ClientStatementsTab({ showToast }: { showToast: (message: string) => vo
   const statements = statementsQuery.data?.content ?? []
   const total = statementsQuery.data?.total ?? 0
   const totalPages = statementsQuery.data?.totalPages ?? 0
-  const pageTotals = useMemo(() => statements.reduce((accumulator, item) => ({
-    orders: accumulator.orders + item.serviceOrderCount,
-    minutes: accumulator.minutes + item.usedMinutes,
-    amount: accumulator.amount + Number(item.totalAmount || 0),
-  }), { orders: 0, minutes: 0, amount: 0 }), [statements])
+  const statementSummaryQuery = useQuery({
+    queryKey: [...modulesKeys.summaries, 'client-statements', startDate, endDate, debouncedSearch, cpfFilter, cnpjFilter, clientCode, attendanceLocation],
+    queryFn: () => modulesApi.summaries.get('client-statements', { startDate, endDate, clientName: debouncedSearch || undefined, cpf: cpfFilter || undefined, cnpj: cnpjFilter || undefined, clientId: clientCode ? Number(clientCode) : undefined, attendanceLocation: attendanceLocation || undefined }),
+    enabled: validPeriod,
+  })
   const firstResult = total === 0 ? 0 : page * pageSize + 1
   const lastResult = Math.min((page + 1) * pageSize, total)
   const detail = detailQuery.data
@@ -319,9 +418,9 @@ function ClientStatementsTab({ showToast }: { showToast: (message: string) => vo
   return <>
     <section className="stats-grid stats-grid--four statement-stats">
       <StatCard label="Clientes no período" value={String(total)} helper="Com movimentação registrada" icon={<Users />} tone="blue" />
-      <StatCard label="Atendimentos nesta página" value={String(pageTotals.orders)} helper={`${statements.length} extratos exibidos`} icon={<FileText />} tone="purple" />
-      <StatCard label="Tempo utilizado" value={formatMinutes(pageTotals.minutes)} helper="Inclui OS em andamento" icon={<Timer />} tone="orange" />
-      <StatCard label="Valor nesta página" value={money(pageTotals.amount)} helper="Extrato sem compras de materiais" icon={<Landmark />} tone="green" />
+      <StatCard label="Atendimentos" value={summaryNumber(statementSummaryQuery.data, 'serviceOrders').toLocaleString('pt-BR')} helper="Total geral do filtro" icon={<FileText />} tone="purple" />
+      <StatCard label="Tempo utilizado" value={formatMinutes(summaryNumber(statementSummaryQuery.data, 'usedMinutes'))} helper="Inclui OS em andamento" icon={<Timer />} tone="orange" />
+      <StatCard label="Valor total" value={money(summaryNumber(statementSummaryQuery.data, 'amount'))} helper={`Inclui ${money(summaryNumber(statementSummaryQuery.data, 'materialAmount'))} em materiais`} icon={<Landmark />} tone="green" />
     </section>
 
     <section className="panel data-panel client-statement-panel">
@@ -434,7 +533,7 @@ function BillDetails({ bill, paid }: { bill: BillDetail; paid: boolean }) {
     <DetailTable title="Serviços cobrados" empty="Nenhum serviço vinculado." headers={['Código', 'Descrição', 'Qtd.', 'Tempo', 'Valor mínimo', 'Minuto', 'Extra', 'Avulso', 'Total']} rows={bill.services.map((item) => [item.serviceId, item.description || 'Não informado', item.quantity || 0, item.hours || '00:00', money(item.minimumAmount), money(item.minuteAmount), money(item.extraMinuteAmount), money(item.oneOffMinuteAmount), money(item.totalAmount)])} />
     <DetailTable title="Materiais utilizados" empty="Nenhum material cobrado." headers={['Código', 'Material', 'Unidade', 'Marca', 'Qtd.', 'Unitário', 'Total']} rows={bill.materials.map((item) => [item.materialId, item.description || 'Não informado', item.unit || '—', item.brand || '—', item.quantity || 0, money(item.unitAmount), money(item.totalAmount)])} />
     {bill.serviceOrderNotes && <section className="drawer-section"><h3>Observações</h3><p>{bill.serviceOrderNotes}</p></section>}
-    <div className="bill-detail__dates"><span><CalendarDays size={15} /> Processado em {formatDate(bill.processedAt, true)}</span><span><FileText size={15} /> Vencimento em {formatDate(bill.dueAt)}</span><span><Mail size={15} /> E-mail: {bill.emailSentAt ? `enviado em ${formatDate(bill.emailSentAt, true)}` : 'ainda não enviado'}</span></div>
+    <div className="bill-detail__dates"><span><CalendarDays size={15} /> Processado em {formatDate(bill.processedAt, true)}</span><span><FileText size={15} /> Vencimento em {formatDate(bill.dueAt)}</span><span><Upload size={15} /> Boleto bancário: {bill.bankDocumentAvailable ? `${bill.bankDocumentName || 'PDF anexado'} em ${formatDate(bill.bankDocumentUploadedAt, true)}` : 'não anexado; envio automático suspenso'}</span><span><Mail size={15} /> E-mail: {bill.emailSentAt ? `enviado em ${formatDate(bill.emailSentAt, true)}` : 'ainda não enviado'}</span></div>
   </div>
 }
 
