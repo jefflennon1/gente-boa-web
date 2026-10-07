@@ -132,7 +132,7 @@ function addressFieldsFrom(client?: Client | null): AddressFields {
 export function Clients() {
   const queryClient = useQueryClient()
   const { user: currentUser } = useAuth()
-  const { navigate } = useRouter()
+  const { navigate, pathname, search: routeSearch } = useRouter()
   const [clientName, setClientName] = useState('')
   const [cpfFilter, setCpfFilter] = useState('')
   const [cnpjFilter, setCnpjFilter] = useState('')
@@ -148,6 +148,14 @@ export function Clients() {
   const [detailId, setDetailId] = useState<number | null>(null)
   const [clientToDelete, setClientToDelete] = useState<Client | null>(null)
   const [toast, setToast] = useState('')
+
+  // Busca geral (Ctrl+K): /clientes?id=N abre o registro direto.
+  useEffect(() => {
+    const requestedId = Number(new URLSearchParams(routeSearch).get('id'))
+    if (!requestedId) return
+    setDetailId(requestedId)
+    navigate(pathname, { replace: true })
+  }, [routeSearch, pathname, navigate])
   const [formError, setFormError] = useState('')
   const [referralDescription, setReferralDescription] = useState('')
   const [issRetentionFlag, setIssRetentionFlag] = useState<'0' | '1'>('0')

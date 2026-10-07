@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Building2, ChevronLeft, ChevronRight, Edit3, FileText, HandCoins, MapPin, Phone, Plus, Search, Trash2, Truck } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { apiErrorMessage } from '../api/client'
 import { api, queryKeys } from '../api/services'
 import { modulesApi, modulesKeys, summaryNumber } from '../api/modules'
@@ -23,7 +23,7 @@ function supplierName(supplier: Supplier) {
 
 export function Suppliers() {
   const queryClient = useQueryClient()
-  const { navigate } = useRouter()
+  const { navigate, pathname, search: routeSearch } = useRouter()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(10)
@@ -35,6 +35,16 @@ export function Suppliers() {
   const [toast, setToast] = useState<ToastState>(null)
   const [reportSupplier, setReportSupplier] = useState<{ id: number; name: string } | null>(null)
   const debouncedSearch = useDebouncedValue(search.trim())
+
+  // Busca geral (Ctrl+K): /fornecedores?id=N abre o registro direto.
+  useEffect(() => {
+    const requestedId = Number(new URLSearchParams(routeSearch).get('id'))
+    if (!requestedId) return
+    api.suppliers.find(requestedId)
+      .then((supplier) => { setSelected(supplier); setFormError(''); setModalOpen(true) })
+      .catch((error) => showToast(apiErrorMessage(error, 'Fornecedor não encontrado.'), 'error'))
+    navigate(pathname, { replace: true })
+  }, [routeSearch, pathname, navigate])
 
   const suppliersQuery = useQuery({
     queryKey: [...queryKeys.suppliers, 'management', debouncedSearch, page, pageSize],

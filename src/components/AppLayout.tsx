@@ -1,21 +1,20 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, ChevronDown, KeyRound, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, X } from 'lucide-react'
+import { Bell, ChevronDown, KeyRound, LogOut, Menu, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { useAuth } from '../auth'
 import { enumLabel, initials } from '../lib/format'
 import { canAccess, navGroups, routeNames } from '../navigation'
 import { NavLink, useRouter } from '../router'
 import { ChangePasswordDialog } from './ChangePasswordDialog'
+import { GlobalSearch } from './GlobalSearch'
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.localStorage.getItem('gente-boa-sidebar-collapsed') === 'true')
   const [profileOpen, setProfileOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
-  const [search, setSearch] = useState('')
   const [passwordOpen, setPasswordOpen] = useState(false)
-  const searchRef = useRef<HTMLInputElement>(null)
   const { pathname, navigate } = useRouter()
   const { logout, user } = useAuth()
   const ordersQuery = useQuery({ queryKey: queryKeys.serviceOrders, queryFn: () => api.serviceOrders.list() })
@@ -26,38 +25,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   useEffect(() => { setMenuOpen(false); setProfileOpen(false) }, [pathname])
   useEffect(() => { window.localStorage.setItem('gente-boa-sidebar-collapsed', String(sidebarCollapsed)) }, [sidebarCollapsed])
-  useEffect(() => {
-    const onShortcut = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); searchRef.current?.focus() }
-    }
-    window.addEventListener('keydown', onShortcut)
-    return () => window.removeEventListener('keydown', onShortcut)
-  }, [])
-
-  function submitSearch(event: React.FormEvent) {
-    event.preventDefault()
-    const value = search.trim().toLowerCase()
-    if (!value) return
-    if (value.includes('email') || value.includes('e-mail') || value.includes('notifica')) navigate('/envio-de-emails')
-    else if (value.includes('param')) navigate('/parametros-do-sistema')
-    else if (value.includes('contrato')) navigate('/contratos')
-    else if (value.includes('cliente')) navigate('/clientes')
-    else if (value.includes('fornecedor')) navigate('/fornecedores')
-    else if (value.includes('pagar') || value.includes('despesa')) navigate('/contas-a-pagar')
-    else if (value.includes('receber') || value.includes('receita')) navigate('/contas-a-receber')
-    else if (value.includes('caixa')) navigate('/caixa-diario')
-    else if (value.includes('centro')) navigate('/centros-de-custo')
-    else if (value.includes('acompanhamento') || value.includes('carga') || value.includes('hora extra')) navigate('/acompanhamento-colaboradores')
-    else if (value.includes('reajuste') || value.includes('ativos')) navigate('/contratos-ativos')
-    else if (value.includes('resumo') || value.includes('ata')) navigate('/resumo-mensal')
-    else if (value.includes('material') || value.includes('produto')) navigate('/materiais')
-    else if (value.includes('funcion') || value.includes('colaborador')) navigate('/funcionarios')
-    else if (value.includes('nota') || value.includes('nf')) navigate('/notas-fiscais')
-    else if (value.includes('extrato') || value.includes('boleto')) navigate('/boletos')
-    else if (value.includes('relat')) navigate('/relatorios')
-    else navigate('/ordens-de-servico')
-    setSearch('')
-  }
 
   return (
     <div className="app-shell">
@@ -85,7 +52,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <div className={`app-main ${sidebarCollapsed ? 'app-main--sidebar-collapsed' : ''}`}>
         <header className="topbar">
           <div className="topbar__left"><button className="mobile-menu" onClick={() => setMenuOpen(true)} aria-label="Abrir menu"><Menu size={22} /></button><div className="breadcrumb"><span>Gente Boa</span><b>/</b><strong>{routeNames[pathname] || 'Gestão'}</strong></div></div>
-          <form className="global-search" data-allow-enter-submit="true" onSubmit={submitSearch}><Search size={18} /><input ref={searchRef} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Ir para cliente, fornecedor, OS ou nota..." aria-label="Navegação rápida" /><kbd>Ctrl K</kbd></form>
+          <GlobalSearch />
           <div className="topbar__actions">
             <div className="popover-anchor"><button className="topbar-icon" onClick={() => setNotificationsOpen((value) => !value)} aria-label="Notificações"><Bell size={19} />{notificationCount > 0 && <i />}</button>{notificationsOpen && <div className="popover notifications-popover"><div className="popover__title"><strong>Notificações</strong><span>{notificationCount} pendentes</span></div>{pendingInvoices.length > 0 && <button onClick={() => navigate('/notas-fiscais')}><i className="notification-dot notification-dot--orange" /><span><strong>{pendingInvoices.length} notas aguardam ação</strong><small>Prontas ou em revisão</small></span></button>}{urgentOrders.length > 0 && <button onClick={() => navigate('/ordens-de-servico')}><i className="notification-dot notification-dot--red" /><span><strong>{urgentOrders.length} ordens urgentes</strong><small>Atendimentos não finalizados</small></span></button>}{notificationCount === 0 && <div className="popover-empty">Nenhuma pendência encontrada.</div>}</div>}</div>
             <div className="popover-anchor profile-anchor"><button className="profile-button" onClick={() => setProfileOpen((value) => !value)}><span className="avatar">{user?.initials || initials(user?.name)}</span><span className="profile-copy"><strong>{user?.name}</strong><small>{enumLabel(user?.role)}</small></span><ChevronDown size={16} /></button>{profileOpen && <div className="popover profile-popover"><button onClick={() => { setProfileOpen(false); setPasswordOpen(true) }}><KeyRound size={15} /> Trocar senha</button>{user?.role === 'ADMINISTRADOR' && <button onClick={() => navigate('/usuarios')}>Usuários e acessos</button>}<button className="profile-popover__logout" onClick={() => { logout(); navigate('/login', { replace: true }) }}><LogOut size={15} /> Sair do sistema</button></div>}</div>

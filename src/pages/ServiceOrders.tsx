@@ -263,7 +263,7 @@ function attendanceLocationDisplay(location: AttendanceLocation) {
 
 export function ServiceOrders() {
   const queryClient = useQueryClient()
-  const { navigate } = useRouter()
+  const { navigate, pathname, search: routeSearch } = useRouter()
   const [view, setView] = useState<'kanban' | 'list'>('list')
   const [search, setSearch] = useState('')
   const [cpfFilter, setCpfFilter] = useState('')
@@ -289,6 +289,14 @@ export function ServiceOrders() {
   const [detailId, setDetailId] = useState<number | null>(null)
   const [orderToDelete, setOrderToDelete] = useState<number | null>(null)
   const [toast, setToast] = useState('')
+
+  // Busca geral (Ctrl+K): /ordens-de-servico?id=N abre o registro direto.
+  useEffect(() => {
+    const requestedId = Number(new URLSearchParams(routeSearch).get('id'))
+    if (!requestedId) return
+    setDetailId(requestedId)
+    navigate(pathname, { replace: true })
+  }, [routeSearch, pathname, navigate])
   const [formError, setFormError] = useState('')
   const [timerAction, setTimerAction] = useState<TimerAction | null>(null)
   const [timerDateTime, setTimerDateTime] = useState(localDateTimeNow())
