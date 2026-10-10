@@ -694,9 +694,9 @@ export function ServiceOrders() {
         })}
       </div> : <div className={`table-wrap ${ordersQuery.isFetching ? 'table-wrap--refreshing' : ''}`}><table className="data-table os-table"><thead><tr><th>OS</th><th>Cliente</th>
       {/* <th>Solicitante</th> */}
-      <th>Descrição / Serviço</th><th>Abertura</th><th>Profissional</th><th>Dt. prevista</th><th>H. inicial</th><th>H. final</th>
+      <th>Descrição / Serviço</th><th>Abertura</th><th>Profissional</th><th>Previsão</th>
       {/* <th>Tipo</th> */}
-      <th>Valor</th>
+      {/* <th>Valor</th> */}
       {/* <th>Situação</th> */}
       <th className="os-status-heading">Urgente</th><th className="os-status-heading">Hora marcada</th><th className="os-status-heading">Encaminhada</th><th className="os-status-heading">Iniciada</th><th className="os-status-heading">Finalizada</th> </tr></thead><tbody>{orders.map((order) => {
         const professionals = order.professionalNames?.length ? order.professionalNames : ['AGUARDANDO']
@@ -708,11 +708,9 @@ export function ServiceOrders() {
           <td><strong className="table-primary">{order.description || 'Não informado'}</strong><small className={`table-secondary ${order.serviceDescriptions.length === 0 ? 'service-description-empty' : ''}`}>{order.serviceDescriptions.length ? order.serviceDescriptions.join(' · ') : 'NENHUM SERVIÇO VINCULADO'}</small></td>
           <td>{formatDate(order.orderedAt)}</td>
           <td><span className={waitingProfessional ? 'os-professional os-professional--waiting' : 'os-professional'} title={professionals.join(', ')}>{professionals.join(', ')}</span></td>
-          <td>{order.forecastAt ? formatDate(order.forecastAt) : '—'}</td>
-          <td>{order.forecastStart || '—'}</td>
-          <td>{order.forecastEnd || '—'}</td>
+          <td className="os-forecast-cell"><strong className="table-primary">{order.forecastAt ? formatDate(order.forecastAt) : '—'}</strong>{(order.forecastStart || order.forecastEnd) && <small className="table-secondary">{order.forecastStart || '--:--'} às {order.forecastEnd || '--:--'}</small>}</td>
           {/* <td>{order.origin === 'C' ? 'Contrato' : 'Avulsa'}</td> */}
-          <td>{money(order.totalValue)}</td>
+          {/* <td>{money(order.totalValue)}</td> */}
           {/* <td><Badge tone={statusTone[order.status]}>{enumLabel(order.status)}</Badge></td> */}
           {operationalFlags.map((item) => <td className="os-status-cell" key={item.flag}><OperationalCheckbox active={listFlagValue(order, item.flag)} label={item.label} tone={item.tone} disabled={order.status === 'CANCELADA' || operationalFlagMutation.isPending} onChange={(checked) => operationalFlagMutation.mutate({ id: order.id, flag: item.flag, checked })} /></td>)}
           {/* <td><button className="row-action" aria-label={`Visualizar ${order.id}`}><ChevronRight size={18} /></button></td> */}

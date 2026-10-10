@@ -5,6 +5,8 @@ import { AppLayout } from './components/AppLayout'
 import { Login } from './pages/Login'
 import { canAccess, navItemForPath } from './navigation'
 import { useRouter } from './router'
+import { handleEnterNavigation } from './lib/enterNavigation'
+import { watchResponsiveTables } from './lib/responsiveTables'
 
 const pages: Partial<Record<string, LazyExoticComponent<ComponentType>>> = {
   '/': lazy(() => import('./pages/MonthlyDashboard').then((module) => ({ default: module.MonthlyDashboard }))),
@@ -48,21 +50,11 @@ export default function App() {
   const PublicPage = publicPages[pathname]
 
   useEffect(() => {
-    function preventEnterFormSubmission(event: KeyboardEvent) {
-      if (event.key !== 'Enter' || event.isComposing || event.defaultPrevented) return
-
-      const target = event.target
-      if (!(target instanceof HTMLElement) || target instanceof HTMLTextAreaElement || target.isContentEditable) return
-
-      const form = target.closest('form')
-      if (!form || form.dataset.allowEnterSubmit === 'true') return
-
-      event.preventDefault()
-    }
-
-    document.addEventListener('keydown', preventEnterFormSubmission, true)
-    return () => document.removeEventListener('keydown', preventEnterFormSubmission, true)
+    document.addEventListener('keydown', handleEnterNavigation)
+    return () => document.removeEventListener('keydown', handleEnterNavigation)
   }, [])
+
+  useEffect(() => watchResponsiveTables(), [])
 
   useEffect(() => {
     if (PublicPage) return

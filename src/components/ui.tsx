@@ -52,7 +52,7 @@ export function CollapsibleFilters({ children, summary = 'Abra para informar os 
         </button>
         {activeCount > 0 && onClear && <button type="button" className="os-advanced-filters__clear" onClick={onClear}>Limpar filtros</button>}
       </div>
-      <div id={contentId} className={`os-advanced-filters__fields ${contentClassName}`.trim()} hidden={!open}>{children}</div>
+      <div id={contentId} className={`os-advanced-filters__fields ${contentClassName}`.trim()} data-enter-navigation hidden={!open}>{children}</div>
     </div>
   )
 }
