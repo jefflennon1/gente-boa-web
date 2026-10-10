@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, ClipboardList, Clock3, Copy, Columns3, Edit3, FilePlus2, List, MapPin, Play, Plus, Search, Square, Trash2, UserRound, Wrench, X } from 'lucide-react'
+import { Building2, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, ClipboardList, Clock3, Copy, Columns3, Edit3, FilePlus2, List, ListPlus, MapPin, Play, Plus, Search, Square, Trash2, UserRound, Wrench, X } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useAuth } from '../auth'
@@ -10,6 +10,7 @@ import { enumLabel, formatDate, money, toDateInput } from '../lib/format'
 import type { AttendanceLocation, AttendanceLocationPayload, Client, ClientSearchOption, Employee, Material, PagedResponse, ServiceCatalogItem, ServiceCategory, ServiceOrder, ServiceOrderListItem, ServiceOrderMaterialItem, ServiceOrderMaterialOrder, ServiceOrderOperationalFlag, ServiceOrderOrigin, ServiceOrderPayload, ServiceOrderSchedule, ServiceOrderServiceItem, ServiceOrderStatus, ServiceOrderTracking, Supplier } from '../types'
 import { Badge, Button, CollapsibleFilters, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 import { useRouter } from '../router'
+import { focusNextField } from '../lib/enterNavigation'
 import { EmployeePicker, SupplierPicker, type PickerValue } from '../components/AsyncPicker'
 
 const stages: ServiceOrderStatus[] = ['ABERTA', 'FINALIZADA', 'CANCELADA']
@@ -36,6 +37,9 @@ const serviceTypes = [
   // { value: 'I', label: 'Hidro' },
   // { value: 'O', label: 'Outros' },
 ]
+
+// MÃO DE OBRA (ELETRICISTA E ENCANADOR): serviço mais comum da cliente, já vem selecionado nos novos agendamentos.
+const DEFAULT_SCHEDULE_SERVICE_ID = 1
 
 const waitingEmployee = {
   employeeId: 1,
@@ -256,6 +260,15 @@ function finalizationError(
     }
   }
   return ''
+}
+
+/** Próxima data com o dia de vencimento do contrato a partir da data da OS (ex.: OS em 15/10, dia 10 → 10/11). */
+function contractDueDate(fromDate: string, dueDay: number) {
+  const [year, month, day] = fromDate.split('-').map(Number)
+  const target = new Date(year, month - 1 + (day > dueDay ? 1 : 0), 1)
+  const lastDayOfMonth = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()
+  target.setDate(Math.min(dueDay, lastDayOfMonth))
+  return `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-${String(target.getDate()).padStart(2, '0')}`
 }
 
 function attendanceLocationDisplay(location: AttendanceLocation) {
@@ -790,6 +803,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   const [urgent, setUrgent] = useState(selected?.priority === 'URGENTE' || selected?.schedules?.some((item) => item.urgentFlag === 'S') || false)
   const [hourMarked, setHourMarked] = useState(selected?.schedules?.some((item) => item.scheduledTimeFlag === 'S') || false)
   const [dueDate, setDueDate] = useState(toDateInput(selected?.dtvenci))
+  const [applyContractDueDate, setApplyContractDueDate] = useState(false)
   const [ticketFee, setTicketFee] = useState(String(selected?.txbolet ?? 0))
   const [discount, setDiscount] = useState(String(selected?.vldesco ?? 0))
   const [transport, setTransport] = useState(String(selected?.vltrans ?? 0))
@@ -811,9 +825,10 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   const [materialError, setMaterialError] = useState('')
   const [scheduleError, setScheduleError] = useState('')
   const initialSingleServiceId = selected?.serviceItems?.length === 1 ? selected.serviceItems[0].serviceId : null
+  const defaultScheduleServiceId = catalog.some((service) => service.id === DEFAULT_SCHEDULE_SERVICE_ID) ? DEFAULT_SCHEDULE_SERVICE_ID : null
   const [schedules, setSchedules] = useState<ScheduleDraft[]>(() => selected?.schedules?.length
     ? selected.schedules.map((item, index) => ({ ...item, ...(!item.employeeId ? waitingEmployee : {}), serviceId: item.serviceId ?? initialSingleServiceId, rowKey: `schedule-${item.scheduleId ?? index}` }))
-    : [{ rowKey: 'schedule-new-0', expectedDate: dateTime(initialDate), expectedStart: '', expectedEnd: '', expectedDuration: '00:00', ...waitingEmployee, serviceId: initialSingleServiceId }])
+    : [{ rowKey: 'schedule-new-0', expectedDate: dateTime(initialDate), expectedStart: '', expectedEnd: '', expectedDuration: '00:00', ...waitingEmployee, serviceId: initialSingleServiceId ?? defaultScheduleServiceId }])
   const [serviceItems, setServiceItems] = useState<ServiceDraft[]>(() => selected?.serviceItems?.map((item, index) => ({ ...item, rowKey: `service-${item.serviceId}-${index}` })) ?? [])
   const [materialItems, setMaterialItems] = useState<MaterialDraft[]>(() => selected?.materialOrder?.items?.map((item, index) => ({ ...item, rowKey: `material-${item.materialId}-${index}` })) ?? [])
 
@@ -979,6 +994,14 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     setOrderOrigin(contractContextQuery.data.hasContract ? 'C' : 'A')
   }, [contractContextQuery.data, contractContextQuery.isSuccess, shouldInferOrderOrigin])
 
+  // Ao selecionar o cliente, o vencimento passa a seguir o dia de vencimento do contrato ativo (quando houver).
+  useEffect(() => {
+    if (!applyContractDueDate || !contractContextQuery.isSuccess) return
+    const contractDueDay = contractContextQuery.data.contract?.dueDay
+    if (contractContextQuery.data.hasContract && contractDueDay && /^\d{4}-\d{2}-\d{2}$/.test(requestDate)) setDueDate(contractDueDate(requestDate, contractDueDay))
+    setApplyContractDueDate(false)
+  }, [applyContractDueDate, contractContextQuery.data, contractContextQuery.isSuccess, requestDate])
+
   function selectClient(client: ClientSearchOption) {
     setClientId(String(client.id))
     setSelectedClientOption(client)
@@ -987,6 +1010,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     setClientPickerOpen(false)
     setClientError('')
     setOrderOrigin('A')
+    setApplyContractDueDate(true)
   }
 
   function openClientPicker() {
@@ -1074,7 +1098,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   }
 
   function addSchedule() {
-    const onlyServiceId = serviceItems.length === 1 ? serviceItems[0].serviceId : null
+    const onlyServiceId = serviceItems.length === 1 ? serviceItems[0].serviceId : defaultScheduleServiceId
     setSchedules((current) => [...current, { rowKey: `schedule-new-${Date.now()}`, expectedDate: dateTime(requestDate), expectedStart: '', expectedEnd: '', expectedDuration: '00:00', ...waitingEmployee, serviceId: onlyServiceId }])
     setScheduleError('')
   }
@@ -1120,16 +1144,23 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     }))
   }
 
+  function addScheduleServiceToList(serviceId: number) {
+    const service = catalog.find((item) => item.id === serviceId)
+    if (!service) return
+    setServiceItems((current) => current.some((item) => item.serviceId === serviceId)
+      ? current
+      : [...current, serviceDraft(service)])
+    setScheduleError('')
+  }
+
+  function addScheduleService(event: MouseEvent<HTMLButtonElement>, serviceId: number | null) {
+    // Acionado pelo teclado (Enter/Espaço): após incluir (ou se não há o que incluir) segue para o próximo campo.
+    if (event.detail === 0) focusNextField(event.currentTarget)
+    if (serviceId != null) addScheduleServiceToList(serviceId)
+  }
+
   function selectScheduleService(index: number, serviceId: number | null) {
     updateSchedule(index, { serviceId })
-    if (serviceId != null) {
-      const service = catalog.find((item) => item.id === serviceId)
-      if (service) {
-        setServiceItems((current) => current.some((item) => item.serviceId === serviceId)
-          ? current
-          : [...current, serviceDraft(service)])
-      }
-    }
     setScheduleError('')
   }
 
@@ -1176,6 +1207,13 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     if (materialItems.length > 0 && !supplierId) {
       setMaterialError('Selecione o fornecedor do pedido de compra.')
       setTab('materials')
+      return
+    }
+    const unlistedSchedule = schedules.find((schedule) => schedule.serviceId != null && !serviceItems.some((item) => item.serviceId === schedule.serviceId))
+    if (unlistedSchedule) {
+      const description = catalog.find((service) => service.id === unlistedSchedule.serviceId)?.description || `Serviço #${unlistedSchedule.serviceId}`
+      setScheduleError(`O serviço "${description}" do agendamento não está na relação de serviços cadastrados. Use o botão "Adicionar" na linha do agendamento ou escolha outro serviço.`)
+      setTab('general')
       return
     }
     if (serviceItems.length > 0 && schedules.some((schedule) => !schedule.serviceId)) {
@@ -1307,9 +1345,11 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       <section className="os-grid-section">
         <header><div><strong>Agendamento de serviços</strong><span>Previsão e profissional responsável por cada visita</span></div><Button type="button" variant="secondary" icon={<Plus size={15} />} onClick={addSchedule}>Adicionar agenda</Button></header>
         <FormError message={scheduleError} />
-        <div className="os-edit-table-wrap"><table className="os-edit-table os-schedule-table"><thead><tr><th>Data</th><th>Inicial</th><th>Final</th><th>Previsto</th><th>Funcionário</th><th>Serviço executado</th><th>Dt. realizado</th><th>Hr. inicial</th><th>Hr. final</th><th>Realizado</th><th /></tr></thead><tbody>{schedules.map((item, index) => {
+        <div className="os-edit-table-wrap"><table className="os-edit-table os-schedule-table"><thead><tr><th>Data</th><th>Inicial</th><th>Final</th><th>Previsto</th><th>Funcionário</th><th>Serviço executado</th><th>Dt. realizado</th><th>Hr. inicial</th><th>Hr. final</th><th>Realizado</th><th>Relação</th><th /></tr></thead><tbody>{schedules.map((item, index) => {
           const linkedService = serviceItems.find((service) => service.serviceId === item.serviceId)
           const actualRequired = status === 'FINALIZADA' && numberValue(linkedService?.minuteValue) > 0
+          const canAddService = item.serviceId != null && !linkedService
+          const addServiceTitle = item.serviceId == null ? 'Selecione um serviço para adicionar à relação' : linkedService ? 'Serviço já está na relação de serviços cadastrados' : 'Adicionar à relação de serviços cadastrados'
           return <tr key={item.rowKey}>
             <td><input type="date" value={toDateInput(item.expectedDate)} onChange={(event) => updateSchedule(index, { expectedDate: dateTime(event.target.value) })} required /></td>
             <td><input type="time" value={item.expectedStart || ''} onChange={(event) => updateSchedule(index, { expectedStart: event.target.value })} /></td>
@@ -1321,6 +1361,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
             <td><input type="time" value={item.actualStart || ''} onChange={(event) => updateSchedule(index, { actualStart: event.target.value })} required={actualRequired} /></td>
             <td><input type="time" value={item.actualEnd || ''} onChange={(event) => updateSchedule(index, { actualEnd: event.target.value })} required={actualRequired} /></td>
             <td><input value={item.actualDuration || '00:00'} readOnly /></td>
+            <td><button type="button" className={`os-schedule-service-add ${linkedService ? 'is-listed' : ''}`} data-enter-target aria-disabled={!canAddService} onClick={(event) => addScheduleService(event, canAddService ? item.serviceId ?? null : null)} title={addServiceTitle} aria-label={addServiceTitle}>{linkedService ? <><Check size={14} /> Na relação</> : <><ListPlus size={14} /> Adicionar</>}</button></td>
             <td><button type="button" className="os-remove-row" disabled={schedules.length === 1} onClick={() => { setSchedules((current) => current.filter((_, rowIndex) => rowIndex !== index)); setScheduleError('') }} aria-label="Remover agendamento"><X size={16} /></button></td>
           </tr>
         })}</tbody></table></div>

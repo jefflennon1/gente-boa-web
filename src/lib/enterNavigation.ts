@@ -1,6 +1,7 @@
 // Enter funciona como Tab dentro de formulários: avança para o próximo campo (Shift+Enter volta).
 // Botões comuns são ignorados na navegação para evitar acionar ações sem querer; o botão de envio
 // entra na sequência, então após o último campo o foco vai para "Salvar" e o próximo Enter confirma.
+// Outros botões entram na sequência quando marcados com data-enter-target (o Enter neles aciona o botão).
 // Formulários com data-allow-enter-submit="true" mantêm o envio padrão pelo Enter.
 
 const NAVIGATION_SCOPE = 'form, [data-enter-navigation]'
@@ -9,7 +10,7 @@ const BUTTON_INPUTS = new Set(['button', 'submit', 'reset', 'image'])
 const NON_TEXT_INPUTS = new Set(['checkbox', 'radio', 'file', 'color', 'range', ...BUTTON_INPUTS])
 
 function isNavigable(element: HTMLElement) {
-  if (element instanceof HTMLButtonElement && element.type !== 'submit') return false
+  if (element instanceof HTMLButtonElement && element.type !== 'submit' && !element.hasAttribute('data-enter-target')) return false
   if (element.matches(':disabled') || element.tabIndex < 0) return false
   if ((element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) && element.readOnly) return false
   if (element.closest('[aria-hidden="true"], [inert]')) return false
@@ -41,11 +42,20 @@ export function handleEnterNavigation(event: KeyboardEvent) {
   if (!isField(target)) return
 
   event.preventDefault()
+  moveFocus(scope, target, event.shiftKey)
+}
 
-  const elements = Array.from(scope.querySelectorAll<HTMLElement>(FIELD_SELECTOR)).filter((element) => element === target || isNavigable(element))
-  const index = elements.indexOf(target)
+function moveFocus(scope: HTMLElement, from: HTMLElement, backwards: boolean) {
+  const elements = Array.from(scope.querySelectorAll<HTMLElement>(FIELD_SELECTOR)).filter((element) => element === from || isNavigable(element))
+  const index = elements.indexOf(from)
   if (index === -1) return
 
-  const next = elements[event.shiftKey ? index - 1 : index + 1]
+  const next = elements[backwards ? index - 1 : index + 1]
   if (next) focusElement(next)
+}
+
+/** Leva o foco ao próximo campo do formulário, na mesma ordem da navegação pelo Enter. */
+export function focusNextField(from: HTMLElement) {
+  const scope = from.closest<HTMLElement>(NAVIGATION_SCOPE)
+  if (scope) moveFocus(scope, from, false)
 }
