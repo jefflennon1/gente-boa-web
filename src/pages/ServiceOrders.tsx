@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Clock3, Columns3, Edit3, FilePlus2, List, MapPin, Play, Plus, Search, Square, Trash2, UserRound, Wrench, X } from 'lucide-react'
+import { Building2, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, ClipboardList, Clock3, Copy, Columns3, Edit3, FilePlus2, List, MapPin, Play, Plus, Search, Square, Trash2, UserRound, Wrench, X } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useAuth } from '../auth'
@@ -203,10 +204,11 @@ function detailFlagValue(order: ServiceOrder, flag: ServiceOrderOperationalFlag)
   return order.status === 'FINALIZADA' || schedules.some((item) => item.finishedFlag === 'S')
 }
 
-function OperationalCheckbox({ active, label, tone, disabled, onChange }: { active: boolean; label: string; tone: 'red' | 'orange' | 'blue' | 'purple' | 'green'; disabled?: boolean; onChange: (checked: boolean) => void }) {
+function OperationalCheckbox({ active, label, tone, disabled, showLabel = false, onChange }: { active: boolean; label: string; tone: 'red' | 'orange' | 'blue' | 'purple' | 'green'; disabled?: boolean; showLabel?: boolean; onChange: (checked: boolean) => void }) {
   return <label className={`os-operational-check os-operational-check--${tone} ${active ? 'is-checked' : ''}`} title={`${label}: ${active ? 'marcado' : 'desmarcado'}`} onClick={(event) => event.stopPropagation()}>
     <input type="checkbox" checked={active} disabled={disabled} aria-label={label} onChange={(event) => onChange(event.target.checked)} />
-    <span aria-hidden="true"><CheckCircle2 size={16} strokeWidth={2.5} /></span>
+    <span aria-hidden="true"><Check size={11} strokeWidth={3.5} /></span>
+    {showLabel && <em>{label}</em>}
   </label>
 }
 
@@ -732,7 +734,7 @@ export function ServiceOrders() {
     </section>
 
     <DetailModal open={detailId !== null} onClose={() => setDetailId(null)} title={detail ? `Ordem de serviço ${detail.id}` : 'Detalhes da ordem de serviço'} description="Dados do atendimento, agenda, serviços e valores registrados." size="xlarge" actions={detail ? <><Button variant="danger" icon={<Trash2 size={16} />} disabled={deleteMutation.isPending} onClick={() => setOrderToDelete(detail.id)}>Excluir</Button>{detail.status === 'FINALIZADA' && <Button variant="secondary" icon={<FilePlus2 size={16} />} disabled={invoiceMutation.isPending} onClick={() => invoiceMutation.mutate(detail.id)}>{invoiceMutation.isPending ? 'Gerando NF...' : 'Gerar NF'}</Button>}{!['FINALIZADA', 'CANCELADA'].includes(detail.status) && <Button variant="secondary" icon={detail.trackingDetails?.some((tracking) => tracking.running) ? <Square size={16} /> : <Play size={16} />} disabled={!detail.serviceItems?.length || trackingMutation.isPending || timerLoadingId === detail.id} title={!detail.serviceItems?.length ? 'Nenhum serviço vinculado à ordem de serviço' : undefined} onClick={() => openTimer(detail)}>{detail.trackingDetails?.some((tracking) => tracking.running) ? 'Parar atendimento' : 'Iniciar atendimento'}</Button>}{!['FINALIZADA', 'CANCELADA'].includes(detail.status) && <Button variant="secondary" icon={<CheckCircle2 size={16} />} disabled={advanceMutation.isPending} onClick={() => advance(detail)}>Finalizar OS</Button>}<Button icon={<Edit3 size={16} />} onClick={() => openEdit(detail)}>Editar OS</Button></> : undefined}>
-      {detailQuery.isLoading ? <LoadingState label="Carregando a ordem de serviço..." /> : detailQuery.isError ? <ErrorState message={apiErrorMessage(detailQuery.error)} onRetry={() => detailQuery.refetch()} /> : detail ? <ServiceOrderDetail order={detail} catalog={catalogQuery.data?.content ?? []} flagSaving={operationalFlagMutation.isPending} onFlagChange={(flag, checked) => operationalFlagMutation.mutate({ id: detail.id, flag, checked })} /> : null}
+      {detailQuery.isLoading ? <LoadingState label="Carregando a ordem de serviço..." /> : detailQuery.isError ? <ErrorState message={apiErrorMessage(detailQuery.error)} onRetry={() => detailQuery.refetch()} /> : detail ? <ServiceOrderDetail order={detail} summary={orders.find((order) => order.id === detail.id)} catalog={catalogQuery.data?.content ?? []} flagSaving={operationalFlagMutation.isPending} onFlagChange={(flag, checked) => operationalFlagMutation.mutate({ id: detail.id, flag, checked })} /> : null}
     </DetailModal>
 
     <Modal open={timerAction !== null} onClose={() => !trackingMutation.isPending && setTimerAction(null)} title={timerAction?.mode === 'stop' ? 'Parar atendimento' : 'Iniciar atendimento'} description={timerAction ? `${timerAction.orderId} · ${timerAction.serviceDescription}` : undefined} size="medium">
@@ -1453,9 +1455,122 @@ function supplierDisplay(supplier: Supplier) {
   return `${name}${supplier.tradeName && supplier.legalName ? ` — ${supplier.legalName}` : ''} · #${supplier.id}`
 }
 
-function ServiceOrderDetail({ order, catalog, flagSaving, onFlagChange }: { order: ServiceOrder; catalog: ServiceCatalogItem[]; flagSaving: boolean; onFlagChange: (flag: ServiceOrderOperationalFlag, checked: boolean) => void }) {
-  const tradeName = order.client?.nmfanta
-  const legalName = order.clientName || order.client?.nmrazao || order.client?.name
+type AttendanceSheet = {
+  origin: string
+  completedAttendances: number | null
+  orderId: number
+  client: string
+  searchTarget: string | null
+  requester: string | null
+  address: string | null
+  description: string | null
+  services: string[]
+  orderNotes: string | null
+  referencePoint: string | null
+  clientNotes: string | null
+  cancellation: string | null
+}
+
+/** Ficha "Dados do atendimento" no formato da tela do Delphi, usada pela cliente para repassar o serviço aos técnicos. */
+function buildAttendanceSheet(order: ServiceOrder, summary: ServiceOrderListItem | undefined, location: AttendanceLocation | undefined, catalog: ServiceCatalogItem[]): AttendanceSheet {
+  const client = order.client
+  const clientName = summary?.clientTradeName || summary?.clientName || client?.nmfanta || order.clientName || client?.nmrazao || client?.name || 'Cliente não identificado'
+  const clientId = summary?.clientId ?? order.idclien
+  const clientAddress = [client?.dsender, client?.dscompl, client?.dsbairr, client?.dscidad].filter(Boolean).join(' · ')
+  const services = summary?.serviceDescriptions ?? (order.serviceItems ?? []).map((item) => catalog.find((service) => service.id === item.serviceId)?.description || `Serviço #${item.serviceId}`)
+  return {
+    origin: (summary?.origin ?? order.flordem) === 'C' ? 'Contrato' : 'Avulsa',
+    completedAttendances: summary ? summary.completedAttendances ?? 0 : null,
+    orderId: order.id,
+    client: clientId ? `${clientId}-${clientName}` : clientName,
+    searchTarget: summary?.searchTarget ?? order.procurarpor ?? null,
+    requester: summary?.requester ?? order.nmsolic ?? null,
+    address: summary?.serviceAddress || (location ? attendanceLocationDisplay(location) : clientAddress) || null,
+    description: order.dsdescr || order.description || summary?.description || null,
+    services,
+    orderNotes: summary?.orderNotes ?? order.dsobser ?? null,
+    referencePoint: summary?.referencePoint || location?.referencePoint || client?.dsponto || null,
+    clientNotes: summary?.clientNotes ?? client?.dsobser ?? null,
+    cancellation: order.dscancel || null,
+  }
+}
+
+function attendanceSheetText(sheet: AttendanceSheet) {
+  return [
+    `O.S. Tipo: ${sheet.origin}`,
+    sheet.completedAttendances !== null && `O cliente foi atendido ${sheet.completedAttendances} ${sheet.completedAttendances === 1 ? 'vez' : 'vezes'}.`,
+    `O.S.: ${sheet.orderId}`,
+    `Cliente: ${sheet.client}`,
+    sheet.searchTarget && `Procurar por: ${sheet.searchTarget}`,
+    `Solicitante: ${sheet.requester || ''}`,
+    `Endereço: ${sheet.address || ''}`,
+    `Descrição: ${sheet.description || ''}`,
+    `Serviço: ${sheet.services.join(', ')}`,
+    `Obs. Atendimento: ${sheet.orderNotes || ''}`,
+    `Ponto Refer.: ${sheet.referencePoint || ''}`,
+    `Obs. Cliente: ${sheet.clientNotes || ''}`,
+    sheet.cancellation && `Motivo do cancelamento: ${sheet.cancellation}`,
+  ].filter(Boolean).join('\n')
+}
+
+function AttendanceSheetRow({ label, children, block = false }: { label: string; children?: ReactNode; block?: boolean }) {
+  return <p className={`os-attendance-sheet__row ${block ? 'os-attendance-sheet__row--block' : ''}`}><b>{label}</b><span>{children}</span></p>
+}
+
+function AttendanceSheetPanel({ sheet, badges }: { sheet: AttendanceSheet; badges: ReactNode }) {
+  const [copied, setCopied] = useState(false)
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(attendanceSheetText(sheet))
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2000)
+    } catch { /* área de transferência indisponível (navegador sem permissão) */ }
+  }
+
+  return <section className="os-attendance-sheet" aria-label="Dados do atendimento">
+    <header>
+      <span className="os-attendance-sheet__icon"><ClipboardList size={18} /></span>
+      <h3>Dados do atendimento</h3>
+      <div className="os-attendance-sheet__badges">{badges}</div>
+      <Button type="button" variant="secondary" icon={copied ? <Check size={15} /> : <Copy size={15} />} onClick={copy}>{copied ? 'Copiado' : 'Copiar dados'}</Button>
+    </header>
+    <div className="os-attendance-sheet__body">
+      <div className="os-attendance-sheet__main">
+        <div className="os-attendance-sheet__group">
+          <AttendanceSheetRow label="O.S. Tipo:">{sheet.origin}</AttendanceSheetRow>
+          {sheet.completedAttendances !== null && <p className="os-attendance-sheet__row"><span>O cliente foi atendido {sheet.completedAttendances} {sheet.completedAttendances === 1 ? 'vez' : 'vezes'}.</span></p>}
+        </div>
+        <div className="os-attendance-sheet__group">
+          <AttendanceSheetRow label="O.S.:">{sheet.orderId}</AttendanceSheetRow>
+          <AttendanceSheetRow label="Cliente:">{sheet.client}</AttendanceSheetRow>
+        </div>
+        <div className="os-attendance-sheet__group">
+          <AttendanceSheetRow label="Solicitante:">{sheet.requester}</AttendanceSheetRow>
+          <AttendanceSheetRow label="Endereço:">{sheet.address}</AttendanceSheetRow>
+          <AttendanceSheetRow label="Descrição:" block>{sheet.description}</AttendanceSheetRow>
+          <AttendanceSheetRow label="Serviço:" block>{sheet.services.length ? sheet.services.join(', ') : <span className="service-description-empty">NENHUM SERVIÇO VINCULADO</span>}</AttendanceSheetRow>
+        </div>
+        <div className="os-attendance-sheet__group"><AttendanceSheetRow label="Obs. Atendimento:" block>{sheet.orderNotes}</AttendanceSheetRow></div>
+        <div className="os-attendance-sheet__group"><AttendanceSheetRow label="Ponto Refer.:">{sheet.referencePoint}</AttendanceSheetRow></div>
+        <div className="os-attendance-sheet__group">
+          <AttendanceSheetRow label="Obs. Cliente:">{sheet.clientNotes}</AttendanceSheetRow>
+          {sheet.cancellation && <AttendanceSheetRow label="Motivo do cancelamento:" block>{sheet.cancellation}</AttendanceSheetRow>}
+        </div>
+      </div>
+      <div className="os-attendance-sheet__side"><AttendanceSheetRow label="Procurar por:">{sheet.searchTarget}</AttendanceSheetRow></div>
+    </div>
+  </section>
+}
+
+function DetailAccordion({ title, hint, defaultOpen = false, children }: { title: string; hint?: string; defaultOpen?: boolean; children: ReactNode }) {
+  return <details className="os-detail-accordion" open={defaultOpen}>
+    <summary><span><strong>{title}</strong>{hint && <small>{hint}</small>}</span><ChevronDown size={17} /></summary>
+    <div className="drawer-section os-detail-accordion__body">{children}</div>
+  </details>
+}
+
+function ServiceOrderDetail({ order, summary, catalog, flagSaving, onFlagChange }: { order: ServiceOrder; summary?: ServiceOrderListItem; catalog: ServiceCatalogItem[]; flagSaving: boolean; onFlagChange: (flag: ServiceOrderOperationalFlag, checked: boolean) => void }) {
   const attendanceLocationQuery = useQuery({
     queryKey: [...queryKeys.attendanceLocations, 'client', order.idclien, 'location', order.idlocal],
     queryFn: () => api.attendanceLocations.findForClient(order.idlocal!, order.idclien!),
@@ -1463,22 +1578,42 @@ function ServiceOrderDetail({ order, catalog, flagSaving, onFlagChange }: { orde
     retry: false,
   })
   const attendanceLocation = attendanceLocationQuery.data
+  const sheet = buildAttendanceSheet(order, summary, attendanceLocation, catalog)
+  const scheduleCount = order.schedules?.length ?? 0
+  const serviceCount = order.serviceItems?.length ?? 0
+  const trackingCount = order.trackingDetails?.length ?? 0
   return <div className="detail-modal-content">
-    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><Wrench /></span><div><span>OS-{order.id} · {order.flordem === 'C' ? 'Contrato' : 'Avulsa'}</span><h2>{tradeName || legalName || 'Cliente não identificado'}</h2>{tradeName && legalName && <p>{legalName}</p>}</div></div><div className="detail-status-stack">{order.priority === 'URGENTE' && <Badge tone="red">Urgente</Badge>}<Badge tone={statusTone[order.status]}>{enumLabel(order.status)}</Badge></div></div>
-    <div className="os-detail-operational-flags" aria-label="Indicadores operacionais da ordem de serviço">{operationalFlags.map((item) => <div key={item.flag} className={`os-detail-operational-flag os-detail-operational-flag--${item.tone} ${detailFlagValue(order, item.flag) ? 'is-checked' : ''}`}><OperationalCheckbox active={detailFlagValue(order, item.flag)} label={item.label} tone={item.tone} disabled={order.status === 'CANCELADA' || flagSaving} onChange={(checked) => onFlagChange(item.flag, checked)} /><span><small>Status rápido</small><strong>{item.label}</strong></span></div>)}</div>
-    <div className="detail-metrics"><span><small>Data da requisição</small><strong>{formatDate(order.dtordem)}</strong></span><span><small>Agendamentos</small><strong>{order.schedules?.length ?? 0}</strong></span><span><small>Tempo realizado</small><strong>{order.qthorat || '00:00'}</strong></span><span><small>{order.flordem === 'C' ? 'Tempo descontado' : 'Tempo cobrado'}</small><strong>{order.qthorac || '00:00'}</strong></span><span><small>Valor a cobrar</small><strong>{money(order.vlcobra)}</strong></span></div>
-    <div className="detail-sections-grid">
-      <section className="drawer-section"><h3>Atendimento</h3><dl><div><dt>Solicitante</dt><dd>{order.nmsolic || 'Não informado'}</dd></div><div><dt>Categoria</dt><dd>{enumLabel(order.category)}</dd></div><div><dt>Tipo de serviço</dt><dd>{serviceTypes.find((item) => item.value === order.tpservic)?.label || 'Não informado'}</dd></div><div><dt>Procurar por</dt><dd>{order.procurarpor || 'Não informado'}</dd></div><div><dt>Local</dt><dd>{attendanceLocation ? attendanceLocationDisplay(attendanceLocation) : order.idlocal ? `Local #${order.idlocal}` : 'Não informado'}</dd></div></dl></section>
-      <section className="drawer-section"><h3>Valores</h3><dl><div><dt>Serviços</dt><dd>{money(order.vlhorar)}</dd></div><div><dt>Materiais</dt><dd>{money(order.vlmater)}</dd></div><div><dt>Transporte / aluguel</dt><dd>{money(numberValue(order.vltrans) + numberValue(order.vlalug))}</dd></div><div><dt>Desconto</dt><dd>{order.vldesco ?? 0}%</dd></div></dl></section>
-      {order.flordem === 'C' && <section className="drawer-section drawer-section--wide"><h3>Consumo mensal do contrato</h3><dl><div><dt>Horas contratadas</dt><dd>{order.sdcontr || '00:00'}</dd></div><div><dt>Utilizado antes desta OS</dt><dd>{order.sdanter || '00:00'}</dd></div><div><dt>Utilizado no mês</dt><dd>{order.sdutili || '00:00'}</dd></div><div><dt>Saldo do mês</dt><dd>{order.sdfinal || '00:00'}</dd></div><div><dt>Excedente</dt><dd>{order.sdexced || '00:00'}</dd></div></dl></section>}
-      <section className="drawer-section drawer-section--wide"><h3>Descrição e observações</h3><p className="drawer-section__text">{order.dsdescr || order.description || 'Descrição não informada'}</p>{order.dsobser && <p className="drawer-section__text detail-text-spaced">{order.dsobser}</p>}{order.dscancel && <p className="drawer-section__text detail-text-spaced"><strong>Cancelamento:</strong> {order.dscancel}</p>}</section>
-      <section className="drawer-section drawer-section--wide"><h3>Acompanhamento dos atendimentos</h3>{order.trackingDetails?.length ? <div className="detail-list-grid">{order.trackingDetails.map((tracking) => <span key={tracking.id} className={tracking.running ? 'tracking-detail--running' : ''}><strong>{tracking.serviceDescription} · {tracking.running ? <>Em andamento: <LiveElapsed startedAt={tracking.startedAt} /></> : tracking.duration || '00:00'}</strong><small>Funcionário: {tracking.employeeName} · Início: {formatDate(tracking.startedAt)} às {tracking.startTime} · Final: {tracking.endTime || '--:--'}</small></span>)}</div> : <p className="drawer-section__text">Nenhum acompanhamento iniciado.</p>}</section>
-      <section className="drawer-section drawer-section--wide"><h3>Agendamentos</h3>{order.schedules?.length ? <div className="detail-list-grid">{order.schedules.map((item) => {
-        const serviceName = catalog.find((service) => service.id === item.serviceId)?.description
-        return <span key={item.scheduleId}><strong>Previsto: {formatDate(item.expectedDate)} · {item.expectedStart || '--:--'}–{item.expectedEnd || '--:--'}</strong><small>Funcionário: {item.employeeName || item.employeeNickname || (item.employeeId ? `#${item.employeeId}` : 'Aguardando')}{item.employeePosition ? ` · ${item.employeePosition}` : ''}{item.employeePhone ? ` · ${item.employeePhone}` : ''} · Serviço: {serviceName || (item.serviceId ? `#${item.serviceId}` : 'não vinculado')} · Realizado: {item.actualDate ? formatDate(item.actualDate) : 'sem data'} · {item.actualStart || '--:--'}–{item.actualEnd || '--:--'} ({item.actualDuration || '00:00'})</small></span>
-      })}</div> : <p className="drawer-section__text">Nenhum agendamento vinculado.</p>}</section>
-      <section className="drawer-section drawer-section--wide"><h3>Serviços</h3>{order.serviceItems?.length ? <div className="detail-list-grid">{order.serviceItems.map((item) => <span key={item.serviceId}><strong>{catalog.find((service) => service.id === item.serviceId)?.description || `Serviço #${item.serviceId}`}</strong><small>Horas oficiais: {item.hours || '00:00'} · {item.quantity || 0} × {money(item.unitValue)} · Total {money(item.totalValue)}</small></span>)}</div> : <p className="drawer-section__text service-description-empty">NENHUM SERVIÇO VINCULADO</p>}</section>
-      <section className="drawer-section drawer-section--wide"><h3>Pedido de compra</h3>{order.materialOrder ? <><dl><div><dt>Pedido</dt><dd>#{order.materialOrder.id}</dd></div><div><dt>Fornecedor</dt><dd>{order.materialOrder.supplierTradeName || order.materialOrder.supplierName || `#${order.materialOrder.supplierId}`}</dd></div><div><dt>Data de entrada</dt><dd>{formatDate(order.materialOrder.entryDate)}</dd></div><div><dt>Conta a pagar</dt><dd>{order.materialOrder.payableId ? `#${order.materialOrder.payableId}${(order.materialOrder.payableInstallments ?? 1) > 1 ? ` (${order.materialOrder.payableInstallments} prestações)` : ''} · ${order.materialOrder.payableStatus === 'PAID' ? 'Quitada' : 'Em aberto'}` : 'Não gerada'}</dd></div><div><dt>{(order.materialOrder.payableInstallments ?? 1) > 1 ? 'Próximo vencimento' : 'Vencimento'}</dt><dd>{formatDate(order.materialOrder.payableDueDate)}</dd></div><div><dt>Total líquido</dt><dd>{money(order.materialOrder.netValue)}</dd></div></dl>{order.materialOrder.items?.length ? <div className="detail-list-grid detail-purchase-items">{order.materialOrder.items.map((item) => <span key={`${item.purchaseOrderId}-${item.itemId}`}><strong>{item.materialDescription || `Material #${item.materialId}`}</strong><small>{item.quantity || 0} {item.materialUnit || 'UN'} × {money(item.unitValue)} · Total {money(item.totalValue)}</small></span>)}</div> : <p className="drawer-section__text detail-text-spaced">Nenhum item vinculado ao pedido.</p>}</> : <p className="drawer-section__text">Nenhum pedido de compra vinculado.</p>}</section>
+    <AttendanceSheetPanel sheet={sheet} badges={<>{order.priority === 'URGENTE' && <Badge tone="red">Urgente</Badge>}<Badge tone={statusTone[order.status]}>{enumLabel(order.status)}</Badge></>} />
+
+    <div className="os-detail-accordions">
+      <DetailAccordion title="Status rápido e indicadores" hint="Marcações operacionais, tempos e valor a cobrar" defaultOpen>
+        <div className="os-detail-operational-flags" aria-label="Indicadores operacionais da ordem de serviço">{operationalFlags.map((item) => <OperationalCheckbox key={item.flag} active={detailFlagValue(order, item.flag)} label={item.label} tone={item.tone} disabled={order.status === 'CANCELADA' || flagSaving} showLabel onChange={(checked) => onFlagChange(item.flag, checked)} />)}</div>
+        <div className="detail-metrics"><span><small>Data da requisição</small><strong>{formatDate(order.dtordem)}</strong></span><span><small>Agendamentos</small><strong>{scheduleCount}</strong></span><span><small>Tempo realizado</small><strong>{order.qthorat || '00:00'}</strong></span><span><small>{order.flordem === 'C' ? 'Tempo descontado' : 'Tempo cobrado'}</small><strong>{order.qthorac || '00:00'}</strong></span><span><small>Valor a cobrar</small><strong>{money(order.vlcobra)}</strong></span></div>
+      </DetailAccordion>
+      <DetailAccordion title="Atendimento" hint="Categoria, tipo de serviço e local">
+        <dl><div><dt>Categoria</dt><dd>{enumLabel(order.category)}</dd></div><div><dt>Tipo de serviço</dt><dd>{serviceTypes.find((item) => item.value === order.tpservic)?.label || 'Não informado'}</dd></div><div><dt>Local</dt><dd>{attendanceLocation ? attendanceLocationDisplay(attendanceLocation) : order.idlocal ? `Local #${order.idlocal}` : 'Não informado'}</dd></div></dl>
+      </DetailAccordion>
+      <DetailAccordion title="Valores" hint={`Valor a cobrar ${money(order.vlcobra)}`}>
+        <dl><div><dt>Serviços</dt><dd>{money(order.vlhorar)}</dd></div><div><dt>Materiais</dt><dd>{money(order.vlmater)}</dd></div><div><dt>Transporte / aluguel</dt><dd>{money(numberValue(order.vltrans) + numberValue(order.vlalug))}</dd></div><div><dt>Desconto</dt><dd>{order.vldesco ?? 0}%</dd></div></dl>
+      </DetailAccordion>
+      {order.flordem === 'C' && <DetailAccordion title="Consumo mensal do contrato" hint={`Saldo do mês ${order.sdfinal || '00:00'}`}>
+        <dl><div><dt>Horas contratadas</dt><dd>{order.sdcontr || '00:00'}</dd></div><div><dt>Utilizado antes desta OS</dt><dd>{order.sdanter || '00:00'}</dd></div><div><dt>Utilizado no mês</dt><dd>{order.sdutili || '00:00'}</dd></div><div><dt>Saldo do mês</dt><dd>{order.sdfinal || '00:00'}</dd></div><div><dt>Excedente</dt><dd>{order.sdexced || '00:00'}</dd></div></dl>
+      </DetailAccordion>}
+      <DetailAccordion title="Acompanhamento dos atendimentos" hint={trackingCount ? `${trackingCount} registro(s)` : 'Nenhum acompanhamento iniciado'}>
+        {trackingCount ? <div className="detail-list-grid">{order.trackingDetails!.map((tracking) => <span key={tracking.id} className={tracking.running ? 'tracking-detail--running' : ''}><strong>{tracking.serviceDescription} · {tracking.running ? <>Em andamento: <LiveElapsed startedAt={tracking.startedAt} /></> : tracking.duration || '00:00'}</strong><small>Funcionário: {tracking.employeeName} · Início: {formatDate(tracking.startedAt)} às {tracking.startTime} · Final: {tracking.endTime || '--:--'}</small></span>)}</div> : <p className="drawer-section__text">Nenhum acompanhamento iniciado.</p>}
+      </DetailAccordion>
+      <DetailAccordion title="Agendamentos" hint={scheduleCount ? `${scheduleCount} agendamento(s)` : 'Nenhum agendamento vinculado'}>
+        {scheduleCount ? <div className="detail-list-grid">{order.schedules!.map((item) => {
+          const serviceName = catalog.find((service) => service.id === item.serviceId)?.description
+          return <span key={item.scheduleId}><strong>Previsto: {formatDate(item.expectedDate)} · {item.expectedStart || '--:--'}–{item.expectedEnd || '--:--'}</strong><small>Funcionário: {item.employeeName || item.employeeNickname || (item.employeeId ? `#${item.employeeId}` : 'Aguardando')}{item.employeePosition ? ` · ${item.employeePosition}` : ''}{item.employeePhone ? ` · ${item.employeePhone}` : ''} · Serviço: {serviceName || (item.serviceId ? `#${item.serviceId}` : 'não vinculado')} · Realizado: {item.actualDate ? formatDate(item.actualDate) : 'sem data'} · {item.actualStart || '--:--'}–{item.actualEnd || '--:--'} ({item.actualDuration || '00:00'})</small></span>
+        })}</div> : <p className="drawer-section__text">Nenhum agendamento vinculado.</p>}
+      </DetailAccordion>
+      <DetailAccordion title="Serviços" hint={serviceCount ? `${serviceCount} serviço(s)` : 'Nenhum serviço vinculado'}>
+        {serviceCount ? <div className="detail-list-grid">{order.serviceItems!.map((item) => <span key={item.serviceId}><strong>{catalog.find((service) => service.id === item.serviceId)?.description || `Serviço #${item.serviceId}`}</strong><small>Horas oficiais: {item.hours || '00:00'} · {item.quantity || 0} × {money(item.unitValue)} · Total {money(item.totalValue)}</small></span>)}</div> : <p className="drawer-section__text service-description-empty">NENHUM SERVIÇO VINCULADO</p>}
+      </DetailAccordion>
+      <DetailAccordion title="Pedido de compra" hint={order.materialOrder ? `Pedido #${order.materialOrder.id} · ${money(order.materialOrder.netValue)}` : 'Nenhum pedido vinculado'}>
+        {order.materialOrder ? <><dl><div><dt>Pedido</dt><dd>#{order.materialOrder.id}</dd></div><div><dt>Fornecedor</dt><dd>{order.materialOrder.supplierTradeName || order.materialOrder.supplierName || `#${order.materialOrder.supplierId}`}</dd></div><div><dt>Data de entrada</dt><dd>{formatDate(order.materialOrder.entryDate)}</dd></div><div><dt>Conta a pagar</dt><dd>{order.materialOrder.payableId ? `#${order.materialOrder.payableId}${(order.materialOrder.payableInstallments ?? 1) > 1 ? ` (${order.materialOrder.payableInstallments} prestações)` : ''} · ${order.materialOrder.payableStatus === 'PAID' ? 'Quitada' : 'Em aberto'}` : 'Não gerada'}</dd></div><div><dt>{(order.materialOrder.payableInstallments ?? 1) > 1 ? 'Próximo vencimento' : 'Vencimento'}</dt><dd>{formatDate(order.materialOrder.payableDueDate)}</dd></div><div><dt>Total líquido</dt><dd>{money(order.materialOrder.netValue)}</dd></div></dl>{order.materialOrder.items?.length ? <div className="detail-list-grid detail-purchase-items">{order.materialOrder.items.map((item) => <span key={`${item.purchaseOrderId}-${item.itemId}`}><strong>{item.materialDescription || `Material #${item.materialId}`}</strong><small>{item.quantity || 0} {item.materialUnit || 'UN'} × {money(item.unitValue)} · Total {money(item.totalValue)}</small></span>)}</div> : <p className="drawer-section__text detail-text-spaced">Nenhum item vinculado ao pedido.</p>}</> : <p className="drawer-section__text">Nenhum pedido de compra vinculado.</p>}
+      </DetailAccordion>
     </div>
   </div>
 }
