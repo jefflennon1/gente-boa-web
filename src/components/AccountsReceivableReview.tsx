@@ -1,14 +1,14 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, ChevronLeft, ChevronRight, Clock3, Eye, FileBarChart, Landmark, ReceiptText, Search, Timer } from 'lucide-react'
+import { CheckCircle2, ChevronLeft, ChevronRight, Clock3, Eye, FileBarChart, Landmark, ReceiptText, Search } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { modulesApi, modulesKeys, summaryNumber, type BillStatementSource } from '../api/modules'
 import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { formatDate, money } from '../lib/format'
-import type { AccountsReceivableListItem, BillDetail, BillGenerationPreview, ClientBillingContext } from '../types'
-import { Badge, Button, CollapsibleFilters, DetailModal, EmptyState, ErrorState, FormField, LoadingState, Modal, StatCard } from './ui'
-import { ClientHourTracking } from './ClientHourTracking'
+import type { AccountsReceivableListItem, BillDetail, BillGenerationPreview } from '../types'
+import { Badge, Button, CollapsibleFilters, EmptyState, ErrorState, FormField, LoadingState, Modal, StatCard } from './ui'
+import { ClientWorkspaceModal } from './ClientWorkspaceModal'
 
 type BillingType = 'ALL' | 'CONTRACT' | 'ONE_OFF'
 type GeneratedStatus = 'ALL' | 'GENERATED' | 'PENDING'
@@ -30,7 +30,6 @@ export function AccountsReceivableReview({ showToast, onOpenStatement }: { showT
   const [pageSize, setPageSize] = useState(10)
   const [selected, setSelected] = useState<Record<number, AccountsReceivableListItem>>({})
   const [previewRow, setPreviewRow] = useState<AccountsReceivableListItem | null>(null)
-  const [previewSection, setPreviewSection] = useState<'bill' | 'receivables' | 'tracking'>('bill')
   const [issOpen, setIssOpen] = useState(false)
   const [issAmount, setIssAmount] = useState('')
   const [issDescription, setIssDescription] = useState('REF A ISS RETIDO')
@@ -63,11 +62,6 @@ export function AccountsReceivableReview({ showToast, onOpenStatement }: { showT
     queryKey: [...queryKeys.bills, 'preview-service-order', previewRow?.serviceOrderId],
     queryFn: () => api.bills.previewByServiceOrder(previewRow!.serviceOrderId!),
     enabled: previewRow?.serviceOrderId != null,
-  })
-  const clientContextQuery = useQuery({
-    queryKey: [...queryKeys.bills, 'client-context', previewRow?.clientId],
-    queryFn: () => api.bills.clientContext(previewRow!.clientId!),
-    enabled: previewRow?.clientId != null,
   })
 
   const rows = query.data?.content ?? []
@@ -199,7 +193,6 @@ export function AccountsReceivableReview({ showToast, onOpenStatement }: { showT
 
   function openPreview(row: AccountsReceivableListItem) {
     setPreviewRow(row)
-    setPreviewSection('bill')
     setActionError('')
   }
 
@@ -274,43 +267,24 @@ export function AccountsReceivableReview({ showToast, onOpenStatement }: { showT
       <footer className="table-footer table-footer--pagination"><span>Mostrando <strong>{firstResult}–{lastResult}</strong> de <strong>{total.toLocaleString('pt-BR')}</strong> contas</span><div className="pagination-controls"><label>Itens <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(0) }}>{[5, 10, 20, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label><button disabled={page === 0 || query.isFetching} onClick={() => setPage((value) => Math.max(0, value - 1))} aria-label="Página anterior"><ChevronLeft size={16} /></button><span>Página <strong>{totalPages ? page + 1 : 0}</strong> de <strong>{totalPages}</strong></span><button disabled={page + 1 >= totalPages || query.isFetching} onClick={() => setPage((value) => value + 1)} aria-label="Próxima página"><ChevronRight size={16} /></button></div></footer>
     </section>
 
-    <DetailModal
-      open={previewRow !== null && previewSection === 'bill'}
+    <ClientWorkspaceModal
+      key={previewRow?.id ?? 'sem-cr'}
+      open={previewRow !== null}
+      clientId={previewRow?.clientId ?? null}
+      clientLabel={previewRow ? previewRow.clientTradeName || previewRow.clientName || `Cliente #${previewRow.clientId}` : undefined}
+      bill={previewRow ? {
+        label: previewRow.generated ? 'Boleto selecionado' : 'Boleto a gerar',
+        title: previewRow.generated ? `Boleto #${previewRow.billNumber}` : `Boleto a gerar · CR #${previewRow.id}`,
+        showPendingBills: !previewRow.generated,
+        content: previewRow?.serviceOrderId && previewQuery.isLoading ? <LoadingState label="Carregando dados da cobrança..." /> : previewRow?.serviceOrderId && previewQuery.isError ? <ErrorState message={apiErrorMessage(previewQuery.error)} onRetry={() => previewQuery.refetch()} /> : previewRow ? <PendingBillDetails row={previewRow} bill={previewQuery.data} /> : null,
+        actions: previewRow.generated ? undefined : <>
+          {!previewRow.generated && previewRow.clientId && previewRow.dueAt && onOpenStatement && <Button variant="secondary" icon={<FileBarChart size={16} />} onClick={() => onOpenStatement({ clientId: previewRow.clientId!, dueDate: String(previewRow.dueAt).slice(0, 10) })}>Extrato do boleto</Button>}
+          {!previewRow.generated && <Button disabled={previewGenerationMutation.isPending} onClick={() => previewGenerationMutation.mutate([previewRow.id])}>{previewGenerationMutation.isPending ? 'Preparando prévia...' : 'Revisar e gerar'}</Button>}
+        </>,
+      } : null}
+      onOpenStatement={onOpenStatement}
       onClose={() => setPreviewRow(null)}
-      title={previewRow?.generated ? `Boleto #${previewRow.billNumber}` : `Boleto a gerar · CR #${previewRow?.id}`}
-      description={previewRow?.generated ? 'Dados da cobrança gerada para o cliente.' : 'Pré-visualização da cobrança antes da geração do boleto.'}
-      size="xlarge"
-      actions={previewRow ? <>
-        <Button variant="secondary" icon={<ReceiptText size={16} />} onClick={() => setPreviewSection('receivables')}>Contas a receber</Button>
-        <Button variant="secondary" icon={<Timer size={16} />} disabled={!previewRow.clientId} onClick={() => setPreviewSection('tracking')}>Acompanhamento de horas</Button>
-        {!previewRow.generated && previewRow.clientId && previewRow.dueAt && onOpenStatement && <Button variant="secondary" icon={<FileBarChart size={16} />} onClick={() => onOpenStatement({ clientId: previewRow.clientId!, dueDate: String(previewRow.dueAt).slice(0, 10) })}>Extrato do boleto</Button>}
-        {!previewRow.generated && <Button disabled={previewGenerationMutation.isPending} onClick={() => previewGenerationMutation.mutate([previewRow.id])}>{previewGenerationMutation.isPending ? 'Preparando prévia...' : 'Revisar e gerar'}</Button>}
-      </> : undefined}
-    >
-      {previewRow?.serviceOrderId && previewQuery.isLoading ? <LoadingState label="Carregando dados da cobrança..." /> : previewRow?.serviceOrderId && previewQuery.isError ? <ErrorState message={apiErrorMessage(previewQuery.error)} onRetry={() => previewQuery.refetch()} /> : previewRow ? <PendingBillDetails row={previewRow} bill={previewQuery.data} /> : null}
-    </DetailModal>
-
-    <DetailModal
-      open={previewRow !== null && previewSection === 'receivables'}
-      onClose={() => setPreviewSection('bill')}
-      title={`Contas a receber · ${previewRow?.billNumber ? `Boleto #${previewRow.billNumber}` : `CR #${previewRow?.id}`}`}
-      description="Todos os títulos ainda não pagos deste cliente."
-      size="xlarge"
-      actions={<Button variant="secondary" onClick={() => setPreviewSection('bill')}>Voltar ao boleto</Button>}
-    >
-      {clientContextQuery.isLoading ? <LoadingState label="Carregando contas do cliente..." /> : clientContextQuery.isError ? <ErrorState message={apiErrorMessage(clientContextQuery.error)} onRetry={() => clientContextQuery.refetch()} /> : previewRow ? <PendingReceivables row={previewRow} context={clientContextQuery.data} /> : null}
-    </DetailModal>
-
-    <DetailModal
-      open={previewRow !== null && previewSection === 'tracking'}
-      onClose={() => setPreviewSection('bill')}
-      title={`Acompanhamento de horas · ${previewRow?.clientTradeName || previewRow?.clientName || `Cliente #${previewRow?.clientId || '—'}`}`}
-      description="Histórico completo de acompanhamento de horas deste cliente."
-      size="xlarge"
-      actions={<Button variant="secondary" onClick={() => setPreviewSection('bill')}>Voltar ao boleto</Button>}
-    >
-      {clientContextQuery.isLoading ? <LoadingState label="Carregando acompanhamento do cliente..." /> : clientContextQuery.isError ? <ErrorState message={apiErrorMessage(clientContextQuery.error)} onRetry={() => clientContextQuery.refetch()} /> : previewRow ? <PendingTracking row={previewRow} context={clientContextQuery.data} /> : null}
-    </DetailModal>
+    />
 
     <Modal open={generationPreview !== null} onClose={() => !generateMutation.isPending && setGenerationPreview(null)} title="Prévia da geração de boletos" description="Confira os agrupamentos por cliente e vencimento antes de confirmar." size="xlarge">
       <div className="modal__body bill-generation-preview">
@@ -361,25 +335,6 @@ function PendingBillDetails({ row, bill }: { row: AccountsReceivableListItem; bi
       <section className="drawer-section"><h3>Origem da cobrança</h3><dl><div><dt>Conta a receber</dt><dd>#{row.id}</dd></div><div><dt>OS</dt><dd>{row.serviceOrderId ? `OS-${row.serviceOrderId}` : 'Sem OS vinculada'}</dd></div><div><dt>Contrato</dt><dd>{row.contractId ? `#${row.contractId}` : 'Avulso'}</dd></div><div><dt>Cadastro</dt><dd>{formatDate(row.createdAt)}</dd></div><div><dt>Vencimento</dt><dd>{formatDate(row.dueAt)}</dd></div><div><dt>Situação</dt><dd>{row.paid ? 'Pago' : row.generated ? 'Boleto gerado' : 'A faturar'}</dd></div><div className="drawer-section__wide"><dt>Descrição</dt><dd>{bill?.serviceOrderDescription || row.description || 'Não informada'}</dd></div></dl></section>
     </div>
   </div>
-}
-
-function PendingReceivables({ row, context }: { row: AccountsReceivableListItem; context?: ClientBillingContext }) {
-  const receivables = context?.openReceivables || []
-  const total = receivables.reduce((sum, item) => sum + Number(item.amount || 0), 0)
-  const balance = receivables.reduce((sum, item) => sum + Number(item.balance || 0), 0)
-  return <div className="detail-modal-content bill-related-detail">
-    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><ReceiptText /></span><div><span>Cliente #{row.clientId || '—'}</span><h2>{row.clientTradeName || row.clientName || 'Cliente não identificado'}</h2><p>{row.clientDocument || 'CPF/CNPJ não informado'}</p></div></div><Badge tone={balance > 0 ? 'orange' : 'green'}>{balance > 0 ? 'Em aberto' : 'Quitado'}</Badge></div>
-    <div className="detail-metrics bill-detail__metrics"><span><small>Títulos vinculados</small><strong>{receivables.length}</strong></span><span><small>Valor lançado</small><strong>{money(total)}</strong></span><span><small>Saldo em aberto</small><strong>{money(balance)}</strong></span><span><small>Boleto</small><strong>{row.billNumber ? `#${row.billNumber}` : 'Não gerado'}</strong></span></div>
-    <ReviewTable title="Contas a receber em aberto do cliente" empty="Este cliente não possui contas a receber em aberto." headers={['CR', 'OS', 'Contrato', 'Descrição', 'Cadastro', 'Vencimento', 'Valor', 'Saldo']} rows={receivables.map((item) => [item.id, item.serviceOrderId || '—', item.contractId || '—', item.description || 'Não informada', formatDate(item.createdAt), formatDate(item.dueAt), money(item.amount), money(item.balance)])} />
-  </div>
-}
-
-function PendingTracking({ row, context }: { row: AccountsReceivableListItem; context?: ClientBillingContext }) {
-  return <ClientHourTracking clientId={row.clientId} clientName={row.clientTradeName || row.clientName || `Cliente #${row.clientId}`} context={context} />
-}
-
-function ReviewTable({ title, empty, headers, rows }: { title: string; empty: string; headers: string[]; rows: Array<Array<string | number>> }) {
-  return <section className="drawer-section bill-detail-table"><h3>{title}</h3>{rows.length === 0 ? <p>{empty}</p> : <div className="table-wrap"><table className="data-table"><thead><tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={`${title}-${index}`}>{row.map((value, cell) => <td key={`${index}-${cell}`}>{value}</td>)}</tr>)}</tbody></table></div>}</section>
 }
 
 function dateOnly(value: string | null | undefined) {

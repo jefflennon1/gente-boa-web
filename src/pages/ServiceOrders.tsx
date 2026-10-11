@@ -11,6 +11,7 @@ import type { AttendanceLocation, AttendanceLocationPayload, Client, ClientSearc
 import { Badge, Button, CollapsibleFilters, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 import { useRouter } from '../router'
 import { focusNextField } from '../lib/enterNavigation'
+import { contractExtraMinuteRate } from '../lib/contracts'
 import { EmployeePicker, SupplierPicker, type PickerValue } from '../components/AsyncPicker'
 
 const stages: ServiceOrderStatus[] = ['ABERTA', 'FINALIZADA', 'CANCELADA']
@@ -908,9 +909,10 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       ? [selectedLocation, ...locations]
       : locations
   }, [attendanceLocationsQuery.data, selectedAttendanceLocationQuery.data])
-  const minimumMinutes = orderOrigin === 'C'
-    ? systemParametersQuery.data?.contractMinimumMinutes ?? 20
-    : systemParametersQuery.data?.oneOffMinimumMinutes ?? 30
+  // Mesmas regras do backend: a OS de contrato desconta o tempo realizado (sem mínimo) das horas do contrato e cobra
+  // só o excedente pelo valor do minuto extra do contrato; a OS avulsa cobra o mínimo por atendimento.
+  const contracted = orderOrigin === 'C'
+  const minimumMinutes = contracted ? 0 : systemParametersQuery.data?.oneOffMinimumMinutes ?? 30
   const actualMinutes = schedules.reduce((sum, item) => sum + (minutesFromTime(item.actualDuration) || durationMinutes(item.actualStart, item.actualEnd)), 0)
   const billableMinutes = schedules.reduce((sum, item) => {
     const realized = minutesFromTime(item.actualDuration) || durationMinutes(item.actualStart, item.actualEnd)
@@ -918,12 +920,15 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   }, 0)
   const selectedOrderPeriod = toDateInput(selected?.dtordem || selected?.scheduledDate)?.slice(0, 7)
   const currentPeriod = requestDate.slice(0, 7)
-  const previouslyAccountedMinutes = selected?.status === 'FINALIZADA'
+  // OS já gravada (aberta ou finalizada) já está somada ao utilizado do mês; descontamos para não contar duas vezes.
+  const previouslyAccountedMinutes = selected && selected.status !== 'CANCELADA'
     && selected.idcontr === activeContract?.id
     && selectedOrderPeriod === currentPeriod
     ? minutesFromTime(selected.qthorac)
     : 0
-  const balanceBeforeThisOrder = (contractBalance?.balanceMinutes ?? 0) + previouslyAccountedMinutes
+  const balanceBeforeThisOrder = contractBalance
+    ? Math.max(0, contractBalance.contractedMinutes - Math.max(0, contractBalance.usedMinutes - previouslyAccountedMinutes))
+    : 0
   const officialMinutesByService = useMemo(() => {
     const totals = new Map<number, number>()
     schedules.forEach((schedule) => {
@@ -940,40 +945,37 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       if (!schedule.serviceId) return
       const realized = minutesFromTime(schedule.actualDuration) || durationMinutes(schedule.actualStart, schedule.actualEnd)
       if (realized <= 0) return
-      const accounted = Math.max(realized, minimumMinutes)
-      const overage = Math.max(0, realized - minimumMinutes)
       const current = totals.get(schedule.serviceId) ?? { regular: 0, extra: 0 }
-      if (orderOrigin === 'C') {
-        const balanceAfterMinimum = Math.max(0, remainingContractMinutes - minimumMinutes)
-        const regular = Math.min(overage, balanceAfterMinimum)
-        totals.set(schedule.serviceId, { regular: current.regular + regular, extra: current.extra + overage - regular })
-        remainingContractMinutes = Math.max(0, remainingContractMinutes - accounted)
+      if (contracted) {
+        totals.set(schedule.serviceId, { regular: current.regular, extra: current.extra + Math.max(0, realized - remainingContractMinutes) })
+        remainingContractMinutes = Math.max(0, remainingContractMinutes - realized)
       } else {
-        totals.set(schedule.serviceId, { regular: current.regular + overage, extra: current.extra })
+        totals.set(schedule.serviceId, { regular: current.regular + Math.max(0, realized - minimumMinutes), extra: current.extra })
       }
     })
     return totals
-  }, [balanceBeforeThisOrder, minimumMinutes, orderOrigin, schedules])
+  }, [balanceBeforeThisOrder, contracted, minimumMinutes, schedules])
   const scheduledServiceIds = useMemo(() => new Set(schedules.map((schedule) => schedule.serviceId).filter((id): id is number => Boolean(id))), [schedules])
   const pricedServiceItems = useMemo(() => serviceItems.map((item) => {
     const serviceMinutes = officialMinutesByService.get(item.serviceId) ?? 0
     const quantity = Math.max(1, numberValue(item.quantity))
     const overage = overageMinutesByService.get(item.serviceId) ?? { regular: 0, extra: 0 }
-    const overageValue = orderOrigin === 'C'
-      ? overage.regular * numberValue(item.minuteValue) + overage.extra * numberValue(item.extraValue ?? item.minuteValue)
-      : overage.regular * numberValue(item.oneOffValue ?? item.minuteValue)
-    const totalValue = serviceMinutes > 0
-      ? numberValue(item.minimumValue) * quantity + overageValue
-      : quantity * numberValue(item.unitValue)
+    const extraValue = contracted ? contractExtraMinuteRate(item.serviceId, activeContract?.services, item.extraValue) : item.extraValue
+    const totalValue = serviceMinutes <= 0
+      ? quantity * numberValue(item.unitValue)
+      : contracted
+        ? overage.extra * numberValue(extraValue)
+        : numberValue(item.minimumValue) * quantity + overage.regular * numberValue(item.oneOffValue ?? item.minuteValue)
     const unitValue = totalValue / quantity
     return {
       ...item,
+      extraValue,
       quantity,
       hours: scheduledServiceIds.has(item.serviceId) ? asDuration(serviceMinutes) : item.hours,
       unitValue: currencyValue(unitValue),
       totalValue: currencyValue(totalValue),
     }
-  }), [officialMinutesByService, orderOrigin, overageMinutesByService, scheduledServiceIds, serviceItems])
+  }), [activeContract?.services, contracted, officialMinutesByService, overageMinutesByService, scheduledServiceIds, serviceItems])
   const serviceSubtotal = pricedServiceItems.reduce((sum, item) => sum + numberValue(item.totalValue), 0)
   const materialGross = materialItems.reduce((sum, item) => sum + numberValue(item.quantity) * numberValue(item.unitValue), 0)
   const materialDiscountValue = materialGross * Math.min(100, numberValue(purchaseDiscount)) / 100
@@ -984,8 +986,9 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   const total = serviceSubtotal + materialAmount + numberValue(ticketFee) + numberValue(transport) + numberValue(rental) - discountAmount
   const totalMinutes = schedules.reduce((sum, item) => sum + (minutesFromTime(item.expectedDuration) || durationMinutes(item.expectedStart, item.expectedEnd)), 0)
   const projectedBalanceMinutes = Math.max(0, balanceBeforeThisOrder - billableMinutes)
-  const operationalRule = orderOrigin === 'C'
-    ? systemParametersQuery.data?.contractRules || `Cada atendimento desconta no mínimo ${minimumMinutes} minutos das horas contratadas.`
+  const contractMinuteRate = contractExtraMinuteRate(serviceItems[0]?.serviceId ?? 0, activeContract?.services)
+  const operationalRule = contracted
+    ? `O tempo realizado é descontado das horas do contrato; o que passar é cobrado a ${money(contractMinuteRate)} por minuto (valor minuto extra do contrato).`
     : systemParametersQuery.data?.oneOffRules || `Cada atendimento é cobrado pelo mínimo de ${minimumMinutes} minutos.`
   const materialOptions = materialsQuery.data?.content ?? []
 
@@ -1284,7 +1287,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   <ModalForm onSubmit={submit} onCancel={onCancel} submitting={submitting} submitLabel={submitting ? 'Gravando...' : selected ? 'Gravar alterações' : 'Gravar OS'}>
     <FormError message={formError} />
     <div className="os-form-context"><span><small>Ordem de serviço</small><strong>{orderOrigin === 'C' ? 'Contrato' : 'Avulsa'}</strong></span><span><small>Operador</small><strong>{user?.name || 'Usuário atual'}</strong></span><span><small>Cliente</small><strong>{clientId ? selectedClientLabel : 'Selecione o cliente'}</strong></span><Badge tone={statusTone[status]}>{enumLabel(status)}</Badge></div>
-    <aside className={`os-accounting-rule os-accounting-rule--${orderOrigin === 'C' ? 'contract' : 'one-off'}`}><Clock3 size={18} /><span><strong>Contabilização mínima: {minimumMinutes} minutos por atendimento</strong><small>{operationalRule}</small></span></aside>
+    <aside className={`os-accounting-rule os-accounting-rule--${orderOrigin === 'C' ? 'contract' : 'one-off'}`}><Clock3 size={18} /><span><strong>{contracted ? 'Contrato: desconta o tempo realizado, sem mínimo' : `Contabilização mínima: ${minimumMinutes} minutos por atendimento`}</strong><small>{operationalRule}</small></span></aside>
     <div className="os-form-identification">
       <FormField label="Código"><input value={selected?.id ?? 'Automático'} disabled /></FormField>
       <FormField label="Tipo"><select value={orderOrigin} onChange={(event) => setOrderOrigin(event.target.value as ServiceOrderOrigin)}><option value="A">Avulsa</option><option value="C">Contrato</option><option value="E">Experiência</option>{orderOrigin === 'O' && <option value="O">Obras (legado)</option>}</select></FormField>

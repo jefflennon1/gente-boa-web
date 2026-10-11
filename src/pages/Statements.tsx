@@ -1,20 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, ExternalLink, Eye, FileBarChart, FileSpreadsheet, FileText, Landmark, Mail, Printer, ReceiptText, Search, Send, Timer, Upload, Users, WalletCards } from 'lucide-react'
+import { CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, ExternalLink, Eye, FileBarChart, FileSpreadsheet, FileText, Landmark, Mail, Printer, ReceiptText, Search, Send, Timer, Upload, Users, WalletCards } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
-import { enumLabel, formatDate, money } from '../lib/format'
-import type { BillDetail, BillListItem, ClientBillingContext, ClientStatementDetail, ClientStatementSummary } from '../types'
+import { formatDate, money } from '../lib/format'
+import type { BillDetail, BillListItem, ClientStatementSummary } from '../types'
 import { Badge, Button, CollapsibleFilters, ConfirmDialog, DetailModal, EmptyState, ErrorState, LoadingState, Modal, PageHeader, StatCard, Toast } from '../components/ui'
 import { financeApi } from '../api/finance'
 import { modulesApi, modulesKeys, openPdf, summaryNumber } from '../api/modules'
 import { MultipleSettlementDialog } from '../components/FinanceDialogs'
 import { AccountsReceivableReview } from '../components/AccountsReceivableReview'
-import { ClientHourTracking } from '../components/ClientHourTracking'
 import { dateText, downloadCsv, printElement } from '../lib/export'
 import { BillStatementModal } from '../components/BillStatementModal'
 import { BillStatementsTab } from '../components/BillStatementsTab'
+import { BillDetails, ClientStatementDetails, formatMinutes } from '../components/BillingDetails'
+import { ClientWorkspaceModal } from '../components/ClientWorkspaceModal'
 import { useRouter } from '../router'
 import type { BillStatementSource } from '../api/modules'
 
@@ -31,7 +32,7 @@ export function Statements() {
   const [billContract, setBillContract] = useState('')
   const [page, setPage] = useState(0)
   const [detailId, setDetailId] = useState<number | null>(null)
-  const [relatedModal, setRelatedModal] = useState<'receivables' | 'tracking' | null>(null)
+  const [workspaceClient, setWorkspaceClient] = useState<{ id: number | null; label: string } | null>(null)
   const [settleTarget, setSettleTarget] = useState<BillDetail | null>(null)
   const [selectedBills, setSelectedBills] = useState<Record<number, BillListItem>>({})
   const [batchSettleOpen, setBatchSettleOpen] = useState(false)
@@ -92,11 +93,6 @@ export function Statements() {
     onError: (error) => setSettleError(apiErrorMessage(error, 'Não foi possível registrar o pagamento do boleto.')),
   })
   const detailQuery = useQuery({ queryKey: [...queryKeys.bills, 'detail', detailId], queryFn: () => api.bills.find(detailId!), enabled: detailId !== null })
-  const clientContextQuery = useQuery({
-    queryKey: [...queryKeys.bills, 'client-context', detailQuery.data?.clientId],
-    queryFn: () => api.bills.clientContext(detailQuery.data!.clientId!),
-    enabled: detailQuery.data?.clientId != null && relatedModal !== null,
-  })
   const pdfMutation = useMutation({
     mutationFn: async (bill: Pick<BillListItem, 'id' | 'number'>) => ({ bill, blob: await api.bills.pdf(bill.id) }),
     onSuccess: ({ bill, blob }) => {
@@ -141,6 +137,16 @@ export function Statements() {
 
   function isPaid(bill: Pick<BillListItem, 'id' | 'paid'>) {
     return bill.paid
+  }
+
+  function openClientWorkspace(bill: BillListItem) {
+    setDetailId(bill.id)
+    setWorkspaceClient({ id: bill.clientId, label: bill.clientTradeName || bill.clientName || `Cliente #${bill.clientId}` })
+  }
+
+  function closeClientWorkspace() {
+    setWorkspaceClient(null)
+    setDetailId(null)
   }
 
   function openBillStatement(billId: number) {
@@ -217,7 +223,7 @@ export function Statements() {
         <div className="billing-search-row billing-search-row--actions"><Button variant="ghost" onClick={() => { setBillOrderStart(''); setBillOrderEnd(''); setBillDueStart(initialBillPeriod.startDate); setBillDueEnd(initialBillPeriod.endDate); setOpenUntil(''); setBillDueDay(''); setBillingType('ALL'); setPaymentStatus('ALL'); setSearch(''); setBillCpf(''); setBillCnpj(''); setBillNumber(''); setBillServiceOrder(''); setBillContract(''); setPage(0); setSelectedBills({}) }}>Limpar filtros</Button></div>
         <div className="receivable-actions"><span><strong>{selectedBillRows.length}</strong> boleto(s) selecionado(s)</span><Button disabled={!selectedBillRows.length} icon={<CheckCircle2 size={16} />} onClick={() => { setSettleError(''); setBatchSettleOpen(true) }}>Registrar pagamento em lote</Button></div>
       </CollapsibleFilters>
-      {billsQuery.isLoading ? <LoadingState label="Carregando boletos..." /> : billsQuery.isError ? <ErrorState message={apiErrorMessage(billsQuery.error)} onRetry={() => billsQuery.refetch()} /> : bills.length === 0 ? <EmptyState title="Nenhum boleto encontrado" description="Os boletos serão gerados quando uma ordem de serviço for finalizada." /> : <div className="table-wrap"><table className="data-table bill-table"><thead><tr><th><input type="checkbox" aria-label="Selecionar boletos em aberto desta página" checked={bills.some((bill) => !isPaid(bill)) && bills.filter((bill) => !isPaid(bill)).every((bill) => selectedBills[bill.id])} onChange={() => { const open = bills.filter((bill) => !isPaid(bill)); const all = open.every((bill) => selectedBills[bill.id]); setSelectedBills((current) => { const next = { ...current }; open.forEach((bill) => { if (all) delete next[bill.id]; else next[bill.id] = bill }); return next }) }} /></th><th>Boleto</th><th>OS</th><th>Cliente</th><th>Contrato</th><th>Data cadastro</th><th>Processamento</th><th>Vencimento</th><th>Valor</th><th>Enviado e-mail</th><th>Pagamento</th><th>Extrato</th><th>Demonstrativo</th><th /></tr></thead><tbody>{bills.map((bill) => <tr key={bill.id} onClick={() => setDetailId(bill.id)}>
+      {billsQuery.isLoading ? <LoadingState label="Carregando boletos..." /> : billsQuery.isError ? <ErrorState message={apiErrorMessage(billsQuery.error)} onRetry={() => billsQuery.refetch()} /> : bills.length === 0 ? <EmptyState title="Nenhum boleto encontrado" description="Os boletos serão gerados quando uma ordem de serviço for finalizada." /> : <div className="table-wrap"><table className="data-table bill-table"><thead><tr><th><input type="checkbox" aria-label="Selecionar boletos em aberto desta página" checked={bills.some((bill) => !isPaid(bill)) && bills.filter((bill) => !isPaid(bill)).every((bill) => selectedBills[bill.id])} onChange={() => { const open = bills.filter((bill) => !isPaid(bill)); const all = open.every((bill) => selectedBills[bill.id]); setSelectedBills((current) => { const next = { ...current }; open.forEach((bill) => { if (all) delete next[bill.id]; else next[bill.id] = bill }); return next }) }} /></th><th>Boleto</th><th>OS</th><th>Cliente</th><th>Contrato</th><th>Data cadastro</th><th>Processamento</th><th>Vencimento</th><th>Valor</th><th>Enviado e-mail</th><th>Pagamento</th><th>Extrato</th><th>Demonstrativo</th><th /></tr></thead><tbody>{bills.map((bill) => <tr key={bill.id} onClick={() => openClientWorkspace(bill)}>
         <td><input type="checkbox" disabled={isPaid(bill)} checked={Boolean(selectedBills[bill.id])} onClick={(event) => event.stopPropagation()} onChange={() => setSelectedBills((current) => { const next = { ...current }; if (next[bill.id]) delete next[bill.id]; else next[bill.id] = bill; return next })} aria-label={`Selecionar boleto ${bill.number || bill.id}`} /></td>
         <td><strong>#{bill.number || bill.id}</strong><small className="table-secondary">Registro {bill.id}</small></td>
         <td><strong>{bill.serviceOrderId || 'CR'}</strong></td>
@@ -234,16 +240,21 @@ export function Statements() {
     </section>
     </> : <BillPrintingTab showToast={showToast} />}
 
-    <DetailModal open={detailId !== null && relatedModal === null} onClose={() => { setDetailId(null); setRelatedModal(null) }} title={detail ? `Boleto #${detail.number || detail.id}` : 'Detalhes do boleto'} description="Cliente e dados completos da cobrança selecionada." size="xlarge" actions={detail ? <><Button variant="secondary" icon={<ReceiptText size={16} />} onClick={() => setRelatedModal('receivables')}>Contas a receber</Button><Button variant="secondary" icon={<Timer size={16} />} onClick={() => setRelatedModal('tracking')}>Acompanhamento de horas</Button>{!isPaid(detail) && <Button variant="secondary" icon={<CheckCircle2 size={16} />} onClick={() => { setSettleError(''); setSettleTarget(detail) }}>Registrar pagamento</Button>}<Button variant="secondary" icon={<FileBarChart size={16} />} onClick={() => openBillStatement(detail.id)}>Extrato do boleto</Button><label className="button button--secondary"><Upload size={16} />{uploadMutation.isPending ? 'Anexando...' : detail.bankDocumentAvailable ? 'Substituir boleto bancário' : 'Anexar boleto bancário'}<input hidden type="file" accept="application/pdf,.pdf" disabled={uploadMutation.isPending} onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadMutation.mutate({ id: detail.id, file }); event.currentTarget.value = '' }} /></label><Button variant="secondary" icon={<Mail size={16} />} disabled={emailMutation.isPending} onClick={() => { setEmailError(''); setEmailTarget(detail) }}>{detail.emailSent ? 'Reenviar e-mail' : 'Enviar por e-mail'}</Button><Button icon={<Eye size={16} />} disabled={pdfMutation.isPending} onClick={() => previewBillPdf(detail)}>{pdfMutation.isPending ? 'Gerando PDF...' : 'Visualizar demonstrativo'}</Button></> : undefined}>
-      {detailQuery.isLoading ? <LoadingState label="Carregando boleto..." /> : detailQuery.isError ? <ErrorState message={apiErrorMessage(detailQuery.error)} onRetry={() => detailQuery.refetch()} /> : detail ? <BillDetails bill={detail} paid={isPaid(detail)} /> : null}
-    </DetailModal>
+    <ClientWorkspaceModal
+      key={workspaceClient?.id ?? 'sem-cliente'}
+      open={workspaceClient !== null}
+      clientId={workspaceClient?.id ?? null}
+      clientLabel={workspaceClient?.label}
+      bill={detailId !== null ? {
+        title: detail ? `Boleto #${detail.number || detail.id}` : 'Boleto selecionado',
+        content: detailQuery.isLoading ? <LoadingState label="Carregando boleto..." /> : detailQuery.isError ? <ErrorState message={apiErrorMessage(detailQuery.error)} onRetry={() => detailQuery.refetch()} /> : detail ? <BillDetails bill={detail} paid={isPaid(detail)} /> : null,
+        actions: detail ? <>{!isPaid(detail) && <Button variant="secondary" icon={<CheckCircle2 size={16} />} onClick={() => { setSettleError(''); setSettleTarget(detail) }}>Registrar pagamento</Button>}<Button variant="secondary" icon={<FileBarChart size={16} />} onClick={() => openBillStatement(detail.id)}>Extrato do boleto</Button><label className="button button--secondary"><Upload size={16} />{uploadMutation.isPending ? 'Anexando...' : detail.bankDocumentAvailable ? 'Substituir boleto bancário' : 'Anexar boleto bancário'}<input hidden type="file" accept="application/pdf,.pdf" disabled={uploadMutation.isPending} onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadMutation.mutate({ id: detail.id, file }); event.currentTarget.value = '' }} /></label><Button variant="secondary" icon={<Mail size={16} />} disabled={emailMutation.isPending} onClick={() => { setEmailError(''); setEmailTarget(detail) }}>{detail.emailSent ? 'Reenviar e-mail' : 'Enviar por e-mail'}</Button><Button icon={<Eye size={16} />} disabled={pdfMutation.isPending} onClick={() => previewBillPdf(detail)}>{pdfMutation.isPending ? 'Gerando PDF...' : 'Visualizar demonstrativo'}</Button></> : undefined,
+      } : null}
+      onSelectBill={setDetailId}
+      onOpenStatement={setStatementSource}
+      onClose={closeClientWorkspace}
+    />
     <MultipleSettlementDialog key={settleTarget ? `settle-${settleTarget.id}` : batchSettleOpen ? `settle-batch-${selectedBillRows.map((bill) => bill.id).join('-')}` : 'settle-closed'} open={settleTarget !== null || batchSettleOpen} title={settleTarget ? `Pagamento do boleto #${settleTarget.number || settleTarget.id}` : `Pagamento em lote de ${selectedBillRows.length} boleto(s)`} count={settleTarget?.receivables?.length || selectedBillRows.length} total={settleTarget?.amount ?? selectedBillRows.reduce((sum, bill) => sum + Number(bill.amount || 0), 0)} movementAccounts={movementAccountsQuery.data} busy={settleMutation.isPending} error={settleError} defaultMethod="BILL" onClose={() => { setSettleTarget(null); setBatchSettleOpen(false) }} onSubmit={(payload) => settleMutation.mutate({ billIds: settleTarget ? [settleTarget.id] : selectedBillRows.map((bill) => bill.id), paidAt: payload.paidAt, movementAccountId: payload.movementAccountId, paymentMethod: payload.paymentMethod })} />
-    <DetailModal open={relatedModal === 'receivables' && Boolean(detail)} onClose={() => setRelatedModal(null)} title={detail ? `Contas a receber · ${detail.clientTradeName || detail.clientName || `Cliente #${detail.clientId}`}` : 'Contas a receber'} description="Todos os títulos ainda não pagos deste cliente." size="xlarge" actions={<Button variant="secondary" onClick={() => setRelatedModal(null)}>Voltar ao boleto</Button>}>
-      {clientContextQuery.isLoading ? <LoadingState label="Carregando contas do cliente..." /> : clientContextQuery.isError ? <ErrorState message={apiErrorMessage(clientContextQuery.error)} onRetry={() => clientContextQuery.refetch()} /> : detail ? <BillReceivables bill={detail} context={clientContextQuery.data} /> : null}
-    </DetailModal>
-    <DetailModal open={relatedModal === 'tracking' && Boolean(detail)} onClose={() => setRelatedModal(null)} title={detail ? `Acompanhamento de horas · ${detail.clientTradeName || detail.clientName || `Cliente #${detail.clientId}`}` : 'Acompanhamento de horas'} description="Histórico completo de acompanhamento de horas deste cliente." size="xlarge" actions={<Button variant="secondary" onClick={() => setRelatedModal(null)}>Voltar ao boleto</Button>}>
-      {clientContextQuery.isLoading ? <LoadingState label="Carregando acompanhamento do cliente..." /> : clientContextQuery.isError ? <ErrorState message={apiErrorMessage(clientContextQuery.error)} onRetry={() => clientContextQuery.refetch()} /> : detail ? <BillTracking bill={detail} context={clientContextQuery.data} /> : null}
-    </DetailModal>
     <Modal open={billPdfPreview !== null} onClose={closeBillPdfPreview} title={billPdfPreview ? `Demonstrativo #${billPdfPreview.bill.number || billPdfPreview.bill.id}` : 'Demonstrativo'} description="Este documento não é o boleto bancário; ele detalha a cobrança." size="xlarge">
       <div className="modal__body contract-document-modal__body">
         {billPdfPreview && <iframe id="bill-pdf-preview" className="contract-document-frame" src={billPdfPreview.url} title={`Visualização do boleto ${billPdfPreview.bill.number || billPdfPreview.bill.id}`} />}
@@ -461,37 +472,6 @@ export function ClientStatementsTab({ showToast }: { showToast: (message: string
   </>
 }
 
-function ClientStatementDetails({ statement }: { statement: ClientStatementDetail }) {
-  const locations = statement.attendanceLocations ?? []
-  const services = statement.orders.flatMap((order) => order.services.map((item) => [
-    `${order.serviceOrderId || '—'}`, item.description || `Serviço #${item.serviceId}`, item.quantity || 0,
-    item.hours || '00:00', money(item.totalAmount),
-  ]))
-  return <div className="detail-modal-content client-statement-detail">
-    <section className="statement-location-section">
-      <div className="statement-location-section__heading"><div><span>Rateio por local de atendimento</span><strong>{locations.length} {locations.length === 1 ? 'local rastreado' : 'locais rastreados'}</strong></div><Badge tone="blue">{formatMinutes(statement.usedMinutes)} utilizados</Badge></div>
-      {locations.length === 0 ? <p className="muted">Nenhum local foi vinculado aos atendimentos deste período.</p> : <div className="statement-location-list">{locations.map((location, index) => {
-        const address = [location.address, location.complement, location.district, location.city, location.zipCode].filter(Boolean).join(' - ')
-        return <article className="statement-location-card" key={location.locationId ?? `legacy-${index}`}>
-          <header><div><small>{location.locationId ? `Local #${location.locationId}` : 'Registro legado'}</small><h3>{location.description || 'Local sem descricao'}</h3></div><strong>{money(location.totalAmount)}</strong></header>
-          <p>{address || 'Endereco nao informado'}</p>
-          <div className="statement-location-card__metrics"><span><small>Tempo</small><strong>{formatMinutes(location.usedMinutes)}</strong></span><span><small>Rateio</small><strong>{Number(location.allocationPercentage || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%</strong></span><span><small>OS</small><strong>{location.serviceOrderCount}</strong></span><span><small>Servicos</small><strong>{money(location.serviceAmount)}</strong></span></div>
-          <footer><span>{location.contactName || 'Contato nao informado'}{location.contactPhone ? ` - ${location.contactPhone}` : ''}</span><span>{location.contractId ? `Contrato #${location.contractId}` : 'Sem contrato no local'}</span><span>{location.serviceOrderIds.map((id) => `${id}`).join(', ')}</span></footer>
-          {location.referencePoint && <p className="statement-location-card__reference">Referencia: {location.referencePoint}</p>}
-        </article>
-      })}</div>}
-    </section>
-    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><FileBarChart /></span><div><span>Extrato de {formatDate(statement.periodStart)} a {formatDate(statement.periodEnd)}</span><h2>{statement.clientTradeName || statement.clientName || `Cliente #${statement.clientId}`}</h2><p>{statement.clientDocument || 'CPF/CNPJ não informado'} · {statement.contractId ? `Contrato #${statement.contractId}` : 'Cliente avulso'}</p></div></div><Badge tone="blue">{statement.serviceOrderCount} atendimento(s)</Badge></div>
-    <div className="client-statement-balance-grid"><Value label="Horas contratadas" valueText={formatMinutes(statement.contractedMinutes)} /><Value label="Horas utilizadas" valueText={formatMinutes(statement.usedMinutes)} /><Value label="Saldo disponível" valueText={formatMinutes(statement.availableMinutes)} /><Value label="Horas excedentes" valueText={formatMinutes(statement.extraMinutes)} /></div>
-    <div className="detail-sections-grid">
-      <section className="drawer-section"><h3>Cliente</h3><dl><div><dt>Código</dt><dd>{statement.clientId}</dd></div><div><dt>Razão social</dt><dd>{statement.clientName || 'Não informada'}</dd></div><div><dt>Nome fantasia</dt><dd>{statement.clientTradeName || 'Não informado'}</dd></div><div><dt>CPF / CNPJ</dt><dd>{statement.clientDocument || 'Não informado'}</dd></div><div><dt>Telefone</dt><dd>{statement.clientPhone || 'Não informado'}</dd></div><div><dt>E-mail</dt><dd>{statement.clientEmail || 'Não informado'}</dd></div><div className="drawer-section__wide"><dt>Endereço</dt><dd>{statement.clientAddress || 'Não informado'}</dd></div></dl></section>
-      <section className="drawer-section bill-composition"><h3>Resumo financeiro</h3><div className="bill-composition__grid"><Value label="Serviços" value={statement.serviceAmount} /><Value label="Taxas e adicionais" value={statement.additionalAmount} /><Value label="Descontos" value={-statement.discountAmount} /><Value label="Total no período (sem materiais)" value={statement.totalAmount} total /></div></section>
-    </div>
-    <DetailTable title="Ordens de serviço do período" empty="Nenhuma ordem de serviço encontrada." headers={['OS', 'Data', 'Descrição', 'Tempo', 'Serviços', 'Total sem materiais']} rows={statement.orders.map((order) => [`${order.serviceOrderId || '—'}`, formatDate(order.serviceOrderDate), order.serviceOrderDescription || 'Não informada', order.actualHours || '00:00', money(order.serviceAmount), money(Number(order.amount || 0) - Number(order.materialAmount || 0))])} />
-    <DetailTable title="Serviços realizados" empty="Nenhum serviço registrado." headers={['OS', 'Serviço', 'Qtd.', 'Tempo', 'Total']} rows={services} />
-  </div>
-}
-
 function previousMonthPeriod() {
   const today = new Date()
   const start = new Date(today.getFullYear(), today.getMonth() - 1, 1)
@@ -514,48 +494,3 @@ function localDate(date: Date) {
   return `${year}-${month}-${day}`
 }
 
-function formatMinutes(minutes: number) {
-  const safe = Math.max(0, Math.round(Number(minutes || 0)))
-  return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`
-}
-
-function BillDetails({ bill, paid }: { bill: BillDetail; paid: boolean }) {
-  const receivableOrders = [...new Set((bill.receivables || []).map((item) => item.serviceOrderId).filter((id): id is number => Boolean(id)))]
-  const receivableContracts = [...new Set((bill.receivables || []).map((item) => item.contractId).filter((id): id is number => Boolean(id)))]
-  return <div className="detail-modal-content bill-detail">
-    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><ReceiptText /></span><div><span>Boleto #{bill.number || bill.id}{bill.serviceOrderId ? ` · ${bill.serviceOrderId}` : ' · Contas a receber'}</span><h2>{bill.clientTradeName || bill.clientName || `Cliente #${bill.clientId}`}</h2><p>Vencimento em {formatDate(bill.dueAt)}</p></div></div><Badge tone={paid ? 'green' : 'orange'}>{paid ? 'Pago' : 'Pendente'}</Badge></div>
-    <div className="detail-metrics bill-detail__metrics"><span><small>Valor total</small><strong>{money(bill.amount)}</strong></span><span><small>Serviços</small><strong>{money(bill.serviceAmount)}</strong></span><span><small>Materiais</small><strong>{money(bill.materialAmount)}</strong></span><span><small>Tempo realizado</small><strong>{bill.actualHours || '00:00'}</strong></span></div>
-    <div className="detail-sections-grid">
-      <section className="drawer-section"><h3>Cliente</h3><dl><div><dt>Código</dt><dd>{bill.clientId || '—'}</dd></div><div><dt>Razão social</dt><dd>{bill.clientName || 'Não informada'}</dd></div><div><dt>Nome fantasia</dt><dd>{bill.clientTradeName || 'Não informado'}</dd></div><div><dt>CPF / CNPJ</dt><dd>{bill.clientDocument || 'Não informado'}</dd></div><div><dt>Telefone</dt><dd>{bill.clientPhone || 'Não informado'}</dd></div><div><dt>E-mail</dt><dd>{bill.clientEmail || 'Não informado'}</dd></div><div className="drawer-section__wide"><dt>Endereço</dt><dd>{bill.clientAddress || 'Não informado'}</dd></div></dl></section>
-      <section className="drawer-section"><h3>Origem da cobrança</h3><dl><div><dt>OS</dt><dd>{bill.serviceOrderId ? `${bill.serviceOrderId}` : receivableOrders.length ? receivableOrders.map((id) => `${id}`).join(', ') : 'Sem OS vinculada'}</dd></div><div><dt>Contrato</dt><dd>{bill.contractId ? `#${bill.contractId}` : receivableContracts.length ? receivableContracts.map((id) => `#${id}`).join(', ') : bill.serviceOrderId ? 'Atendimento avulso' : 'Lançamentos avulsos'}</dd></div><div><dt>Data</dt><dd>{formatDate(bill.serviceOrderDate || bill.processedAt)}</dd></div><div><dt>Origem</dt><dd>{bill.serviceOrderOrigin ? enumLabel(bill.serviceOrderOrigin) : 'Contas a receber'}</dd></div><div><dt>Categoria</dt><dd>{enumLabel(bill.serviceOrderCategory)}</dd></div><div><dt>Tempo cobrado</dt><dd>{bill.billableHours || '00:00'}</dd></div><div className="drawer-section__wide"><dt>Descrição</dt><dd>{bill.serviceOrderDescription || 'Boleto agrupado a partir das contas a receber selecionadas.'}</dd></div></dl></section>
-    </div>
-    <section className="drawer-section bill-composition"><h3>Composição da cobrança</h3><div className="bill-composition__grid"><Value label="Serviços e minutos extras" value={bill.serviceAmount} /><Value label="Materiais" value={bill.materialAmount} /><Value label="Taxa do boleto" value={bill.billFeeAmount} /><Value label="Transporte" value={bill.transportAmount} /><Value label="Aluguel" value={bill.rentalAmount} /><Value label="Outros" value={bill.otherAmount} /><Value label="Desconto" value={-bill.discountAmount} /><Value label="Total" value={bill.amount} total /></div></section>
-    <DetailTable title="Serviços cobrados" empty="Nenhum serviço vinculado." headers={['Código', 'Descrição', 'Qtd.', 'Tempo', 'Valor mínimo', 'Minuto', 'Extra', 'Avulso', 'Total']} rows={bill.services.map((item) => [item.serviceId, item.description || 'Não informado', item.quantity || 0, item.hours || '00:00', money(item.minimumAmount), money(item.minuteAmount), money(item.extraMinuteAmount), money(item.oneOffMinuteAmount), money(item.totalAmount)])} />
-    <DetailTable title="Materiais utilizados" empty="Nenhum material cobrado." headers={['Código', 'Material', 'Unidade', 'Marca', 'Qtd.', 'Unitário', 'Total']} rows={bill.materials.map((item) => [item.materialId, item.description || 'Não informado', item.unit || '—', item.brand || '—', item.quantity || 0, money(item.unitAmount), money(item.totalAmount)])} />
-    {bill.serviceOrderNotes && <section className="drawer-section"><h3>Observações</h3><p>{bill.serviceOrderNotes}</p></section>}
-    <div className="bill-detail__dates"><span><CalendarDays size={15} /> Processado em {formatDate(bill.processedAt, true)}</span><span><FileText size={15} /> Vencimento em {formatDate(bill.dueAt)}</span><span><Upload size={15} /> Boleto bancário: {bill.bankDocumentAvailable ? `${bill.bankDocumentName || 'PDF anexado'} em ${formatDate(bill.bankDocumentUploadedAt, true)}` : 'não anexado; envio automático suspenso'}</span><span><Mail size={15} /> E-mail: {bill.emailSentAt ? `enviado em ${formatDate(bill.emailSentAt, true)}` : 'ainda não enviado'}</span></div>
-  </div>
-}
-
-function BillReceivables({ bill, context }: { bill: BillDetail; context?: ClientBillingContext }) {
-  const receivables = context?.openReceivables || []
-  const total = receivables.reduce((sum, item) => sum + Number(item.amount || 0), 0)
-  const balance = receivables.reduce((sum, item) => sum + Number(item.balance || 0), 0)
-  return <div className="detail-modal-content bill-related-detail">
-    <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><ReceiptText /></span><div><span>Cliente #{bill.clientId || '—'}</span><h2>{bill.clientTradeName || bill.clientName || 'Cliente não identificado'}</h2><p>{bill.clientDocument || 'CPF/CNPJ não informado'} · histórico financeiro em aberto</p></div></div><Badge tone={balance > 0 ? 'orange' : 'green'}>{balance > 0 ? 'Em aberto' : 'Quitado'}</Badge></div>
-    <div className="detail-metrics bill-detail__metrics"><span><small>Títulos vinculados</small><strong>{receivables.length}</strong></span><span><small>Valor lançado</small><strong>{money(total)}</strong></span><span><small>Saldo em aberto</small><strong>{money(balance)}</strong></span><span><small>Valor do boleto</small><strong>{money(bill.amount)}</strong></span></div>
-    <DetailTable title="Contas a receber em aberto do cliente" empty="Este cliente não possui contas a receber em aberto." headers={['CR', 'OS', 'Contrato', 'Descrição', 'Cadastro', 'Vencimento', 'Valor', 'Saldo', 'Status']} rows={receivables.map((item) => [item.id, item.serviceOrderId || '—', item.contractId || '—', item.description || 'Não informada', formatDate(item.createdAt), formatDate(item.dueAt), money(item.amount), money(item.balance), 'Em aberto'])} />
-  </div>
-}
-
-function BillTracking({ bill, context }: { bill: BillDetail; context?: ClientBillingContext }) {
-  return <ClientHourTracking clientId={bill.clientId} clientName={bill.clientTradeName || bill.clientName || `Cliente #${bill.clientId}`} context={context} />
-}
-
-function Value({ label, value = 0, valueText, total = false }: { label: string; value?: number; valueText?: string; total?: boolean }) {
-  return <span className={total ? 'bill-composition__total' : ''}><small>{label}</small><strong>{valueText ?? money(value)}</strong></span>
-}
-
-function DetailTable({ title, empty, headers, rows }: { title: string; empty: string; headers: string[]; rows: Array<Array<string | number>> }) {
-  return <section className="drawer-section bill-detail-table"><h3>{title}</h3>{rows.length === 0 ? <p>{empty}</p> : <div className="table-wrap"><table className="data-table"><thead><tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={`${title}-${index}`}>{row.map((value, cell) => <td key={`${index}-${cell}`}>{value}</td>)}</tr>)}</tbody></table></div>}</section>
-}

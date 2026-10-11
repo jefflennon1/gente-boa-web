@@ -1202,3 +1202,48 @@ h1, h2, h3, p { margin-top: 0; }
   .os-attendance-sheet__body { grid-template-columns: 1fr; }
   .os-attendance-sheet__side { order: -1; }
 }
+
+/* ===== Modal "Dados do cliente" (Boletos): menu lateral com tudo o que está vinculado ao cliente ===== */
+.client-workspace { min-height: min(62vh, 640px); display: grid; grid-template-columns: 200px minmax(0, 1fr); align-items: start; gap: 18px; }
+.client-workspace__menu { position: sticky; top: 0; padding: 7px; display: grid; gap: 3px; border: 1px solid var(--line); border-radius: 12px; background: #f7f8fc; }
+.client-workspace__menu button { min-height: 38px; padding: 8px 10px; display: flex; align-items: center; gap: 9px; border: 0; border-radius: 8px; color: #51566f; background: transparent; font-size: 10px; font-weight: 650; text-align: left; cursor: pointer; transition: background .14s ease, color .14s ease; }
+.client-workspace__menu button svg { flex: 0 0 auto; color: #8d90a2; }
+.client-workspace__menu button:hover { color: var(--navy); background: white; }
+.client-workspace__menu button.active { color: var(--brand); background: white; box-shadow: 0 2px 8px rgba(28,35,64,.08); }
+.client-workspace__menu button.active svg { color: var(--brand); }
+.client-workspace__content { min-width: 0; }
+.client-workspace__section { display: grid; gap: 14px; }
+.client-workspace__heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; }
+.client-workspace__heading h3 { margin: 0; color: var(--navy); font-size: 13px; }
+.client-workspace__heading p { margin: 3px 0 0; color: var(--muted); font-size: 9.5px; }
+.client-workspace__heading .drawer-section__action { width: auto; margin: 0; padding: 0 12px; }
+.client-workspace__section > .detail-metrics { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.client-workspace__section > .detail-metrics span:last-child { border-right: 0; }
+.client-workspace__section .bill-detail-table { margin: 0; }
+.client-workspace__cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.client-workspace__cards article { padding: 12px 14px; display: grid; gap: 8px; border: 1px solid var(--line); border-radius: 11px; background: white; }
+.client-workspace__cards header strong { display: block; color: var(--navy); font-size: 11px; }
+.client-workspace__cards header small { color: var(--muted); font-size: 8.5px; }
+.client-workspace__cards p { margin: 0; color: #51566f; font-size: 10px; line-height: 1.5; }
+.client-workspace__cards dl { margin: 0; display: grid; gap: 6px; }
+.client-workspace__cards dt { color: #8d90a2; font-size: 7.5px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; }
+.client-workspace__cards dd { margin: 2px 0 0; color: #2f3452; font-size: 10px; }
+.client-workspace__contract-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+.client-workspace__contract-picker button { min-width: 150px; padding: 9px 12px; display: grid; justify-items: start; gap: 3px; border: 1px solid var(--line); border-radius: 10px; color: #51566f; background: white; text-align: left; cursor: pointer; }
+.client-workspace__contract-picker button strong { color: var(--navy); font-size: 10.5px; }
+.client-workspace__contract-picker button small { color: var(--muted); font-size: 8.5px; }
+.client-workspace__contract-picker button.active { border-color: var(--brand); box-shadow: 0 0 0 3px rgb(61 94 195 / 12%); }
+.client-workspace .client-workspace__contract-hours { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.client-workspace .client-workspace__contract-hours span:last-child { border-right: 0; }
+.client-workspace__negative { color: var(--red) !important; }
+.client-workspace__pending-line { display: block; color: #51566f; font-size: 9.5px; line-height: 1.6; }
+.client-workspace__pending-bills td:first-child .badge { margin-top: 4px; }
+.client-workspace__period { display: flex; flex-wrap: wrap; gap: 10px; }
+.client-workspace__period label { display: grid; gap: 4px; }
+.client-workspace__period span { color: var(--muted); font-size: 9px; font-weight: 700; }
+.client-workspace__period input { height: 36px; padding: 0 10px; border: 1px solid #dfe1e8; border-radius: 8px; color: var(--ink); font: inherit; font-size: 10px; }
+
+@media (max-width: 740px) {
+  .client-workspace { grid-template-columns: 1fr; }
+  .client-workspace__menu { position: static; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+}

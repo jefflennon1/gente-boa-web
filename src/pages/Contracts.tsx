@@ -8,6 +8,8 @@ import { useRouter } from '../router'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money, toDateInput, toDateTimeInput } from '../lib/format'
 import type { ClientSearchOption, Contract, ContractListSortBy, ContractPayload, ContractServiceItem, ContractServicePayload, SortDirection } from '../types'
+import { RenewalHistorySection } from '../components/ContractRenewalHistory'
+import { contractMinuteValue } from '../lib/contracts'
 import { Badge, Button, CollapsibleFilters, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 type StatusFilter = 'TODOS' | 'ATIVO' | 'CANCELADO'
@@ -52,7 +54,7 @@ function serviceRowFrom(item: ContractServiceItem): ServiceRow {
     unit: item.unit,
     quantity: Number(item.quantity ?? 1),
     unitValue: Number(item.unitValue ?? 0),
-    extraMinuteValue: Number(item.extraMinuteValue ?? 0),
+    extraMinuteValue: contractMinuteValue(item),
     bonusQuantity: Number(item.bonusQuantity ?? 0),
   }
 }
@@ -482,7 +484,9 @@ export function Contracts() {
       serviceId: row.serviceId as number,
       quantity: Number(row.quantity),
       unitValue: Number(row.unitValue),
-      extraMinuteValue: Number(row.extraMinuteValue) || 0,
+      // O mesmo valor vai para os dois campos da API, para o PDF, a OS e o reajuste usarem o valor informado.
+      extraValue: Number(row.extraMinuteValue) || 0,
+      legacyMinuteValue: Number(row.extraMinuteValue) || 0,
       bonusQuantity: Number(row.bonusQuantity) || 0,
     }))
 
@@ -724,13 +728,4 @@ function nextRenewal(contractDate: string | undefined, month: number) {
   const sameYearIsAfter = contractMonth < target || (contractMonth === target && day < 1)
   const renewalYear = sameYearIsAfter ? year : year + 1
   return `${renewalYear}-${String(target).padStart(2, '0')}-01`
-}
-
-function RenewalHistorySection({ contractId }: { contractId: number }) {
-  const historyQuery = useQuery({ queryKey: [...modulesKeys.readjustment, 'history', 'contract', contractId], queryFn: () => modulesApi.readjustment.history({ contractId }) })
-  const rows = historyQuery.data ?? []
-  return <section className="drawer-section drawer-section--wide"><h3>Histórico de contratos renovados</h3>
-    {historyQuery.isLoading ? <p className="drawer-section__text">Carregando...</p> : rows.length === 0 ? <p className="drawer-section__text">Nenhum reajuste registrado.</p> : <div className="table-wrap"><table className="data-table"><thead><tr><th>Alterado em</th><th>Renovação</th><th className="num">Total anterior</th><th className="num">Total atualizado</th><th className="num">Minuto anterior</th><th className="num">Minuto atualizado</th><th className="num">%</th></tr></thead>
-      <tbody>{rows.map((row) => <tr key={row.id}><td>{formatDate(row.changedAt)}</td><td>{formatDate(row.renewalDate)}</td><td className="num">{money(row.previousTotal)}</td><td className="num">{money(row.newTotal)}</td><td className="num">{money(row.previousMinute)}</td><td className="num">{money(row.newMinute)}</td><td className="num">{row.percentage.toLocaleString('pt-BR')}%</td></tr>)}</tbody></table></div>}
-  </section>
 }

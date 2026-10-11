@@ -618,7 +618,10 @@ export interface ContractServiceItem {
   quantity: number
   unitValue: number
   totalValue: number
-  extraMinuteValue: number | null
+  /** Valor do minuto extra (vlextra). */
+  extraValue: number | null
+  /** Valor por minuto vindo do Delphi (vlminu); quando existe, prevalece sobre o extraValue. */
+  legacyMinuteValue?: number | null
   bonusQuantity: number | null
 }
 
@@ -627,7 +630,8 @@ export interface ContractServicePayload {
   serviceId: number
   quantity: number
   unitValue: number
-  extraMinuteValue?: number | null
+  extraValue?: number | null
+  legacyMinuteValue?: number | null
   bonusQuantity?: number | null
 }
 
