@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { Bell, Boxes, BriefcaseBusiness, CalendarClock, ClipboardList, FileBarChart, FilePen, FileSignature, FileSpreadsheet, FileText, FolderTree, HandCoins, LayoutDashboard, Megaphone, PiggyBank, ReceiptText, ScrollText, Settings, ShieldCheck, Truck, UserRoundCog, UsersRound, Wallet, Wrench } from 'lucide-react'
+import { Bell, Boxes, BriefcaseBusiness, CalendarClock, ClipboardList, FileBarChart, FilePen, FileSignature, FileSpreadsheet, FileText, FolderTree, HandCoins, LayoutDashboard, MapPin, Megaphone, PiggyBank, ReceiptText, ScrollText, Settings, ShieldCheck, Truck, UserRoundCog, UsersRound, Wallet, Wrench } from 'lucide-react'
 
 export type NavItem = {
   to: string
@@ -27,6 +27,7 @@ export const navGroups: NavGroup[] = [
     label: 'Cadastros',
     items: [
       { to: '/clientes', label: 'Clientes', icon: UsersRound, permission: 'clients' },
+      { to: '/locais-de-atendimento', label: 'Locais de atendimento', icon: MapPin, permission: 'clients' },
       { to: '/contratos', label: 'Contratos', icon: FileSignature, permission: 'contracts' },
       { to: '/servicos', label: 'Serviços', icon: BriefcaseBusiness, permission: 'services' },
       { to: '/materiais', label: 'Materiais', icon: Boxes, permission: 'materials' },

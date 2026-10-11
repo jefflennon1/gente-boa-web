@@ -9,6 +9,7 @@ import type {
   BillListItem,
   BillPrintRow,
   AttendanceLocation,
+  AttendanceLocationListItem,
   AttendanceLocationPayload,
   AuthResponse,
   Client,
@@ -244,6 +245,11 @@ export const api = {
     },
   },
   attendanceLocations: {
+    /** Listagem paginada da tela de Locais de atendimento (todos os clientes ou um cliente). */
+    async search(params: { query?: string; clientId?: number; page?: number; size?: number } = {}) {
+      const { data } = await http.get<PagedResponse<AttendanceLocationListItem>>('/attendance-locations/search', { params: { page: 0, size: 10, ...params } })
+      return data
+    },
     async byClient(clientId: number) {
       const { data } = await http.get<AttendanceLocation[]>('/attendance-locations', { params: { clientId } })
       return data

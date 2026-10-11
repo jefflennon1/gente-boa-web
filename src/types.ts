@@ -246,6 +246,14 @@ export interface AttendanceLocation {
 
 export type AttendanceLocationPayload = Omit<AttendanceLocation, 'id' | 'registeredAt'>
 
+export interface AttendanceLocationListItem {
+  location: AttendanceLocation
+  clientName: string | null
+  clientTradeName: string | null
+  /** Local já usado em alguma OS: não pode ser excluído. */
+  usedByServiceOrders: boolean
+}
+
 export interface Client {
   id: number
   name: string | null

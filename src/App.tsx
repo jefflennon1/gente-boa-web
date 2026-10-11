@@ -33,6 +33,7 @@ const pages: Partial<Record<string, LazyExoticComponent<ComponentType>>> = {
   '/contratos-ativos': lazy(() => import('./pages/ActiveContracts').then((module) => ({ default: module.ActiveContracts }))),
   '/relatorios-os': lazy(() => import('./pages/ServiceOrderReport').then((module) => ({ default: module.ServiceOrderReport }))),
   '/relatorios-clientes': lazy(() => import('./pages/ClientReports').then((module) => ({ default: module.ClientReports }))),
+  '/locais-de-atendimento': lazy(() => import('./pages/AttendanceLocations').then((module) => ({ default: module.AttendanceLocations }))),
   '/canais-de-venda': lazy(() => import('./pages/SalesChannels').then((module) => ({ default: module.SalesChannels }))),
   '/resumo-mensal': lazy(() => import('./pages/MonthlySummary').then((module) => ({ default: module.MonthlySummary }))),
   '/relatorios-financeiros': lazy(() => import('./pages/FinancialReports').then((module) => ({ default: module.FinancialReports }))),

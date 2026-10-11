@@ -253,7 +253,7 @@ function ClientLocationsSection({ clientId }: { clientId: number }) {
   const locationsQuery = useQuery({ queryKey: [...queryKeys.attendanceLocations, 'client', clientId], queryFn: () => api.attendanceLocations.byClient(clientId) })
   const locations = locationsQuery.data ?? []
   return <div className="client-workspace__section">
-    <SectionHeader title="Locais de atendimento" description="Endereços onde o cliente recebe os atendimentos." />
+    <SectionHeader title="Locais de atendimento" description="Endereços onde o cliente recebe os atendimentos." action={<LinkButton to={`/locais-de-atendimento?clientId=${clientId}`}>Gerenciar locais do cliente</LinkButton>} />
     {locationsQuery.isLoading ? <LoadingState label="Carregando locais..." /> : locationsQuery.isError ? <ErrorState message={apiErrorMessage(locationsQuery.error)} onRetry={() => locationsQuery.refetch()} /> : locations.length === 0 ? <EmptyState title="Nenhum local cadastrado" description="Os locais são cadastrados no contrato ou na ordem de serviço." /> : <div className="client-workspace__cards">{locations.map((location) => <article key={location.id}>
       <header><strong>{location.description || `Local #${location.id}`}</strong><small>{location.contractId ? `Contrato #${location.contractId}` : 'Sem contrato'}</small></header>
       <p>{[location.address, location.complement, location.district, location.city, formatCep(location.zipCode)].filter(Boolean).join(' · ') || 'Endereço não informado'}</p>
