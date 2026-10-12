@@ -1299,7 +1299,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       </FormField>
       <FormField label="Local">
         <div className="os-location-control">
-          <select value={locationId} onChange={(event) => setLocationId(event.target.value)} disabled={!clientId || attendanceLocationsQuery.isLoading}>
+          <select value={locationId} onChange={(event) => setLocationId(event.target.value)} disabled={!clientId || attendanceLocationsQuery.isLoading} required>
             <option value="">{!clientId ? 'Selecione primeiro o cliente' : attendanceLocationsQuery.isLoading ? 'Carregando locais...' : attendanceLocations.length ? 'Selecione um local' : 'Nenhum local cadastrado'}</option>
             {attendanceLocations.map((location) => <option key={location.id} value={location.id}>{attendanceLocationDisplay(location)}</option>)}
           </select>
