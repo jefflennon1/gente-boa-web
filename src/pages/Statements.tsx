@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, ExternalLink, Eye, FileBarChart, FileSpreadsheet, FileText, Landmark, Mail, Printer, ReceiptText, Search, Send, Timer, Upload, Users, WalletCards } from 'lucide-react'
+import { CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Download, ExternalLink, Eye, FileBarChart, FileSpreadsheet, FileText, Landmark, Mail, Printer, ReceiptText, Search, Send, Timer, Upload, Users, WalletCards } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
@@ -14,6 +14,7 @@ import { AccountsReceivableReview } from '../components/AccountsReceivableReview
 import { dateText, downloadCsv, printElement } from '../lib/export'
 import { BillStatementModal } from '../components/BillStatementModal'
 import { BillStatementsTab } from '../components/BillStatementsTab'
+import { ClientStatementTab } from '../components/ClientStatementTab'
 import { BillDetails, ClientStatementDetails, formatMinutes } from '../components/BillingDetails'
 import { ClientWorkspaceModal } from '../components/ClientWorkspaceModal'
 import { useRouter } from '../router'
@@ -195,7 +196,13 @@ export function Statements() {
       <button type="button" className={billingView === 'statements' ? 'active' : ''} onClick={() => changeView('statements')}><FileBarChart size={17} />Extratos</button>
       <button type="button" className={billingView === 'printing' ? 'active' : ''} onClick={() => changeView('printing')}><Printer size={17} />Impressões</button>
     </nav>
-    {billingView === 'receivables' ? <AccountsReceivableReview showToast={showToast} onOpenStatement={setStatementSource} /> : billingView === 'statements' ? <BillStatementsTab onOpen={setStatementSource} showToast={showToast} /> : billingView === 'generated' ? <>
+    {billingView === 'receivables' ? <AccountsReceivableReview showToast={showToast} onOpenStatement={setStatementSource} /> : billingView === 'statements' ? <>
+      <ClientStatementTab showToast={showToast} />
+      <details className="os-detail-accordion bill-statements-batch">
+        <summary><span><strong>Extratos dos boletos gerados</strong><small>Impressão em lote: extrato de cada boleto do vencimento e PDF único do período.</small></span><ChevronDown size={17} /></summary>
+        <BillStatementsTab onOpen={setStatementSource} showToast={showToast} />
+      </details>
+    </> : billingView === 'generated' ? <>
     <section className="stats-grid stats-grid--four statement-stats">
       <StatCard label="Boletos" value={summaryNumber(billSummaryQuery.data, 'total').toLocaleString('pt-BR')} helper="Total geral do filtro" icon={<WalletCards />} tone="blue" />
       <StatCard label="Valor total" value={money(summaryNumber(billSummaryQuery.data, 'amount'))} helper="Soma de todos os boletos do filtro" icon={<Landmark />} tone="purple" />

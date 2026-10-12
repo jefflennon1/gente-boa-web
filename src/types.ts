@@ -1405,6 +1405,7 @@ export interface BillDetail extends BillListItem {
   bankDocumentUploadedAt: ISODateTime | null
   serviceOrderDescription: string | null
   serviceOrderNotes: string | null
+  serviceOrderRequester: string | null
   serviceOrderCategory: string | null
   serviceOrderOrigin: string | null
   actualHours: string | null

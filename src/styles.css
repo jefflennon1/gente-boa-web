@@ -1282,3 +1282,47 @@ input.payable-balance-paid { color: #08705f; font-weight: 750; }
 .payable-remaining__options input { margin-top: 2px; }
 .payable-remaining__options strong { display: block; color: var(--navy); font-size: 10.5px; }
 .payable-remaining__options small { display: block; margin-top: 2px; color: var(--muted); font-size: 9px; line-height: 1.45; }
+
+/* ===== Extrato do cliente (aba Extratos) ===== */
+.client-statement-tab__body { padding: 16px; }
+.client-statement-tab__note { margin: 0 0 14px; padding: 9px 12px; display: flex; align-items: center; gap: 8px; border-radius: 9px; color: #51566f; background: #f4f6fc; font-size: 9.5px; }
+.client-statement-tab__note svg { flex: 0 0 auto; color: var(--brand); }
+.bill-statements-batch { margin-top: 16px; }
+.bill-statements-batch > .bill-panel { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
+
+/* Extrato do cliente em formato de relatório (conferência) */
+.statement-report { max-width: 1100px; margin: 0 auto; padding: 24px 26px 28px; border: 1px solid #d9dbe3; color: #1f1f1f; background: white; font-family: Arial, Helvetica, sans-serif; font-size: 11px; line-height: 1.4; }
+.statement-report section { margin-top: 18px; }
+.statement-report h3 { margin: 0 0 6px; padding-bottom: 3px; border-bottom: 2px solid #1f1f1f; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; }
+.statement-report p { margin: 2px 0; }
+.statement-report__header { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 18px; }
+.statement-report__header img { height: 64px; }
+.statement-report__header h2 { margin: 0; font-size: 20px; text-align: center; }
+.statement-report__header div { text-align: right; font-size: 13px; }
+.statement-report__table { width: 100%; margin-top: 6px; border-collapse: collapse; }
+.statement-report__table th, .statement-report__table td { padding: 4px 6px; border: 1px solid #9a9a9a; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.statement-report__table thead th, .statement-report__table tfoot th { background: #f2f2f2; font-weight: 700; }
+.statement-report__table .num { text-align: right; white-space: nowrap; }
+.statement-report__fields th { width: 13%; background: #f7f7f7; font-weight: 700; }
+.statement-report__summary { width: min(520px, 100%); }
+.statement-report__summary th { font-weight: 400; }
+.statement-report__summary small { color: #555; }
+.statement-report__total th, .statement-report__total td { background: #f2f2f2; font-size: 13px; font-weight: 700 !important; }
+.statement-report__alert { color: #b42318; font-weight: 700; }
+.statement-report__order { margin-top: 12px; padding: 10px 12px; border: 1px solid #9a9a9a; break-inside: avoid; }
+.statement-report__order-title { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; margin-bottom: 4px !important; padding-bottom: 4px; border-bottom: 1px solid #c7c7c7; font-size: 12px; }
+.statement-report__order-hours { color: #444; }
+.statement-report__empty { color: #555; }
+.statement-report__location { margin-top: 12px; }
+.statement-report__location-title { margin: 0 !important; padding: 5px 8px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; border: 1px solid #6f6f6f; background: #dedede; font-size: 12px; }
+.statement-report__location-title span:last-child:not(:first-child) { color: #333; font-size: 10.5px; }
+.statement-report__location .statement-report__order { margin-top: 0; border-top: 0; }
+.statement-report__order-head { width: 100%; border-collapse: collapse; }
+.statement-report__order-head td { padding: 2px 4px 2px 0; vertical-align: top; }
+.statement-report__order-time { text-align: right; white-space: nowrap; font-size: 12px; }
+.statement-report__footer { margin-top: 18px !important; padding-top: 6px; border-top: 1px solid #9a9a9a; color: #555; font-size: 10px; text-align: center; }
+@media (max-width: 740px) {
+  .statement-report { padding: 14px; }
+  .statement-report__header { grid-template-columns: 1fr; text-align: center; }
+  .statement-report__header div { text-align: center; }
+}
