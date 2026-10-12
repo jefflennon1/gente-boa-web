@@ -138,6 +138,7 @@ export function Contracts() {
   const [toast, setToast] = useState('')
   const [formError, setFormError] = useState('')
   const [cancelError, setCancelError] = useState('')
+  const [planChange, setPlanChange] = useState(false)
   const [deleteError, setDeleteError] = useState('')
   const debouncedSearch = useDebouncedValue(search)
   const debouncedClientPickerSearch = useDebouncedValue(clientPickerSearch.trim())
@@ -235,12 +236,14 @@ export function Contracts() {
   })
 
   const cancelMutation = useMutation({
-    mutationFn: ({ id, cancellationDate, reason }: { id: number; cancellationDate: string; reason: string }) => api.contracts.cancel(id, { cancellationDate, reason }),
-    onSuccess: (contract) => {
+    mutationFn: ({ id, cancellationDate, reason, planChange: replacing }: { id: number; cancellationDate: string; reason: string; planChange: boolean }) => api.contracts.cancel(id, { cancellationDate, reason, planChange: replacing }),
+    onSuccess: (contract, variables) => {
       setContractToCancel(null)
       setCancelError('')
+      setPlanChange(false)
       queryClient.setQueryData([...queryKeys.contracts, 'detail', contract.id], contract)
-      showToast(`Contrato #${contract.id} cancelado com sucesso.`)
+      showToast(variables.planChange ? `Contrato #${contract.id} cancelado. Cadastre agora o novo contrato do cliente.` : `Contrato #${contract.id} cancelado com sucesso.`)
+      if (variables.planChange) openReplacement(contract)
       void queryClient.invalidateQueries({ queryKey: queryKeys.contracts })
       void queryClient.invalidateQueries({ queryKey: queryKeys.clients })
     },
@@ -402,6 +405,18 @@ export function Contracts() {
     setModalOpen(true)
   }
 
+  // Troca de plano: abre o novo contrato com o mesmo cliente e os serviços do contrato cancelado (para ajustar as horas).
+  function openReplacement(previous: Contract) {
+    setDetailId(null)
+    setSelected(null)
+    setContractClientId(String(previous.clientId))
+    setContractClient({ id: previous.clientId, legalName: previous.clientName, tradeName: previous.clientTradeName, document: null, street: null, complement: null, district: null, city: null, state: null, zipCode: null, hasContract: false, contractId: null })
+    setServiceRows(previous.services?.length ? previous.services.map((item) => ({ ...serviceRowFrom(item), sequence: undefined })) : [emptyServiceRow()])
+    setFormError('')
+    setFormLoading(false)
+    setModalOpen(true)
+  }
+
   async function openEdit(contractOrId: Contract | number) {
     setDetailId(null)
     setSelected(null)
@@ -516,11 +531,11 @@ export function Contracts() {
       setCancelError('Informe a data e o motivo do cancelamento.')
       return
     }
-    if (firstCancellationDate && date.slice(0, 10) < firstCancellationDate) {
+    if (!planChange && firstCancellationDate && date.slice(0, 10) < firstCancellationDate) {
       setCancelError(`O prazo mínimo é de ${minimumContractMonths} meses. A primeira data permitida é ${formatDate(firstCancellationDate)}.`)
       return
     }
-    cancelMutation.mutate({ id: contractToCancel.id, cancellationDate: date, reason })
+    cancelMutation.mutate({ id: contractToCancel.id, cancellationDate: date, reason, planChange })
   }
 
   return (
@@ -677,11 +692,13 @@ export function Contracts() {
         </ModalForm>
       </Modal>
 
-      <Modal open={Boolean(contractToCancel)} onClose={() => !cancelMutation.isPending && setContractToCancel(null)} title={`Cancelar contrato #${contractToCancel?.id ?? ''}`} description={`O contrato possui prazo mínimo de ${minimumContractMonths} meses e permanece no histórico após o cancelamento.`}>
-        <ModalForm onSubmit={submitCancellation} onCancel={() => setContractToCancel(null)} submitting={cancelMutation.isPending} submitLabel={cancelMutation.isPending ? 'Cancelando...' : 'Confirmar cancelamento'}>
+      <Modal open={Boolean(contractToCancel)} onClose={() => { if (!cancelMutation.isPending) { setContractToCancel(null); setPlanChange(false) } }} title={`Cancelar contrato #${contractToCancel?.id ?? ''}`} description={`O contrato possui prazo mínimo de ${minimumContractMonths} meses e permanece no histórico após o cancelamento.`}>
+        <ModalForm onSubmit={submitCancellation} onCancel={() => { setContractToCancel(null); setPlanChange(false) }} submitting={cancelMutation.isPending} submitLabel={cancelMutation.isPending ? 'Cancelando...' : 'Confirmar cancelamento'}>
           <FormError message={cancelError} />
+          <label className="contract-plan-change"><input type="checkbox" checked={planChange} onChange={(event) => setPlanChange(event.target.checked)} /><span><strong>Troca de plano</strong><small>O cliente vai assinar um novo contrato (ex.: de 2 para 5 horas). Dispensa o prazo mínimo e, ao confirmar, abre o cadastro do novo contrato com o mesmo cliente e serviços.</small></span></label>
+          <p className="contract-cancel-billing">As parcelas e cobranças deste contrato até o mês do cancelamento continuam em Contas a receber e seguem para boleto, assim como as OS feitas antes do cancelamento. As parcelas em aberto dos meses seguintes são removidas.</p>
           <div className="form-grid form-grid--two">
-            <FormField label="Data do cancelamento" hint={firstCancellationDate ? `Permitido a partir de ${formatDate(firstCancellationDate)}` : undefined}><input name="cancellationDate" type="date" min={firstCancellationDate || undefined} required defaultValue={firstCancellationDate && new Date().toISOString().slice(0, 10) < firstCancellationDate ? firstCancellationDate : new Date().toISOString().slice(0, 10)} /></FormField>
+            <FormField label="Data do cancelamento" hint={planChange ? 'Troca de plano: sem prazo mínimo' : firstCancellationDate ? `Permitido a partir de ${formatDate(firstCancellationDate)}` : undefined}><input name="cancellationDate" type="date" min={planChange ? undefined : firstCancellationDate || undefined} required defaultValue={firstCancellationDate && new Date().toISOString().slice(0, 10) < firstCancellationDate ? firstCancellationDate : new Date().toISOString().slice(0, 10)} /></FormField>
             <FormField label="Motivo"><textarea name="reason" rows={4} required placeholder="Informe por que o contrato está sendo encerrado" /></FormField>
           </div>
         </ModalForm>

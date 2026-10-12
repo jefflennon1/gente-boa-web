@@ -726,6 +726,8 @@ export interface ContractPayload {
 export interface CancelContractPayload {
   cancellationDate: ISODateTime
   reason: string
+  /** Troca de plano: o cliente assina um novo contrato (dispensa o prazo mínimo). */
+  planChange?: boolean
 }
 
 export interface ServiceOrderSchedule {
