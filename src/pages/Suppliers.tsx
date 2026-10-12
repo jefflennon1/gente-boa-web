@@ -1,10 +1,12 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, ChevronLeft, ChevronRight, Edit3, FileText, HandCoins, MapPin, Phone, Plus, Search, Trash2, Truck } from 'lucide-react'
+import { Building2, ChevronLeft, ChevronRight, Edit3, FileText, MapPin, Phone, Plus, Search, Trash2, Truck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { apiErrorMessage } from '../api/client'
 import { api, queryKeys } from '../api/services'
 import { modulesApi, modulesKeys, summaryNumber } from '../api/modules'
 import { SupplierPayablesReport } from '../components/SupplierPayablesReport'
+import { SupplierWorkspace } from '../components/SupplierWorkspace'
+import { usePayableDialogs } from '../components/PayableDialogs'
 import { Button, CollapsibleFilters, ConfirmDialog, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import type { Supplier, SupplierPayload } from '../types'
@@ -35,6 +37,7 @@ export function Suppliers() {
   const [toast, setToast] = useState<ToastState>(null)
   const [reportSupplier, setReportSupplier] = useState<{ id: number; name: string } | null>(null)
   const debouncedSearch = useDebouncedValue(search.trim())
+  const payableDialogs = usePayableDialogs(showToast)
 
   // Busca geral (Ctrl+K): /fornecedores?id=N abre o registro direto.
   useEffect(() => {
@@ -143,6 +146,55 @@ export function Suppliers() {
     saveMutation.mutate({ id: selected?.id, payload })
   }
 
+  const supplierForm = (
+    <ModalForm onSubmit={submit} onCancel={() => setModalOpen(false)} submitting={saveMutation.isPending} submitLabel={saveMutation.isPending ? 'Salvando...' : selected ? 'Salvar alterações' : 'Cadastrar fornecedor'}>
+      <FormError message={formError} />
+      <div className="form-section-title"><span>1</span><div><strong>Identificação</strong><small>Dados cadastrais e documentos do fornecedor.</small></div></div>
+      <div className="form-grid form-grid--two">
+        <FormField label="Código"><input value={selected?.id ?? 'Gerado ao salvar'} disabled /></FormField>
+        <FormField label="Tipo de fornecedor"><input name="type" maxLength={50} placeholder="Empresa, autônomo..." defaultValue={selected?.type ?? ''} /></FormField>
+        <FormField label="Nome fantasia"><input name="tradeName" required maxLength={100} defaultValue={selected?.tradeName ?? ''} /></FormField>
+        <FormField label="Razão social"><input name="legalName" maxLength={100} defaultValue={selected?.legalName ?? ''} /></FormField>
+        <FormField label="CNPJ"><input name="cnpj" maxLength={18} inputMode="numeric" defaultValue={selected?.cnpj ?? ''} /></FormField>
+        <FormField label="CPF"><input name="cpf" maxLength={18} inputMode="numeric" defaultValue={selected?.cpf ?? ''} /></FormField>
+      </div>
+
+      <div className="form-section-title"><span>2</span><div><strong>Telefones</strong><small>Telefones e fax da empresa.</small></div></div>
+      <div className="form-grid form-grid--four">
+        <FormField label="Telefone 1"><input name="phone" maxLength={18} defaultValue={selected?.phone ?? ''} /></FormField>
+        <FormField label="Telefone 2"><input name="phone2" maxLength={18} defaultValue={selected?.phone2 ?? ''} /></FormField>
+        <FormField label="Telefone 3"><input name="phone3" maxLength={18} defaultValue={selected?.phone3 ?? ''} /></FormField>
+        <FormField label="Telefone 4"><input name="phone4" maxLength={18} defaultValue={selected?.phone4 ?? ''} /></FormField>
+        <FormField label="Fax"><input name="fax" maxLength={18} defaultValue={selected?.fax ?? ''} /></FormField>
+      </div>
+
+      <div className="form-section-title"><span>3</span><div><strong>Endereço</strong><small>Localização principal do fornecedor.</small></div></div>
+      <div className="form-grid form-grid--two">
+        <FormField label="Endereço"><input name="address" maxLength={200} defaultValue={selected?.address ?? ''} /></FormField>
+        <FormField label="Complemento"><input name="complement" maxLength={100} defaultValue={selected?.complement ?? ''} /></FormField>
+        <FormField label="Bairro"><input name="district" maxLength={100} defaultValue={selected?.district ?? ''} /></FormField>
+        <FormField label="Cidade"><input name="city" maxLength={100} defaultValue={selected?.city ?? ''} /></FormField>
+        <FormField label="Estado"><input name="state" maxLength={2} placeholder="CE" defaultValue={selected?.state ?? ''} /></FormField>
+        <FormField label="CEP"><input name="zipCode" maxLength={25} inputMode="numeric" defaultValue={selected?.zipCode ?? ''} /></FormField>
+        <FormField label="País"><input name="country" maxLength={20} placeholder="Brasil" defaultValue={selected?.country ?? ''} /></FormField>
+      </div>
+
+      <div className="form-section-title"><span>4</span><div><strong>Pessoas de contato</strong><small>Responsáveis comercial e administrativo.</small></div></div>
+      <div className="form-grid form-grid--two">
+        <FormField label="Nome do contato"><input name="contactName" maxLength={50} defaultValue={selected?.contactName ?? ''} /></FormField>
+        <FormField label="Telefone do contato"><input name="contactPhone" maxLength={18} defaultValue={selected?.contactPhone ?? ''} /></FormField>
+        <FormField label="E-mail do contato"><input name="contactEmail" type="email" maxLength={50} defaultValue={selected?.contactEmail ?? ''} /></FormField>
+        <FormField label="Nome do 2º contato"><input name="contact2Name" maxLength={50} defaultValue={selected?.contact2Name ?? ''} /></FormField>
+        <FormField label="Telefone do 2º contato"><input name="contact2Phone" maxLength={18} defaultValue={selected?.contact2Phone ?? ''} /></FormField>
+        <FormField label="E-mail do 2º contato"><input name="contact2Email" type="email" maxLength={50} defaultValue={selected?.contact2Email ?? ''} /></FormField>
+      </div>
+
+      <div className="form-section-title"><span>5</span><div><strong>Observação</strong><small>Informações adicionais sobre o fornecedor.</small></div></div>
+      <FormField label="Observação"><textarea name="notes" rows={3} maxLength={300} defaultValue={selected?.notes ?? ''} /></FormField>
+      {selected && <div className="destructive-row"><span><strong>Excluir fornecedor</strong><small>Materiais e pedidos de compra vinculados podem impedir a exclusão.</small></span><Button type="button" variant="danger" icon={<Trash2 size={16} />} onClick={() => requestDelete(selected)}>Excluir</Button></div>}
+    </ModalForm>
+  )
+
   return <>
     <PageHeader eyebrow="Compras" title="Cadastro de fornecedores" subtitle="Empresas e profissionais disponíveis para materiais e pedidos de compra." actions={<Button icon={<Plus size={18} />} onClick={openNew}>Novo fornecedor</Button>} />
 
@@ -154,9 +206,9 @@ export function Suppliers() {
     </section>
 
     <section className="panel data-panel">
-      <CollapsibleFilters summary="Código, nome, documento, cidade ou contato" activeCount={search.trim() ? 1 : 0} onClear={() => { setSearch(''); setPage(0) }} contentClassName="data-toolbar data-toolbar--clients">
-        <div className="search-box"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }} placeholder="Buscar por código, nome, documento, cidade ou contato..." /></div>
-      </CollapsibleFilters>
+      {/* <CollapsibleFilters summary="Código, nome, documento, cidade ou contato" activeCount={search.trim() ? 1 : 0} onClear={() => { setSearch(''); setPage(0) }} contentClassName="data-toolbar data-toolbar--clients"> */}
+        <div className="search-box externo" style={{margin: 30}}><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0) }} placeholder="Buscar por código, nome, documento, cidade ou contato..." /></div>
+      {/* </CollapsibleFilters> */}
 
       {suppliersQuery.isLoading ? <LoadingState label="Carregando fornecedores..." /> : suppliersQuery.isError ? <ErrorState message={apiErrorMessage(suppliersQuery.error)} onRetry={() => suppliersQuery.refetch()} /> : suppliers.length === 0 ? <EmptyState title="Nenhum fornecedor encontrado" description="Altere a busca ou cadastre um novo fornecedor." /> : <div className={`table-wrap ${suppliersQuery.isFetching ? 'table-wrap--refreshing' : ''}`}>
         <table className="data-table suppliers-table"><thead><tr><th>Código</th><th>Fornecedor</th><th>Documento</th><th>Tipo</th><th>Cidade / UF</th><th>Telefone</th><th>Contato</th><th /></tr></thead><tbody>{suppliers.map((supplier) => <tr key={supplier.id} onClick={() => openEdit(supplier)}>
@@ -182,55 +234,10 @@ export function Suppliers() {
       </footer>
     </section>
 
-    <Modal open={modalOpen} onClose={() => !saveMutation.isPending && setModalOpen(false)} title={selected ? `Editar fornecedor #${selected.id}` : 'Novo fornecedor'} description="Cadastro utilizado em materiais e pedidos de compra." size="large">
-      <ModalForm onSubmit={submit} onCancel={() => setModalOpen(false)} submitting={saveMutation.isPending} submitLabel={saveMutation.isPending ? 'Salvando...' : selected ? 'Salvar alterações' : 'Cadastrar fornecedor'}>
-        <FormError message={formError} />
-        {selected && <div className="supplier-linked-actions"><span><strong>Financeiro do fornecedor</strong><small>Consulte pedidos e dívidas vinculadas a este cadastro.</small></span><Button type="button" variant="secondary" icon={<FileText size={16} />} onClick={() => setReportSupplier({ id: selected.id, name: supplierName(selected) })}>Relatório de CP</Button><Button type="button" variant="secondary" icon={<HandCoins size={16} />} onClick={() => { setModalOpen(false); navigate(`/contas-a-pagar?supplierId=${selected.id}`) }}>Contas a pagar</Button></div>}
-        <div className="form-section-title"><span>1</span><div><strong>Identificação</strong><small>Dados cadastrais e documentos do fornecedor.</small></div></div>
-        <div className="form-grid form-grid--two">
-          <FormField label="Código"><input value={selected?.id ?? 'Gerado ao salvar'} disabled /></FormField>
-          <FormField label="Tipo de fornecedor"><input name="type" maxLength={50} placeholder="Empresa, autônomo..." defaultValue={selected?.type ?? ''} /></FormField>
-          <FormField label="Nome fantasia"><input name="tradeName" required maxLength={100} defaultValue={selected?.tradeName ?? ''} /></FormField>
-          <FormField label="Razão social"><input name="legalName" maxLength={100} defaultValue={selected?.legalName ?? ''} /></FormField>
-          <FormField label="CNPJ"><input name="cnpj" maxLength={18} inputMode="numeric" defaultValue={selected?.cnpj ?? ''} /></FormField>
-          <FormField label="CPF"><input name="cpf" maxLength={18} inputMode="numeric" defaultValue={selected?.cpf ?? ''} /></FormField>
-        </div>
-
-        <div className="form-section-title"><span>2</span><div><strong>Telefones</strong><small>Telefones e fax da empresa.</small></div></div>
-        <div className="form-grid form-grid--four">
-          <FormField label="Telefone 1"><input name="phone" maxLength={18} defaultValue={selected?.phone ?? ''} /></FormField>
-          <FormField label="Telefone 2"><input name="phone2" maxLength={18} defaultValue={selected?.phone2 ?? ''} /></FormField>
-          <FormField label="Telefone 3"><input name="phone3" maxLength={18} defaultValue={selected?.phone3 ?? ''} /></FormField>
-          <FormField label="Telefone 4"><input name="phone4" maxLength={18} defaultValue={selected?.phone4 ?? ''} /></FormField>
-          <FormField label="Fax"><input name="fax" maxLength={18} defaultValue={selected?.fax ?? ''} /></FormField>
-        </div>
-
-        <div className="form-section-title"><span>3</span><div><strong>Endereço</strong><small>Localização principal do fornecedor.</small></div></div>
-        <div className="form-grid form-grid--two">
-          <FormField label="Endereço"><input name="address" maxLength={200} defaultValue={selected?.address ?? ''} /></FormField>
-          <FormField label="Complemento"><input name="complement" maxLength={100} defaultValue={selected?.complement ?? ''} /></FormField>
-          <FormField label="Bairro"><input name="district" maxLength={100} defaultValue={selected?.district ?? ''} /></FormField>
-          <FormField label="Cidade"><input name="city" maxLength={100} defaultValue={selected?.city ?? ''} /></FormField>
-          <FormField label="Estado"><input name="state" maxLength={2} placeholder="CE" defaultValue={selected?.state ?? ''} /></FormField>
-          <FormField label="CEP"><input name="zipCode" maxLength={25} inputMode="numeric" defaultValue={selected?.zipCode ?? ''} /></FormField>
-          <FormField label="País"><input name="country" maxLength={20} placeholder="Brasil" defaultValue={selected?.country ?? ''} /></FormField>
-        </div>
-
-        <div className="form-section-title"><span>4</span><div><strong>Pessoas de contato</strong><small>Responsáveis comercial e administrativo.</small></div></div>
-        <div className="form-grid form-grid--two">
-          <FormField label="Nome do contato"><input name="contactName" maxLength={50} defaultValue={selected?.contactName ?? ''} /></FormField>
-          <FormField label="Telefone do contato"><input name="contactPhone" maxLength={18} defaultValue={selected?.contactPhone ?? ''} /></FormField>
-          <FormField label="E-mail do contato"><input name="contactEmail" type="email" maxLength={50} defaultValue={selected?.contactEmail ?? ''} /></FormField>
-          <FormField label="Nome do 2º contato"><input name="contact2Name" maxLength={50} defaultValue={selected?.contact2Name ?? ''} /></FormField>
-          <FormField label="Telefone do 2º contato"><input name="contact2Phone" maxLength={18} defaultValue={selected?.contact2Phone ?? ''} /></FormField>
-          <FormField label="E-mail do 2º contato"><input name="contact2Email" type="email" maxLength={50} defaultValue={selected?.contact2Email ?? ''} /></FormField>
-        </div>
-
-        <div className="form-section-title"><span>5</span><div><strong>Observação</strong><small>Informações adicionais sobre o fornecedor.</small></div></div>
-        <FormField label="Observação"><textarea name="notes" rows={3} maxLength={300} defaultValue={selected?.notes ?? ''} /></FormField>
-        {selected && <div className="destructive-row"><span><strong>Excluir fornecedor</strong><small>Materiais e pedidos de compra vinculados podem impedir a exclusão.</small></span><Button type="button" variant="danger" icon={<Trash2 size={16} />} onClick={() => requestDelete(selected)}>Excluir</Button></div>}
-      </ModalForm>
+    <Modal open={modalOpen} onClose={() => !saveMutation.isPending && setModalOpen(false)} title={selected ? `Dados do fornecedor · ${supplierName(selected)}` : 'Novo fornecedor'} description={selected ? `Fornecedor #${selected.id}${selected.document || selected.cnpj || selected.cpf ? ` · ${selected.document || selected.cnpj || selected.cpf}` : ''}` : 'Cadastro utilizado em materiais e pedidos de compra.'} size={selected ? 'xlarge' : 'large'}>
+      {selected ? <SupplierWorkspace key={selected.id} supplier={selected} form={supplierForm} payableDialogs={payableDialogs} onOpenReport={() => setReportSupplier({ id: selected.id, name: supplierName(selected) })} /> : supplierForm}
     </Modal>
+    {payableDialogs.dialogs}
 
     <ConfirmDialog open={supplierToDelete !== null} title={`Excluir ${supplierToDelete ? supplierName(supplierToDelete) : 'fornecedor'}?`} description="O cadastro será removido apenas se não houver materiais ou pedidos de compra vinculados." confirmLabel="Excluir fornecedor" busy={deleteMutation.isPending} error={deleteError} onCancel={() => { setSupplierToDelete(null); setDeleteError('') }} onConfirm={() => supplierToDelete && deleteMutation.mutate(supplierToDelete.id)} />
     <SupplierPayablesReport supplier={reportSupplier} onClose={() => setReportSupplier(null)} />
