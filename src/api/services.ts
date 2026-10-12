@@ -454,6 +454,16 @@ export const api = {
       const { data } = await http.post<PayableAccount>(`/payables/${id}/payments`, payload)
       return data
     },
+    /** Valor pago informado manualmente (pagamento parcial): a API converte o ajuste em baixas ou estornos. */
+    async adjustAmountPaid(id: number, payload: { amountPaid: number; paidAt?: string | null; paymentMethod?: 'CASH' | 'TRANSFER' | 'BILL'; movementAccountId?: number | null; notes?: string | null }) {
+      const { data } = await http.put<PayableAccount>(`/payables/${id}/amount-paid`, payload)
+      return data
+    },
+    /** Saldo de conta paga em parte: leva o restante para a próxima fatura ou divide em prestações. */
+    async remainingBalance(id: number, payload: { action: 'NEXT_INVOICE' | 'INSTALLMENTS'; firstDueDate: string; installments?: number }) {
+      const { data } = await http.post<PayableAccount[]>(`/payables/${id}/remaining-balance`, payload)
+      return data
+    },
     async reversePayment(id: number, paymentId: number) {
       const { data } = await http.delete<PayableAccount>(`/payables/${id}/payments/${paymentId}`)
       return data

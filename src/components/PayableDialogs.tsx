@@ -13,6 +13,17 @@ import { formatDate, money } from '../lib/format'
 import type { PayableAccount, PayableAccountPayload, PayablePaymentPayload } from '../types'
 
 type ShowToast = (message: string, variant?: 'success' | 'error') => void
+type PaidMethod = 'CASH' | 'TRANSFER' | 'BILL'
+type RemainingAction = 'OPEN' | 'NEXT_INVOICE' | 'INSTALLMENTS'
+
+function addMonths(isoDate: string, months: number) {
+  const [year, month, day] = isoDate.slice(0, 10).split('-').map(Number)
+  const target = new Date(year, month - 1 + months, 1)
+  target.setDate(Math.min(day, new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()))
+  return `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-${String(target.getDate()).padStart(2, '0')}`
+}
+
+type PaidAdjustment = { amountPaid: number; paidAt: string | null; paymentMethod: PaidMethod; movementAccountId: number | null }
 
 /**
  * Diálogos de conta a pagar compartilhados (tela de Contas a pagar e modal "Dados do fornecedor"):
@@ -33,6 +44,13 @@ export function usePayableDialogs(showToast: ShowToast) {
   const [settlementError, setSettlementError] = useState('')
   const [installmentTarget, setInstallmentTarget] = useState<PayableAccount | null>(null)
   const [installmentError, setInstallmentError] = useState('')
+  // Pagamento parcial: pergunta o que fazer com o saldo (deixar em aberto, próxima fatura ou parcelar).
+  const [remainingTarget, setRemainingTarget] = useState<PayableAccount | null>(null)
+  const [remainingForm, setRemainingForm] = useState<{ action: RemainingAction; firstDueDate: string; installments: number }>({ action: 'OPEN', firstDueDate: todayIso(), installments: 2 })
+  const [remainingError, setRemainingError] = useState('')
+  // Valor pago editável na alteração da conta (pagamento parcial).
+  const [amounts, setAmounts] = useState({ due: '', paid: '' })
+  const [paidDetails, setPaidDetails] = useState<{ paidAt: string; method: PaidMethod; movementAccountId: number | '' }>({ paidAt: todayIso(), method: 'CASH', movementAccountId: '' })
   const costCentersQuery = useQuery({ queryKey: [...financeKeys.costCenters, 'Despesas'], queryFn: () => financeApi.costCenters.list('Despesas') })
   const movementAccountsQuery = useQuery({ queryKey: [...queryKeys.payables, 'movement-accounts'], queryFn: () => api.payables.movementAccounts() })
   const detailQuery = useQuery({ queryKey: [...queryKeys.payables, 'detail', selected?.id], queryFn: () => api.payables.find(selected!.id), enabled: modalOpen && selected !== null })
@@ -47,8 +65,21 @@ export function usePayableDialogs(showToast: ShowToast) {
   }
 
   const saveMutation = useMutation({
-    mutationFn: ({ id, payload }: { id?: number; payload: PayableAccountPayload }) => id ? api.payables.update(id, payload) : api.payables.create(payload),
-    onSuccess: async (_, variables) => { await invalidate(); setModalOpen(false); setSelected(null); showToast(variables.id ? 'Conta atualizada.' : 'Conta cadastrada.') },
+    mutationFn: async ({ id, payload, paid, paidDecreases }: { id?: number; payload: PayableAccountPayload; paid?: PaidAdjustment; paidDecreases?: boolean }) => {
+      // Reduzir o valor pago vem antes (a API não aceita devido menor que o já pago); aumentar vem depois.
+      if (id && paid && paidDecreases) {
+        await api.payables.adjustAmountPaid(id, paid)
+        return api.payables.update(id, payload)
+      }
+      const saved = id ? await api.payables.update(id, payload) : await api.payables.create(payload)
+      if (paid) return api.payables.adjustAmountPaid(saved.id, paid)
+      return saved
+    },
+    onSuccess: async (result, variables) => {
+      await invalidate(); setModalOpen(false); setSelected(null)
+      showToast(`${variables.id ? 'Conta atualizada' : 'Conta cadastrada'}${variables.paid ? ' e valor pago registrado' : ''}.`)
+      if (variables.paid && !variables.paidDecreases) askAboutRemaining(result)
+    },
     onError: (error) => setFormError(apiErrorMessage(error)),
   })
   const deleteMutation = useMutation({
@@ -58,13 +89,23 @@ export function usePayableDialogs(showToast: ShowToast) {
   })
   const settleMutation = useMutation({
     mutationFn: ({ id, payload }: { id: number; payload: PayablePaymentPayload }) => api.payables.settle(id, payload),
-    onSuccess: async () => { await invalidate(); setSettlementAccount(null); showToast('Baixa registrada com sucesso.') },
+    onSuccess: async (result) => { await invalidate(); setSettlementAccount(null); showToast('Baixa registrada com sucesso.'); askAboutRemaining(result) },
     onError: (error) => setSettlementError(apiErrorMessage(error)),
   })
   const reverseMutation = useMutation({
     mutationFn: ({ id, paymentId }: { id: number; paymentId?: number }) => paymentId ? api.payables.reversePayment(id, paymentId) : financeApi.payables.reverseLegacySettlement(id),
     onSuccess: async () => { await invalidate(); showToast('Baixa excluída e saldo recalculado.') },
     onError: (error) => showToast(apiErrorMessage(error), 'error'),
+  })
+  const remainingMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: Parameters<typeof api.payables.remainingBalance>[1] }) => api.payables.remainingBalance(id, payload),
+    onSuccess: async (result, variables) => {
+      await invalidate()
+      setRemainingTarget(null)
+      const created = result.slice(1).map((item) => `#${item.id}`).join(', ')
+      showToast(variables.payload.action === 'INSTALLMENTS' ? `Saldo parcelado nas contas ${created}.` : `Saldo levado para a próxima fatura (conta ${created}).`)
+    },
+    onError: (error) => setRemainingError(apiErrorMessage(error)),
   })
   // Pedido de compra: o parcelamento é refeito para o pedido inteiro, somando as prestações já existentes.
   const purchaseGroupQuery = useQuery({
@@ -88,16 +129,42 @@ export function usePayableDialogs(showToast: ShowToast) {
   const paymentTotal = paymentValues.cashValue + paymentValues.transferValue + paymentValues.billValue
   const paymentMethod = paymentValues.cashValue > 0 && paymentValues.transferValue + paymentValues.billValue === 0 ? 'CASH' : 'TRANSFER'
   const legacySettlement = Boolean(editingAccount && !editingAccount.payments?.length && Number(editingAccount.amountPaid) > 0)
+  const currentPaid = Number(editingAccount?.amountPaid ?? 0)
+  const formDue = Number(amounts.due || 0)
+  const formPaid = Number(amounts.paid || 0)
+  const paidChange = Math.round((formPaid - currentPaid) * 100) / 100
+  const formBalance = Math.max(0, formDue - formPaid)
 
-  function openNew(defaultSupplier: PickerValue = null) { setSelected(null); setFormSupplier(defaultSupplier); setFormCostCenter(''); setFormError(''); setModalOpen(true) }
+  function resetPaidForm(due: number | string, paid: number) {
+    setAmounts({ due: due === '' ? '' : String(due), paid: String(paid) })
+    setPaidDetails({ paidAt: todayIso(), method: 'CASH', movementAccountId: '' })
+  }
+  function openNew(defaultSupplier: PickerValue = null) { setSelected(null); setFormSupplier(defaultSupplier); setFormCostCenter(''); setFormError(''); resetPaidForm('', 0); setModalOpen(true) }
   function openEdit(account: PayableAccount) {
     setSelected(account)
     setFormSupplier({ id: account.supplierId, label: `${account.supplierName || 'Fornecedor'} · #${account.supplierId}` })
     setFormCostCenter(account.costCenterId ? String(account.costCenterId) : '')
     setFormError('')
+    resetPaidForm(account.amountDue, Number(account.amountPaid || 0))
     setModalOpen(true)
   }
   function openSettlement(account: PayableAccount) { setSettlementAccount(account); setPaymentValues({ cashValue: Number(account.balance || 0), transferValue: 0, billValue: 0 }); setSettlementMovement(''); setSettlementError('') }
+  function askAboutRemaining(account: PayableAccount) {
+    if (!(Number(account.amountPaid) > 0 && Number(account.balance) > 0)) return
+    setRemainingError('')
+    setRemainingForm({ action: 'OPEN', firstDueDate: addMonths(account.dueAt?.slice(0, 10) || todayIso(), 1), installments: 2 })
+    setRemainingTarget(account)
+  }
+  function submitRemaining(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!remainingTarget) return
+    if (remainingForm.action === 'OPEN') {
+      setRemainingTarget(null)
+      showToast(`Saldo de ${money(remainingTarget.balance)} mantido em aberto na conta #${remainingTarget.id}.`)
+      return
+    }
+    remainingMutation.mutate({ id: remainingTarget.id, payload: { action: remainingForm.action, firstDueDate: remainingForm.firstDueDate, installments: remainingForm.action === 'INSTALLMENTS' ? remainingForm.installments : undefined } })
+  }
   function openInstallments(account: PayableAccount) { setInstallmentError(''); setInstallmentTarget(account) }
   function requestDelete(account: PayableAccount) { setDeleteError(''); setAccountToDelete(account) }
 
@@ -108,8 +175,17 @@ export function usePayableDialogs(showToast: ShowToast) {
     const numberOrNull = (name: string) => String(data.get(name) ?? '').trim() === '' ? null : Number(data.get(name))
     const textOrNull = (name: string) => String(data.get(name) ?? '').trim() || null
     const dateOrNull = (name: string) => { const value = String(data.get(name) ?? '').trim(); return value ? `${value}T00:00:00` : null }
+    if (formPaid < 0) { setFormError('O valor pago não pode ser negativo.'); return }
+    if (formPaid > formDue + 0.001) { setFormError('O valor pago não pode ser maior que o valor devido.'); return }
+    const paid: PaidAdjustment | undefined = paidChange !== 0 ? {
+      amountPaid: formPaid,
+      paidAt: paidChange > 0 ? `${paidDetails.paidAt}T00:00:00` : null,
+      paymentMethod: paidDetails.method,
+      movementAccountId: paidChange > 0 ? Number(paidDetails.movementAccountId || suggestedMovementAccount(movementAccountsQuery.data, paidDetails.method === 'CASH' ? 'CASH' : 'TRANSFER')) || null : null,
+    } : undefined
+    if (paid && paidChange > 0 && !paid.movementAccountId) { setFormError('Selecione a conta movimento do pagamento.'); return }
     saveMutation.mutate({
-      id: selected?.id, payload: {
+      id: selected?.id, paid, paidDecreases: paidChange < 0, payload: {
         supplierId: formSupplier.id,
         purchaseOrderId: numberOrNull('purchaseOrderId'),
         invoiceNumber: textOrNull('invoiceNumber'),
@@ -155,7 +231,13 @@ export function usePayableDialogs(showToast: ShowToast) {
         <div className="form-section-title"><span>2</span><div><strong>Origem do título</strong><small>Pedido de compra, nota fiscal, contrato e ordem de serviço.</small></div></div>
         <div className="form-grid form-grid--four"><FormField label="Nº pedido de compra"><input name="purchaseOrderId" type="number" min="1" defaultValue={editingAccount?.purchaseOrderId || ''} /></FormField><FormField label="Data do pedido"><input name="orderedAt" type="date" defaultValue={editingAccount?.orderedAt?.slice(0, 10) ?? ''} /></FormField><FormField label="Nota fiscal"><input name="invoiceNumber" maxLength={50} defaultValue={editingAccount?.invoiceNumber ?? ''} /></FormField><FormField label="Nº contrato"><input name="contractId" type="number" min="1" defaultValue={editingAccount?.contractId || ''} /></FormField><FormField label="Ordem de serviço"><input name="serviceOrderId" type="number" min="1" defaultValue={editingAccount?.serviceOrderId || ''} /></FormField></div>
         <div className="form-section-title"><span>3</span><div><strong>Descrição e valores</strong><small>Informações do lançamento e totalizadores.</small></div></div>
-        <div className="form-grid form-grid--three"><FormField label="Descrição"><input name="description" required maxLength={100} defaultValue={editingAccount?.description ?? ''} /></FormField><FormField label="Data de cadastro"><input name="registeredAt" type="date" defaultValue={editingAccount?.registeredAt?.slice(0, 10) || todayIso()} /></FormField><FormField label="Vencimento"><input name="dueAt" required type="date" defaultValue={editingAccount?.dueAt?.slice(0, 10) ?? ''} /></FormField><FormField label="Valor devido"><input name="amountDue" required type="number" min="0.01" step="0.01" defaultValue={editingAccount?.amountDue ?? ''} /></FormField><FormField label="Valor pago"><input value={money(editingAccount?.amountPaid ?? 0)} disabled /></FormField><FormField label="Saldo"><input value={money(editingAccount?.balance ?? 0)} disabled /></FormField></div>
+        <div className="form-grid form-grid--three"><FormField label="Descrição"><input name="description" required maxLength={100} defaultValue={editingAccount?.description ?? ''} /></FormField><FormField label="Data de cadastro"><input name="registeredAt" type="date" defaultValue={editingAccount?.registeredAt?.slice(0, 10) || todayIso()} /></FormField><FormField label="Vencimento"><input name="dueAt" required type="date" defaultValue={editingAccount?.dueAt?.slice(0, 10) ?? ''} /></FormField><FormField label="Valor devido"><input name="amountDue" required type="number" min="0.01" step="0.01" value={amounts.due} onChange={(event) => setAmounts((current) => ({ ...current, due: event.target.value }))} /></FormField><FormField label="Valor pago" hint="Informe o que já foi pago, mesmo que seja só uma parte."><input type="number" min="0" step="0.01" value={amounts.paid} onChange={(event) => setAmounts((current) => ({ ...current, paid: event.target.value }))} /></FormField><FormField label="Saldo a pagar"><input className={formBalance > 0 ? 'payable-balance-open' : 'payable-balance-paid'} value={money(formBalance)} readOnly tabIndex={-1} /></FormField></div>
+        {paidChange > 0 && <div className="payable-paid-change"><p><strong>Pagamento de {money(paidChange)}</strong> será registrado como baixa{formBalance > 0 ? `, ficando ${money(formBalance)} a pagar` : ' e a conta ficará quitada'}.</p><div className="form-grid form-grid--three">
+          <FormField label="Data do pagamento"><input type="date" required value={paidDetails.paidAt} onChange={(event) => setPaidDetails((current) => ({ ...current, paidAt: event.target.value }))} /></FormField>
+          <FormField label="Forma de pagamento"><select value={paidDetails.method} onChange={(event) => setPaidDetails((current) => ({ ...current, method: event.target.value as PaidMethod, movementAccountId: '' }))}><option value="CASH">Dinheiro</option><option value="TRANSFER">Transferência</option><option value="BILL">Boleto</option></select></FormField>
+          <FormField label="Conta movimento"><select required value={paidDetails.movementAccountId || suggestedMovementAccount(movementAccountsQuery.data, paidDetails.method === 'CASH' ? 'CASH' : 'TRANSFER')} onChange={(event) => setPaidDetails((current) => ({ ...current, movementAccountId: Number(event.target.value) }))}><option value="">Selecione</option>{movementAccountsQuery.data?.map((item) => <option key={item.id} value={item.id}>{item.id} · {item.name}</option>)}</select></FormField>
+        </div></div>}
+        {paidChange < 0 && <div className="payable-paid-change payable-paid-change--reverse"><p><strong>O valor pago vai diminuir {money(-paidChange)}.</strong> As baixas mais recentes serão estornadas até chegar a {money(formPaid)}{formBalance > 0 ? `, ficando ${money(formBalance)} a pagar` : ''}.</p></div>}
         <FormField label="Observação"><textarea name="notes" rows={3} maxLength={200} defaultValue={editingAccount?.notes ?? ''} /></FormField>
         <div className="form-section-title"><span>4</span><div><strong>Classificação financeira</strong><small>Centro e subcentro de despesas, conforme o que está sendo comprado.</small></div></div>
         <div className="form-grid form-grid--two"><FormField label="Centro de custo"><select name="costCenterId" value={formCostCenter} onChange={(event) => setFormCostCenter(event.target.value)}><option value="">Não informado</option>{centers.map((item) => <option key={item.id} value={item.id}>{item.id} · {item.description}</option>)}</select></FormField><FormField label="Subcentro de custo"><select key={formCostCenter} name="subCostCenterId" defaultValue={editingAccount?.subCostCenterId ?? ''}><option value="">Não informado</option>{formSubCenters.map((item) => <option key={item.id} value={item.id}>{item.id} · {item.description}</option>)}</select></FormField></div>
@@ -186,6 +268,22 @@ export function usePayableDialogs(showToast: ShowToast) {
 
     {installmentTarget && !(installmentTarget.purchaseOrderId && purchaseGroupQuery.isLoading) && <InstallmentDialog key={`${installmentTarget.id}-${installmentTotal}`} open total={installmentTotal} dueDate={installmentTarget.dueAt?.slice(0, 10) ?? todayIso()} description={installmentTarget.purchaseOrderId ? `Pedido de compra #${installmentTarget.purchaseOrderId} · ${purchaseGroup.length > 1 ? `refaz as ${purchaseGroup.length} prestações atuais do pedido` : 'as prestações continuam vinculadas ao pedido'}` : `Conta #${installmentTarget.id} · ${installmentTarget.description ?? ''}`} busy={installmentMutation.isPending} error={installmentError} onClose={() => setInstallmentTarget(null)} onSubmit={(payload) => installmentMutation.mutate({ id: installmentTarget.id, payload })} />}
     <ConfirmDialog open={accountToDelete !== null} title={`Excluir conta #${accountToDelete?.id ?? ''}?`} description="A conta será removida somente se não possuir baixas nem vínculo ativo com pedido de compra." confirmLabel="Excluir conta" busy={deleteMutation.isPending} error={deleteError} onCancel={() => { setAccountToDelete(null); setDeleteError('') }} onConfirm={() => accountToDelete && deleteMutation.mutate(accountToDelete.id)} />
+    <Modal open={remainingTarget !== null} onClose={() => !remainingMutation.isPending && setRemainingTarget(null)} title="Pagamento parcial registrado" description={remainingTarget ? `Conta #${remainingTarget.id} · ${remainingTarget.description ?? ''}` : undefined} size="medium">
+      {remainingTarget && <ModalForm onSubmit={submitRemaining} onCancel={() => setRemainingTarget(null)} submitting={remainingMutation.isPending} submitLabel={remainingMutation.isPending ? 'Gravando...' : 'Confirmar'}>
+        <FormError message={remainingError} />
+        <div className="payable-settlement-summary payable-remaining__summary"><span><small>Valor da conta</small><strong>{money(remainingTarget.amountDue)}</strong></span><span><small>Pago</small><strong className="positive-value">{money(remainingTarget.amountPaid)}</strong></span><span><small>Restante</small><strong className="negative-value">{money(remainingTarget.balance)}</strong></span></div>
+        <p className="payable-remaining__question">O que fazer com o saldo de <strong>{money(remainingTarget.balance)}</strong>? O valor pago fica registrado de qualquer forma.</p>
+        <div className="payable-remaining__options" role="radiogroup" aria-label="Destino do saldo">
+          <label className={remainingForm.action === 'OPEN' ? 'active' : ''}><input type="radio" name="remaining-action" checked={remainingForm.action === 'OPEN'} onChange={() => setRemainingForm((current) => ({ ...current, action: 'OPEN' }))} /><span><strong>Deixar em aberto</strong><small>A conta continua aberta com {money(remainingTarget.balance)} a pagar, no mesmo vencimento.</small></span></label>
+          <label className={remainingForm.action === 'NEXT_INVOICE' ? 'active' : ''}><input type="radio" name="remaining-action" checked={remainingForm.action === 'NEXT_INVOICE'} onChange={() => setRemainingForm((current) => ({ ...current, action: 'NEXT_INVOICE' }))} /><span><strong>Levar para a próxima fatura</strong><small>Esta conta fica quitada em {money(remainingTarget.amountPaid)} e o saldo vira uma nova conta com o vencimento escolhido.</small></span></label>
+          <label className={remainingForm.action === 'INSTALLMENTS' ? 'active' : ''}><input type="radio" name="remaining-action" checked={remainingForm.action === 'INSTALLMENTS'} onChange={() => setRemainingForm((current) => ({ ...current, action: 'INSTALLMENTS' }))} /><span><strong>Parcelar o saldo</strong><small>Esta conta fica quitada em {money(remainingTarget.amountPaid)} e o saldo é dividido em prestações mensais.</small></span></label>
+        </div>
+        {remainingForm.action !== 'OPEN' && <div className="form-grid form-grid--two">
+          <FormField label={remainingForm.action === 'INSTALLMENTS' ? 'Vencimento da 1ª prestação' : 'Vencimento da próxima fatura'}><input type="date" required value={remainingForm.firstDueDate} onChange={(event) => setRemainingForm((current) => ({ ...current, firstDueDate: event.target.value }))} /></FormField>
+          {remainingForm.action === 'INSTALLMENTS' && <FormField label="Quantidade de prestações" hint={`${remainingForm.installments}x de aprox. ${money(Number(remainingTarget.balance) / Math.max(1, remainingForm.installments))}`}><input type="number" min="2" max="120" required value={remainingForm.installments} onChange={(event) => setRemainingForm((current) => ({ ...current, installments: Number(event.target.value) }))} /></FormField>}
+        </div>}
+      </ModalForm>}
+    </Modal>
   </>
 
   return { openNew, openEdit, openSettlement, openInstallments, requestDelete, dialogs }
