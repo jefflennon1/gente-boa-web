@@ -1333,3 +1333,9 @@ input.payable-balance-paid { color: #08705f; font-weight: 750; }
 .contract-plan-change strong { display: block; color: var(--navy); font-size: 10.5px; }
 .contract-plan-change small { display: block; margin-top: 2px; color: var(--muted); font-size: 9px; line-height: 1.45; }
 .contract-cancel-billing { margin: 0 0 12px; padding: 9px 12px; border-radius: 9px; color: #51566f; background: #fff8ee; font-size: 9.5px; line-height: 1.5; }
+
+/* OS de contrato sem valor de minuto extra no contrato */
+.os-contract-rate-warning { margin: 10px 0; padding: 11px 13px; display: flex; align-items: flex-start; gap: 10px; border: 1px solid #f1c48a; border-radius: 10px; color: #8a4b08; background: #fff6e9; }
+.os-contract-rate-warning svg { flex: 0 0 auto; margin-top: 1px; }
+.os-contract-rate-warning strong { display: block; font-size: 10.5px; }
+.os-contract-rate-warning small { display: block; margin-top: 2px; font-size: 9.5px; line-height: 1.45; }

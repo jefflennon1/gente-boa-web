@@ -623,7 +623,7 @@ export function Contracts() {
                     <FormField label="Quantidade"><input type="number" min="1" value={row.quantity} onChange={(event) => updateServiceRow(index, { quantity: Number(event.target.value) })} /></FormField>
                     <FormField label="Qtd. bonificada"><input type="number" min="0" max={row.quantity} value={row.bonusQuantity} onChange={(event) => updateServiceRow(index, { bonusQuantity: Number(event.target.value) })} /></FormField>
                     <FormField label="Valor unitário"><input type="number" min="0" step="0.01" value={row.unitValue} onChange={(event) => updateServiceRow(index, { unitValue: Number(event.target.value) })} /></FormField>
-                    <FormField label="Valor minuto extra"><input type="number" min="0" step="0.01" value={row.extraMinuteValue} onChange={(event) => updateServiceRow(index, { extraMinuteValue: Number(event.target.value) })} /></FormField>
+                    <FormField label="Valor minuto extra *" hint="Cobra os minutos que passarem das horas do contrato."><input type="number" min="0.01" step="0.01" required value={row.extraMinuteValue || ''} onChange={(event) => updateServiceRow(index, { extraMinuteValue: Number(event.target.value) })} /></FormField>
                   </div>
                   <footer><span>Preço padrão: <strong>{money(catalogItem?.defaultValue ?? catalogItem?.defaultPrice)}</strong></span><span>Total estimado: <strong>{money(totalEstimate)}</strong></span></footer>
                 </article>

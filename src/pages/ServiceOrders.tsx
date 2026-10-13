@@ -11,7 +11,7 @@ import type { AttendanceLocation, AttendanceLocationPayload, Client, ClientSearc
 import { Badge, Button, CollapsibleFilters, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 import { useRouter } from '../router'
 import { focusNextField } from '../lib/enterNavigation'
-import { contractExtraMinuteRate } from '../lib/contracts'
+import { contractExtraMinuteRate, contractMinuteValue } from '../lib/contracts'
 import { EmployeePicker, SupplierPicker, type PickerValue } from '../components/AsyncPicker'
 
 const stages: ServiceOrderStatus[] = ['ABERTA', 'FINALIZADA', 'CANCELADA']
@@ -989,6 +989,8 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   const totalMinutes = schedules.reduce((sum, item) => sum + (minutesFromTime(item.expectedDuration) || durationMinutes(item.expectedStart, item.expectedEnd)), 0)
   const projectedBalanceMinutes = Math.max(0, balanceBeforeThisOrder - billableMinutes)
   const contractMinuteRate = contractExtraMinuteRate(serviceItems[0]?.serviceId ?? 0, activeContract?.services)
+  // Contrato sem "valor minuto extra": o excedente cairia no valor do catálogo (igual ao avulso).
+  const contractRateMissing = contracted && Boolean(activeContract) && !(activeContract?.services ?? []).some((service) => contractMinuteValue(service) > 0)
   const operationalRule = contracted
     ? `O tempo realizado é descontado das horas do contrato; o que passar é cobrado a ${money(contractMinuteRate)} por minuto (valor minuto extra do contrato).`
     : systemParametersQuery.data?.oneOffRules || `Cada atendimento é cobrado pelo mínimo de ${minimumMinutes} minutos.`
@@ -1302,6 +1304,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     <FormError message={formError} />
     <div className="os-form-context"><span><small>Ordem de serviço</small><strong>{orderOrigin === 'C' ? 'Contrato' : 'Avulsa'}</strong></span><span><small>Operador</small><strong>{user?.name || 'Usuário atual'}</strong></span><span><small>Cliente</small><strong>{clientId ? selectedClientLabel : 'Selecione o cliente'}</strong></span><Badge tone={statusTone[status]}>{enumLabel(status)}</Badge></div>
     <aside className={`os-accounting-rule os-accounting-rule--${orderOrigin === 'C' ? 'contract' : 'one-off'}`}><Clock3 size={18} /><span><strong>{contracted ? 'Contrato: desconta o tempo realizado, sem mínimo' : `Contabilização mínima: ${minimumMinutes} minutos por atendimento`}</strong><small>{operationalRule}</small></span></aside>
+    {contractRateMissing && <div className="os-contract-rate-warning" role="alert"><CircleAlert size={18} /><span><strong>O contrato #{activeContract?.id} não tem "valor minuto extra" cadastrado.</strong><small>As horas que passarem do contrato serão cobradas pelo valor do catálogo de serviços (igual ao avulso). Cadastre o valor do minuto extra no contrato antes de finalizar esta OS.</small></span></div>}
     <div className="os-form-identification">
       <FormField label="Código"><input value={selected?.id ?? 'Automático'} disabled /></FormField>
       <FormField label="Tipo"><select value={orderOrigin} onChange={(event) => setOrderOrigin(event.target.value as ServiceOrderOrigin)}><option value="A">Avulsa</option><option value="C">Contrato</option><option value="E">Experiência</option>{orderOrigin === 'O' && <option value="O">Obras (legado)</option>}</select></FormField>
