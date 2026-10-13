@@ -794,6 +794,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   const [locationId, setLocationId] = useState(selected?.idlocal ? String(selected.idlocal) : '')
   const [locationModalOpen, setLocationModalOpen] = useState(false)
   const [locationError, setLocationError] = useState('')
+  const [locationFieldError, setLocationFieldError] = useState('')
   const [status, setStatus] = useState<ServiceOrderStatus>(selected?.status || 'ABERTA')
   const [category, setCategory] = useState<ServiceCategory>(selected?.category || 'MAO_DE_OBRA')
   const [serviceType, setServiceType] = useState(selected?.tpservic || 'E')
@@ -878,6 +879,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     onSuccess: async (location) => {
       await queryClient.invalidateQueries({ queryKey: [...queryKeys.attendanceLocations, 'client', location.clientId] })
       setLocationId(String(location.id))
+      setLocationFieldError('')
       setLocationModalOpen(false)
       setLocationError('')
       onNotify(`Local “${location.description}” cadastrado e selecionado.`)
@@ -1010,6 +1012,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     setSelectedClientOption(client)
     setClientSearch('')
     setLocationId('')
+    setLocationFieldError('')
     setClientPickerOpen(false)
     setClientError('')
     setOrderOrigin('A')
@@ -1198,6 +1201,17 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       setClientError('Pesquise e selecione um cliente antes de gravar a ordem.')
       return
     }
+    // O local de atendimento é obrigatório (também validado pela API).
+    if (!locationId) {
+      setLocationFieldError('Selecione o local de atendimento. Se o cliente ainda não tiver um, cadastre pelo botão +.')
+      setTab('general')
+      return
+    }
+    if (selectedAttendanceLocationQuery.isError) {
+      setLocationFieldError('O local selecionado não pertence a este cliente. Escolha outro local.')
+      setTab('general')
+      return
+    }
     if (!requestDate || !description.trim()) return
     if (shouldInferOrderOrigin && contractContextQuery.isFetching) {
       setClientError('Aguarde a verificação do contrato do cliente antes de gravar a ordem.')
@@ -1297,15 +1311,16 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
         <button type="button" className="os-client-modal-trigger" onClick={openClientPicker}><Search size={16} /><span><strong>{clientId ? selectedClientLabel : 'Buscar cliente'}</strong><small>{clientId ? `Código #${clientId} · Clique para alterar` : 'Nome fantasia, razão social ou código'}</small></span></button>
         {clientError && <small className="os-client-picker__error">{clientError}</small>}
       </FormField>
-      <FormField label="Local">
+      <FormField label="Local de atendimento *">
         <div className="os-location-control">
-          <select value={locationId} onChange={(event) => setLocationId(event.target.value)} disabled={!clientId || attendanceLocationsQuery.isLoading} required>
+          <select value={locationId} onChange={(event) => { setLocationId(event.target.value); setLocationFieldError('') }} disabled={!clientId || attendanceLocationsQuery.isLoading} required>
             <option value="">{!clientId ? 'Selecione primeiro o cliente' : attendanceLocationsQuery.isLoading ? 'Carregando locais...' : attendanceLocations.length ? 'Selecione um local' : 'Nenhum local cadastrado'}</option>
             {attendanceLocations.map((location) => <option key={location.id} value={location.id}>{attendanceLocationDisplay(location)}</option>)}
           </select>
           <button type="button" onClick={openLocationModal} disabled={!clientId} title="Adicionar novo local de atendimento" aria-label="Adicionar novo local de atendimento"><Plus size={17} /></button>
         </div>
         {selectedAttendanceLocationQuery.isError && locationId && <small className="os-client-picker__error">O local #{locationId} não pertence a este cliente ou não existe mais.</small>}
+        {locationFieldError && <small className="os-client-picker__error">{locationFieldError}</small>}
       </FormField>
       <FormField label="Situação"><select value={status} onChange={(event) => setStatus(event.target.value as ServiceOrderStatus)}><option value="ABERTA">Aberta</option><option value="FINALIZADA">Finalizada</option><option value="CANCELADA">Cancelada</option></select></FormField>
     </div>
