@@ -10,7 +10,8 @@ import { enumLabel, formatDate, money, toDateInput, toDateTimeInput } from '../l
 import type { ClientSearchOption, Contract, ContractListSortBy, ContractPayload, ContractServiceItem, ContractServicePayload, SortDirection } from '../types'
 import { RenewalHistorySection } from '../components/ContractRenewalHistory'
 import { contractMinuteValue } from '../lib/contracts'
-import { Badge, Button, CollapsibleFilters, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
+import { ClientWorkspaceModal } from '../components/ClientWorkspaceModal'
+import { Badge, Button, CollapsibleFilters, ConfirmDialog, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 type StatusFilter = 'TODOS' | 'ATIVO' | 'CANCELADO'
 
@@ -649,16 +650,23 @@ export function Contracts() {
         </div>
       </Modal>
 
-      <DetailModal
+      <ClientWorkspaceModal
+        key={detailQuery.data ? `${detailQuery.data.id}-${detailQuery.data.clientId}` : 'carregando'}
         open={detailId !== null}
-        onClose={() => setDetailId(null)}
+        clientId={detailQuery.data?.clientId ?? null}
+        clientLabel={detailQuery.data ? detailQuery.data.clientTradeName || detailQuery.data.clientName || undefined : undefined}
         title={detailQuery.data ? `Contrato #${detailQuery.data.id} · ${detailQuery.data.clientTradeName || detailQuery.data.clientName || `Cliente #${detailQuery.data.clientId}`}` : 'Detalhes do contrato'}
-        description="Condições comerciais, vigência, serviços contratados e situação atual."
-        size="xlarge"
-        actions={detailQuery.data ? <><Button variant="danger" icon={<Trash2 size={17} />} onClick={() => { setDeleteError(''); setContractToDelete(detailQuery.data) }}>Excluir</Button>{!detailQuery.data.canceled && <Button variant="secondary" icon={<Ban size={17} />} onClick={() => { setCancelError(''); setContractToCancel(detailQuery.data) }}>Cancelar contrato</Button>}<Button variant="secondary" icon={<Upload size={17} />} disabled={signedDocumentUploadingId === detailQuery.data.id} onClick={() => chooseSignedDocument(detailQuery.data)}>{signedDocumentUploadingId === detailQuery.data.id ? 'Enviando PDF...' : 'Atualizar contrato assinado'}</Button><Button variant="secondary" icon={<Mail size={17} />} disabled={welcomeLoading} onClick={() => openWelcomeLetter(detailQuery.data!.id)}>{welcomeLoading ? 'Gerando...' : 'Carta de boas-vindas'}</Button><Button variant="secondary" icon={<FileSignature size={17} />} disabled={documentLoadingId === detailQuery.data.id} onClick={() => openContractDocument(detailQuery.data)}>{documentLoadingId === detailQuery.data.id ? 'Gerando PDF...' : 'Exibir documento de contrato'}</Button><Button icon={<Edit3 size={17} />} onClick={() => openEdit(detailQuery.data)}>Editar</Button></> : undefined}
-      >
-        {detailQuery.isLoading ? <LoadingState label="Carregando contrato..." /> : detailQuery.isError ? <ErrorState message={apiErrorMessage(detailQuery.error)} onRetry={() => detailQuery.refetch()} /> : detailQuery.data ? <ContractDetail contract={detailQuery.data} /> : null}
-      </DetailModal>
+        description="Tudo sobre o contrato e, no menu lateral, o cliente, cobranças, contas a receber e extrato."
+        showPendingBills
+        extraSections={[{
+          id: 'contract',
+          label: 'Contrato',
+          icon: <FileSignature size={17} />,
+          content: detailQuery.isLoading ? <LoadingState label="Carregando contrato..." /> : detailQuery.isError ? <ErrorState message={apiErrorMessage(detailQuery.error)} onRetry={() => detailQuery.refetch()} /> : detailQuery.data ? <ContractDetail contract={detailQuery.data} minimumContractMonths={minimumContractMonths} warrantyDays={systemParametersQuery.data?.serviceWarrantyDays ?? 90} dueDays={configuredDueDays} contractRules={systemParametersQuery.data?.contractRules ?? null} contractMinimumMinutes={systemParametersQuery.data?.contractMinimumMinutes ?? 20} /> : null,
+          actions: detailQuery.data ? <><Button variant="danger" icon={<Trash2 size={17} />} onClick={() => { setDeleteError(''); setContractToDelete(detailQuery.data) }}>Excluir</Button>{!detailQuery.data.canceled && <Button variant="secondary" icon={<Ban size={17} />} onClick={() => { setCancelError(''); setContractToCancel(detailQuery.data) }}>Cancelar contrato</Button>}<Button variant="secondary" icon={<Upload size={17} />} disabled={signedDocumentUploadingId === detailQuery.data.id} onClick={() => chooseSignedDocument(detailQuery.data)}>{signedDocumentUploadingId === detailQuery.data.id ? 'Enviando PDF...' : 'Atualizar contrato assinado'}</Button><Button variant="secondary" icon={<Mail size={17} />} disabled={welcomeLoading} onClick={() => openWelcomeLetter(detailQuery.data!.id)}>{welcomeLoading ? 'Gerando...' : 'Carta de boas-vindas'}</Button><Button variant="secondary" icon={<FileSignature size={17} />} disabled={documentLoadingId === detailQuery.data.id} onClick={() => openContractDocument(detailQuery.data)}>{documentLoadingId === detailQuery.data.id ? 'Gerando PDF...' : 'Exibir documento de contrato'}</Button><Button icon={<Edit3 size={17} />} onClick={() => openEdit(detailQuery.data)}>Editar</Button></> : undefined,
+        }]}
+        onClose={() => setDetailId(null)}
+      />
 
       <Modal
         open={Boolean(documentContract && documentUrl)}
@@ -722,18 +730,61 @@ export function Contracts() {
   )
 }
 
-function ContractDetail({ contract }: { contract: Contract }) {
+type ContractDetailProps = {
+  contract: Contract
+  minimumContractMonths: number
+  warrantyDays: number
+  dueDays: number[]
+  contractRules: string | null
+  contractMinimumMinutes: number
+}
+
+function ContractDetail({ contract, minimumContractMonths, warrantyDays, dueDays, contractRules, contractMinimumMinutes }: ContractDetailProps) {
+  const services = contract.services ?? []
+  const employeeQuery = useQuery({ queryKey: ['employees', 'detail', contract.employeeId], queryFn: () => api.employees.find(contract.employeeId as number), enabled: Boolean(contract.employeeId) })
+  const supplierQuery = useQuery({ queryKey: ['suppliers', 'detail', contract.supplierId], queryFn: () => api.suppliers.find(contract.supplierId as number), enabled: Boolean(contract.supplierId) })
+  const monthlyTotal = services.reduce((sum, service) => sum + Number(service.totalValue || 0), 0)
+  const hourServices = services.filter((service) => !service.unit || /hora/i.test(service.unit))
+  const contractedHours = hourServices.reduce((sum, service) => sum + Number(service.quantity || 0), 0)
+  const bonusHours = hourServices.reduce((sum, service) => sum + Number(service.bonusQuantity || 0), 0)
+  const minuteValues = services.map(contractMinuteValue).filter((value) => value > 0)
+  const firstCancellation = contract.contractDate ? minimumCancellationDate(contract.contractDate, minimumContractMonths) : ''
+  const percent = (value: number | null) => value == null ? 'Não informado' : `${Number(value).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`
+  const employeeName = !contract.employeeId ? 'Não informado' : employeeQuery.data ? `${employeeQuery.data.name || employeeQuery.data.nickname} (#${contract.employeeId})` : `Funcionário #${contract.employeeId}`
+  const supplierName = !contract.supplierId ? 'Não informado' : supplierQuery.data ? `${supplierQuery.data.tradeName || supplierQuery.data.legalName} (#${contract.supplierId})` : `Fornecedor #${contract.supplierId}`
+
   return <div className="detail-modal-content">
     <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><FileSignature /></span><div><span>Contrato #{contract.id} · Cliente #{contract.clientId}</span><h2>{contract.clientTradeName || contract.clientName || `Cliente #${contract.clientId}`}</h2><p>{contract.clientName || 'Razão social não informada'}</p></div></div><Badge tone={contract.status === 'ATIVO' ? 'green' : 'neutral'}>{enumLabel(contract.status)}</Badge></div>
     <div className="detail-metrics"><span><small>Data do contrato</small><strong>{formatDate(contract.contractDate)}</strong></span><span><small>Renovação</small><strong>{formatDate(contract.renewalDate)}</strong></span><span><small>Vencimento</small><strong>{contract.dueDay ? `Dia ${contract.dueDay}` : 'Não informado'}</strong></span><span><small>Taxa de adesão</small><strong>{money(contract.adhesionFee)}</strong></span></div>
+    <div className="detail-metrics"><span><small>Valor mensal</small><strong>{money(monthlyTotal)}</strong></span><span><small>Horas contratadas</small><strong>{contractedHours.toLocaleString('pt-BR')} h{bonusHours > 0 ? ` + ${bonusHours.toLocaleString('pt-BR')} bonif.` : ''}</strong></span><span><small>Valor minuto extra</small><strong>{minuteValues.length ? minuteValues.map((value) => money(value)).join(' / ') : 'Não informado'}</strong></span><span><small>Serviços</small><strong>{services.length}</strong></span></div>
     <div className="detail-sections-grid">
-    <section className="drawer-section"><h3>Condições comerciais</h3><dl>
-      <div><dt>Carência</dt><dd>{contract.gracePeriod ? 'Sim' : 'Não'}</dd></div>
-      <div><dt>Último reajuste</dt><dd>{formatDate(contract.lastAdjustmentDate)}</dd></div>
-    </dl></section>
-    <section className="drawer-section drawer-section--wide"><h3>Serviços contratados</h3>{(contract.services?.length ?? 0) === 0 ? <p className="drawer-section__text">Nenhum serviço vinculado.</p> : <div className="contract-detail-services">{contract.services.map((service) => <article key={service.sequence}><span>{service.sequence}</span><div><strong>{service.serviceName || service.serviceDescription || `Serviço #${service.serviceId}`}</strong><small>{service.quantity} {service.unit || 'un.'} · {money(service.unitValue)} por unidade</small></div><b>{money(service.totalValue)}</b></article>)}</div>}</section>
-    <RenewalHistorySection contractId={contract.id} />
-    {contract.canceled && <section className="drawer-section contract-cancellation drawer-section--wide"><h3>Cancelamento</h3><dl><div><dt>Data</dt><dd>{formatDate(contract.cancellationDate)}</dd></div><div><dt>Motivo</dt><dd>{contract.cancellationReason || 'Não informado'}</dd></div></dl></section>}
+      <section className="drawer-section"><h3>Condições comerciais</h3><dl>
+        <div><dt>Possui carência</dt><dd>{contract.gracePeriod ? 'Sim' : 'Não'}</dd></div>
+        <div><dt>Dia do vencimento</dt><dd>{contract.dueDay ? `Dia ${contract.dueDay}` : 'Não informado'}</dd></div>
+        <div><dt>Vencimentos permitidos</dt><dd>Dias {dueDays.join(' ou ')}</dd></div>
+        <div><dt>Taxa de adesão</dt><dd>{money(contract.adhesionFee)}</dd></div>
+        <div><dt>Último reajuste</dt><dd>{formatDate(contract.lastAdjustmentDate)}</dd></div>
+        <div><dt>Índice de reajuste</dt><dd>{contract.adjustmentIndexId ? `#${contract.adjustmentIndexId}` : 'Não informado'}</dd></div>
+        <div><dt>% de renovação</dt><dd>{percent(contract.renewalPercentage)}</dd></div>
+      </dl></section>
+      <section className="drawer-section"><h3>Vigência e regras</h3><dl>
+        <div><dt>Situação</dt><dd>{enumLabel(contract.status)}{contract.statusFlag ? ` (${contract.statusFlag})` : ''}</dd></div>
+        <div><dt>Data do contrato</dt><dd>{formatDate(contract.contractDate)}</dd></div>
+        <div><dt>Data de renovação</dt><dd>{formatDate(contract.renewalDate)}</dd></div>
+        <div><dt>Prazo mínimo</dt><dd>{minimumContractMonths} meses{firstCancellation ? ` · cancelamento a partir de ${formatDate(firstCancellation)}` : ''}</dd></div>
+        <div><dt>Garantia dos serviços</dt><dd>{warrantyDays} dias</dd></div>
+        <div><dt>Mínimo por atendimento</dt><dd>{contractMinimumMinutes} minutos</dd></div>
+      </dl></section>
+      <section className="drawer-section"><h3>Venda e comissão</h3><dl>
+        <div><dt>Vendedor</dt><dd>{employeeName}</dd></div>
+        <div><dt>% do vendedor</dt><dd>{percent(contract.employeePercentage)}</dd></div>
+        <div><dt>% de venda</dt><dd>{percent(contract.salePercentage)}</dd></div>
+        <div><dt>Fornecedor</dt><dd>{supplierName}</dd></div>
+      </dl></section>
+      <section className="drawer-section"><h3>Regra operacional</h3><p className="drawer-section__text">{contractRules || 'Horas excedentes são cobradas na próxima mensalidade e horas não utilizadas não acumulam.'}</p></section>
+      <section className="drawer-section drawer-section--wide"><h3>Serviços contratados</h3>{services.length === 0 ? <p className="drawer-section__text">Nenhum serviço vinculado.</p> : <div className="table-wrap"><table className="data-table contract-detail-services-table"><thead><tr><th>Seq.</th><th>Serviço</th><th>Unidade</th><th>Quantidade</th><th>Qtd. bonificada</th><th>Valor unitário</th><th>Valor minuto extra</th><th>Total</th></tr></thead><tbody>{services.map((service) => <tr key={service.sequence}><td>{service.sequence}</td><td><strong>{service.serviceName || service.serviceDescription || `Serviço #${service.serviceId}`}</strong><small className="table-secondary">Código #{service.serviceId}</small></td><td>{service.unit || 'Não informado'}</td><td>{Number(service.quantity || 0).toLocaleString('pt-BR')}</td><td>{Number(service.bonusQuantity || 0).toLocaleString('pt-BR')}</td><td>{money(service.unitValue)}</td><td>{contractMinuteValue(service) > 0 ? money(contractMinuteValue(service)) : 'Não informado'}</td><td><strong>{money(service.totalValue)}</strong></td></tr>)}</tbody><tfoot><tr><td colSpan={7}>Total mensal</td><td><strong>{money(monthlyTotal)}</strong></td></tr></tfoot></table></div>}</section>
+      <RenewalHistorySection contractId={contract.id} />
+      {contract.canceled && <section className="drawer-section contract-cancellation drawer-section--wide"><h3>Cancelamento</h3><dl><div><dt>Data</dt><dd>{formatDate(contract.cancellationDate)}</dd></div><div><dt>Motivo</dt><dd>{contract.cancellationReason || 'Não informado'}</dd></div></dl></section>}
     </div>
   </div>
 }
