@@ -997,6 +997,7 @@ export interface Invoice {
   ibsCbsDestinationIndicator: string | null
   ibsCbsCst: string | null
   ibsCbsTaxClassification: string | null
+  clientTaxRetention?: ClientTaxRetention | null
   client?: Client | null
   nrnotaf?: string | null
   dsmespr?: string | null
@@ -1301,6 +1302,19 @@ export interface BillListItem {
   serviceOrderDate: ISODateTime | null
   emailSent: boolean
   emailSentAt: ISODateTime | null
+  /** Cliente retém ISS na fonte (cadastro). */
+  issRetained?: boolean
+  /** Cliente retém INSS na fonte (cadastro). */
+  inssRetained?: boolean
+}
+
+/** Retenção de ISS/INSS conforme o cadastro do cliente (alíquotas em %). */
+export interface ClientTaxRetention {
+  issRetained: boolean
+  issRate: number | null
+  inssRetained: boolean
+  inssRate: number | null
+  notice: string | null
 }
 
 export interface AccountsReceivableListItem {
@@ -1322,6 +1336,8 @@ export interface AccountsReceivableListItem {
   statusFlag: string | null
   generated: boolean
   paid: boolean
+  issRetained?: boolean
+  inssRetained?: boolean
 }
 
 export interface GeneratedBill {
@@ -1426,6 +1442,7 @@ export interface BillDetail extends BillListItem {
   attendances: BillAttendanceLine[]
   receivables: BillReceivableLine[]
   trackings: ServiceOrderTracking[]
+  taxRetention?: ClientTaxRetention | null
 }
 
 export interface BillPrintRow {
@@ -1495,6 +1512,7 @@ export interface ClientStatementDetail extends ClientStatementSummary {
   clientAddress: string | null
   orders: BillDetail[]
   attendanceLocations: ClientStatementLocation[]
+  taxRetention?: ClientTaxRetention | null
 }
 
 export interface ClientStatementLocation {

@@ -64,6 +64,7 @@ export interface BillStatement {
   allocationTotal: BillStatementAllocationRow
   company: { name: string | null; address: string | null; phone: string | null; cnpj: string | null; stateRegistration: string | null } | null
   contractHours: BillStatementContractHours | null
+  taxRetention?: import('../types').ClientTaxRetention | null
 }
 /** Boleto ainda não gerado: contas a receber selecionadas ou cliente + vencimento. */
 export type BillStatementPreviewPayload = { receivableIds: number[] } | { clientId: number; dueDate: string }

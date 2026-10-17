@@ -55,6 +55,7 @@ import {
   StatCard,
   Toast,
 } from '../components/ui'
+import { TaxRetentionBadges, TaxRetentionNotice } from '../components/TaxRetention'
 import { useRouter } from '../router'
 
 type InvoiceTab = 'Pendentes' | 'Emitidas' | 'Canceladas' | 'Todas'
@@ -761,7 +762,7 @@ export function NationalInvoices() {
           </tr></thead><tbody>{filtered.map((invoice) => (
             <tr key={invoice.id} className={selectedIds.includes(invoice.id) ? 'row-selected' : ''} onClick={() => setDetail(invoice)}>
               <td className="check-column" onClick={(event) => event.stopPropagation()}><input type="checkbox" disabled={!issuableStatuses.includes(invoice.status)} checked={selectedIds.includes(invoice.id)} onChange={() => setSelectedIds((ids) => ids.includes(invoice.id) ? ids.filter((id) => id !== invoice.id) : [...ids, invoice.id])} /></td>
-              <td><strong>{invoiceCode(invoice)}</strong><small className="table-secondary">{invoice.clientTradeName || invoice.clientName || 'Cliente não informado'} · {invoice.document || 'Sem documento'}</small></td>
+              <td><strong>{invoiceCode(invoice)}</strong><small className="table-secondary">{invoice.clientTradeName || invoice.clientName || 'Cliente não informado'} · {invoice.document || 'Sem documento'}</small><TaxRetentionBadges iss={invoice.clientTaxRetention?.issRetained} inss={invoice.clientTaxRetention?.inssRetained} /></td>
               <td>{invoice.serviceOrderId ? <strong>OS-{invoice.serviceOrderId}</strong> : '—'}</td>
               <td>{formatDate(invoice.competence)}<small className="table-secondary">{invoice.environment ? enumLabel(invoice.environment) : 'Registro legado'}</small></td>
               <td><strong>{money(invoice.amount)}</strong></td>
@@ -1064,6 +1065,7 @@ export function NationalInvoices() {
 function InvoiceDetail({ invoice }: { invoice: Invoice }) {
   return <div className="detail-modal-content">
     <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><ReceiptText /></span><div><span>{invoiceCode(invoice)}</span><h2>{invoice.clientTradeName || invoice.clientName || 'Cliente não informado'}</h2><p>{invoice.clientTradeName && invoice.clientName !== invoice.clientTradeName ? invoice.clientName : invoice.document || 'Documento não informado'}</p></div></div><Badge tone={statusTone(invoice.status)}>{enumLabel(invoice.status)}</Badge></div>
+    <TaxRetentionNotice retention={invoice.clientTaxRetention} />
     {invoice.errorMessage && <div className="form-error"><AlertTriangle size={16} /><span>{invoice.errorCode ? `${invoice.errorCode}: ` : ''}{invoice.errorMessage}</span></div>}
     <div className="detail-metrics"><span><small>Competência</small><strong>{formatDate(invoice.competence)}</strong></span><span><small>Valor do serviço</small><strong>{money(invoice.amount)}</strong></span><span><small>ISS</small><strong>{money(invoice.tax)}</strong></span><span><small>Tentativas</small><strong>{invoice.attempts || 0}</strong></span></div>
     <div className="detail-sections-grid">

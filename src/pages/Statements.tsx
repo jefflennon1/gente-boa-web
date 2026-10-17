@@ -17,6 +17,7 @@ import { BillStatementsTab } from '../components/BillStatementsTab'
 import { ClientStatementTab } from '../components/ClientStatementTab'
 import { BillDetails, ClientStatementDetails, formatMinutes } from '../components/BillingDetails'
 import { ClientWorkspaceModal } from '../components/ClientWorkspaceModal'
+import { TaxRetentionBadges } from '../components/TaxRetention'
 import { useRouter } from '../router'
 import type { BillStatementSource } from '../api/modules'
 
@@ -264,7 +265,7 @@ export function Statements() {
         <td><input type="checkbox" disabled={isPaid(bill)} checked={Boolean(selectedBills[bill.id])} onClick={(event) => event.stopPropagation()} onChange={() => setSelectedBills((current) => { const next = { ...current }; if (next[bill.id]) delete next[bill.id]; else next[bill.id] = bill; return next })} aria-label={`Selecionar boleto ${bill.number || bill.id}`} /></td>
         <td><strong>#{bill.number || bill.id}</strong><small className="table-secondary">Registro {bill.id}</small></td>
         <td><strong>{bill.serviceOrderId || 'CR'}</strong></td>
-        <td><strong className="table-primary">{bill.clientTradeName || bill.clientName || `Cliente #${bill.clientId}`}</strong><small className="table-secondary">{bill.clientTradeName && bill.clientName ? bill.clientName : `Código ${bill.clientId || '—'}`}</small></td>
+        <td><strong className="table-primary">{bill.clientTradeName || bill.clientName || `Cliente #${bill.clientId}`}</strong><small className="table-secondary">{bill.clientTradeName && bill.clientName ? bill.clientName : `Código ${bill.clientId || '—'}`}</small><TaxRetentionBadges iss={bill.issRetained} inss={bill.inssRetained} /></td>
         <td>{bill.contractId ? `#${bill.contractId}` : 'Avulso'}</td>
         <td>{formatDate(bill.serviceOrderDate)}</td><td>{formatDate(bill.processedAt, true)}</td><td>{formatDate(bill.dueAt)}</td><td><strong>{money(bill.amount)}</strong></td>
         <td><Badge tone={bill.emailSent ? 'green' : 'neutral'}>{bill.emailSent ? 'Sim' : 'Não'}</Badge>{bill.emailSentAt && <small className="table-secondary">{formatDate(bill.emailSentAt, true)}</small>}</td>

@@ -3,6 +3,7 @@ import { api } from '../api/services'
 import { enumLabel, formatDate } from '../lib/format'
 import type { BillDetail, ClientStatementDetail, ClientStatementLocation } from '../types'
 import { formatMinutes } from './BillingDetails'
+import { TaxRetentionNotice } from './TaxRetention'
 
 const num = (value: number) => Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const sum = <T,>(items: T[], value: (item: T) => number) => items.reduce((total, item) => total + Number(value(item) || 0), 0)
@@ -95,6 +96,7 @@ export function ClientStatementReport({ statement }: { statement: ClientStatemen
         <tr><th>Telefone</th><td>{statement.clientPhone || 'Não informado'}</td><th>E-mail</th><td>{statement.clientEmail || 'Não informado'}</td></tr>
         <tr><th>Endereço</th><td colSpan={3}>{statement.clientAddress || 'Não informado'}</td></tr>
       </tbody></table>
+      <TaxRetentionNotice retention={statement.taxRetention} className="statement-report__retention" />
     </section>
 
     <section>

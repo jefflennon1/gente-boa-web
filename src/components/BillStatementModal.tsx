@@ -5,6 +5,7 @@ import { apiErrorMessage } from '../api/client'
 import { modulesApi, openPdf, type BillStatement, type BillStatementAllocationRow, type BillStatementSource } from '../api/modules'
 import { dateText, moneyText, printElement } from '../lib/export'
 import { Button, ErrorState, LoadingState, Modal } from './ui'
+import { TaxRetentionNotice } from './TaxRetention'
 
 function sourceKey(source: BillStatementSource) {
   if ('billId' in source) return ['bill', source.billId]
@@ -72,6 +73,7 @@ function StatementDocument({ statement }: { statement: BillStatement }) {
       <p>Cliente: {statement.clientId} - {statement.clientName}</p>
       <p>Endereço: {statement.clientAddress}</p>
     </div>
+    <TaxRetentionNotice retention={statement.taxRetention} className="statement-doc__retention" />
     <p className="statement-doc__number">Boleto: {statement.billNumber ?? 'a gerar'}</p>
     <p className="statement-doc__notice">Em caso de dúvida com relação à Ordem de Serviço (OS) executada, por gentileza solicite uma cópia da OS completa através da nossa Central de Atendimento{statement.company?.phone ? ` pelo telefone ${statement.company.phone}` : ''}.</p>
 

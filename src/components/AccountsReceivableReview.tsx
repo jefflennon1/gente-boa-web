@@ -9,6 +9,7 @@ import { formatDate, money } from '../lib/format'
 import type { GeneratedBill, AccountsReceivableListItem, BillDetail, BillGenerationPreview } from '../types'
 import { Badge, Button, CollapsibleFilters, EmptyState, ErrorState, FormField, LoadingState, Modal, StatCard } from './ui'
 import { ClientWorkspaceModal } from './ClientWorkspaceModal'
+import { TaxRetentionBadges } from './TaxRetention'
 
 type BillingType = 'ALL' | 'CONTRACT' | 'ONE_OFF'
 type GeneratedStatus = 'ALL' | 'GENERATED' | 'PENDING'
@@ -259,7 +260,7 @@ export function AccountsReceivableReview({ showToast, onOpenStatement, onGenerat
       {query.isLoading ? <LoadingState label="Carregando contas a receber..." /> : query.isError ? <ErrorState message={apiErrorMessage(query.error)} onRetry={() => query.refetch()} /> : rows.length === 0 ? <EmptyState title="Nenhuma conta a receber sem boleto neste vencimento" description="Ajuste o vencimento do CR ou confira se os títulos já foram faturados." /> : <div className="table-wrap"><table className="data-table receivable-table"><thead><tr><th><input type="checkbox" checked={rows.some((row) => !row.generated) && rows.filter((row) => !row.generated).every((row) => Boolean(selected[row.id]))} onChange={togglePage} aria-label="Marcar os registros pendentes desta página" /></th><th>CR</th><th>Cliente</th><th>Contrato</th><th>OS</th><th>Descrição</th><th>Cadastro</th><th>Vencimento</th><th>Valor</th><th>Saldo</th><th>Situação</th><th /></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className={selected[row.id] ? 'receivable-row--selected' : ''} onClick={() => openPreview(row)}>
         <td><input type="checkbox" checked={Boolean(selected[row.id])} disabled={row.generated} onChange={() => toggle(row)} onClick={(event) => event.stopPropagation()} aria-label={`Selecionar conta a receber ${row.id}`} /></td>
         <td><strong>#{row.id}</strong>{row.billNumber && <small className="table-secondary">Boleto #{row.billNumber}</small>}</td>
-        <td><strong className="table-primary">{row.clientTradeName || row.clientName || `Cliente #${row.clientId}`}</strong><small className="table-secondary">{row.clientDocument || `Código ${row.clientId || '—'}`}</small></td>
+        <td><strong className="table-primary">{row.clientTradeName || row.clientName || `Cliente #${row.clientId}`}</strong><small className="table-secondary">{row.clientDocument || `Código ${row.clientId || '—'}`}</small><TaxRetentionBadges iss={row.issRetained} inss={row.inssRetained} /></td>
         <td>{row.contractId ? `#${row.contractId}` : 'Avulso'}</td><td>{row.serviceOrderId || '—'}</td><td>{row.description || 'Não informada'}</td><td>{formatDate(row.createdAt)}</td><td>{formatDate(row.dueAt)}</td><td className={Number(row.amount) < 0 ? 'receivable-negative' : ''}><strong>{money(row.amount)}</strong></td><td>{money(row.balance)}</td><td><Badge tone={row.generated ? 'green' : row.paid ? 'blue' : 'orange'}>{row.generated ? `Boleto #${row.billNumber}` : row.paid ? 'Pago' : 'A faturar'}</Badge></td><td><button type="button" className="row-action" onClick={(event) => { event.stopPropagation(); openPreview(row) }} aria-label={`Visualizar registro ${row.id}`}><Eye size={16} /></button></td>
       </tr>)}</tbody></table></div>}
 

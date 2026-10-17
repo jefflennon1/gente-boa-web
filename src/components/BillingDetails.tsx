@@ -2,6 +2,7 @@ import { CalendarDays, FileBarChart, FileText, Mail, ReceiptText, Upload } from 
 import { enumLabel, formatDate, money } from '../lib/format'
 import type { BillDetail, ClientStatementDetail } from '../types'
 import { Badge } from './ui'
+import { TaxRetentionNotice } from './TaxRetention'
 
 // Blocos de detalhe de cobrança compartilhados entre a tela de Boletos e o modal "Dados do cliente".
 
@@ -10,6 +11,7 @@ export function BillDetails({ bill, paid }: { bill: BillDetail; paid: boolean })
   const receivableContracts = [...new Set((bill.receivables || []).map((item) => item.contractId).filter((id): id is number => Boolean(id)))]
   return <div className="detail-modal-content bill-detail">
     <div className="detail-modal__hero-row"><div className="detail-drawer__hero"><span className="detail-avatar"><ReceiptText /></span><div><span>Boleto #{bill.number || bill.id}{bill.serviceOrderId ? ` · ${bill.serviceOrderId}` : ' · Contas a receber'}</span><h2>{bill.clientTradeName || bill.clientName || `Cliente #${bill.clientId}`}</h2><p>Vencimento em {formatDate(bill.dueAt)}</p></div></div><Badge tone={paid ? 'green' : 'orange'}>{paid ? 'Pago' : 'Pendente'}</Badge></div>
+    <TaxRetentionNotice retention={bill.taxRetention} />
     <div className="detail-metrics bill-detail__metrics"><span><small>Valor total</small><strong>{money(bill.amount)}</strong></span><span><small>Serviços</small><strong>{money(bill.serviceAmount)}</strong></span><span><small>Materiais</small><strong>{money(bill.materialAmount)}</strong></span><span><small>Tempo realizado</small><strong>{bill.actualHours || '00:00'}</strong></span></div>
     <div className="detail-sections-grid">
       <section className="drawer-section"><h3>Cliente</h3><dl><div><dt>Código</dt><dd>{bill.clientId || '—'}</dd></div><div><dt>Razão social</dt><dd>{bill.clientName || 'Não informada'}</dd></div><div><dt>Nome fantasia</dt><dd>{bill.clientTradeName || 'Não informado'}</dd></div><div><dt>CPF / CNPJ</dt><dd>{bill.clientDocument || 'Não informado'}</dd></div><div><dt>Telefone</dt><dd>{bill.clientPhone || 'Não informado'}</dd></div><div><dt>E-mail</dt><dd>{bill.clientEmail || 'Não informado'}</dd></div><div className="drawer-section__wide"><dt>Endereço</dt><dd>{bill.clientAddress || 'Não informado'}</dd></div></dl></section>

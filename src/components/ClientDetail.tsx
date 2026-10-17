@@ -60,8 +60,8 @@ export function ClientDetail({ client }: { client: Client }) {
     </dl></section>
     <section className="drawer-section"><h3>Tributação e envios</h3><dl>
       <div><dt>Auditado</dt><dd>{yesNo(client.flaudit)}</dd></div>
-      <div><dt>Retém ISS</dt><dd>{yesNo(client.fliss)}{client.vliss != null ? ` · ${money(client.vliss)}` : ''}</dd></div>
-      <div><dt>Retém INSS</dt><dd>{yesNo(client.flinss)}{client.vlinss != null ? ` · ${money(client.vlinss)}` : ''}</dd></div>
+      <div><dt>Retém ISS</dt><dd>{yesNo(client.fliss)}{flagIsOn(client.fliss) && Number(client.vliss) > 0 ? ` · ${percent(client.vliss)}` : ''}</dd></div>
+      <div><dt>Retém INSS</dt><dd>{yesNo(client.flinss)}{flagIsOn(client.flinss) && Number(client.vlinss) > 0 ? ` · ${percent(client.vlinss)}` : ''}</dd></div>
       <div><dt>Envio de boleto</dt><dd>{client.flenvioboleto || 'Não informado'}</dd></div>
       <div><dt>Boleto automático por e-mail</dt><dd>{client.billEmailEnabled ? 'Sim' : 'Não'}</dd></div>
       <div><dt>Envio de extrato</dt><dd>{client.flenvioextrato || 'Não informado'}</dd></div>
@@ -88,4 +88,8 @@ export function ClientDetail({ client }: { client: Client }) {
     </section>
     </div>
   </div>
+}
+
+function percent(value: number | string | null | undefined) {
+  return `${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
 }
