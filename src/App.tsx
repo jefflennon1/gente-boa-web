@@ -27,6 +27,8 @@ const pages: Partial<Record<string, LazyExoticComponent<ComponentType>>> = {
   '/parametros-do-sistema': lazy(() => import('./pages/SystemParameters').then((module) => ({ default: module.SystemParametersPage }))),
   '/envio-de-emails': lazy(() => import('./pages/ClientEmails').then((module) => ({ default: module.ClientEmailsPage }))),
   '/contas-a-receber': lazy(() => import('./pages/AccountsReceivable').then((module) => ({ default: module.AccountsReceivable }))),
+  '/contas-a-receber/recibos': lazy(() => import('./pages/Receipts').then((module) => ({ default: module.ReceivableReceipts }))),
+  '/contas-a-pagar/recibos': lazy(() => import('./pages/Receipts').then((module) => ({ default: module.PayableReceipts }))),
   '/caixa-diario': lazy(() => import('./pages/CashDaily').then((module) => ({ default: module.CashDaily }))),
   '/centros-de-custo': lazy(() => import('./pages/CostCenters').then((module) => ({ default: module.CostCenters }))),
   '/acompanhamento-colaboradores': lazy(() => import('./pages/EmployeeTracking').then((module) => ({ default: module.EmployeeTracking }))),

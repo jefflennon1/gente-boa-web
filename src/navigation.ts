@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { Bell, Boxes, BriefcaseBusiness, CalendarClock, ClipboardList, FileBarChart, FilePen, FileSignature, FileSpreadsheet, FileText, FolderTree, HandCoins, LayoutDashboard, MapPin, Megaphone, PiggyBank, ReceiptText, ScrollText, Settings, ShieldCheck, Truck, UserRoundCog, UsersRound, Wallet, Wrench } from 'lucide-react'
+import { Bell, Boxes, BriefcaseBusiness, CalendarClock, ClipboardList, FileBarChart, FileCheck2, FilePen, FileSignature, FileSpreadsheet, FileText, FolderTree, HandCoins, LayoutDashboard, MapPin, Megaphone, PiggyBank, ReceiptText, ScrollText, Settings, ShieldCheck, Truck, UserRoundCog, UsersRound, Wallet, Wrench } from 'lucide-react'
 
 export type NavItem = {
   to: string
@@ -9,6 +9,8 @@ export type NavItem = {
   permission: string
   end?: boolean
   adminOnly?: boolean
+  /** Subitem exibido recuado logo abaixo do item principal (ex.: Recibos de Contas a receber). */
+  sub?: boolean
 }
 
 export type NavGroup = { label: string; items: NavItem[] }
@@ -39,8 +41,10 @@ export const navGroups: NavGroup[] = [
   {
     label: 'Financeiro',
     items: [
-      { to: '/contas-a-receber', label: 'Contas a receber', icon: PiggyBank, permission: 'receivables' },
-      { to: '/contas-a-pagar', label: 'Contas a pagar', icon: HandCoins, permission: 'payables' },
+      { to: '/contas-a-receber', label: 'Contas a receber', icon: PiggyBank, permission: 'receivables', end: true },
+      { to: '/contas-a-receber/recibos', label: 'Recibos', icon: FileCheck2, permission: 'receivables', sub: true },
+      { to: '/contas-a-pagar', label: 'Contas a pagar', icon: HandCoins, permission: 'payables', end: true },
+      { to: '/contas-a-pagar/recibos', label: 'Recibos', icon: FileCheck2, permission: 'payables', sub: true },
       { to: '/caixa-diario', label: 'Caixa diário', icon: Wallet, permission: 'cash' },
       { to: '/centros-de-custo', label: 'Centros de custo', icon: FolderTree, permission: 'cost-centers' },
       // { to: '/boletos', label: 'Boletos', icon: FileText, permission: 'bills' },
@@ -73,7 +77,11 @@ export const navGroups: NavGroup[] = [
 
 export const navItems = navGroups.flatMap((group) => group.items)
 
-export const routeNames: Record<string, string> = Object.fromEntries(navItems.map((item) => [item.to, item.label]))
+export const routeNames: Record<string, string> = {
+  ...Object.fromEntries(navItems.map((item) => [item.to, item.label])),
+  '/contas-a-receber/recibos': 'Recibos de contas a receber',
+  '/contas-a-pagar/recibos': 'Recibos de contas a pagar',
+}
 
 /** Usuário pode abrir a rota? Administradores sempre podem; os demais seguem a lista de acessos (vazia = acesso livre). */
 export function canAccess(item: NavItem | undefined, user: { role?: string; permissions?: string[] } | null | undefined) {

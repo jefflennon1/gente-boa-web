@@ -14,7 +14,11 @@ import { Button, EmptyState, ErrorState, LoadingState, Modal } from './ui'
  * horas, serviços, materiais e valores — independente de boleto gerado. O cliente é obrigatório.
  */
 export function ClientStatementTab({ showToast }: { showToast: (message: string) => void }) {
-  const initial = useMemo(() => monthBounds(), [])
+  // Período padrão: do 1º dia do mês atual ao último dia do mês seguinte (ex.: 01/10 a 30/11).
+  const initial = useMemo(() => {
+    const today = new Date()
+    return { start: monthBounds(today).start, end: monthBounds(new Date(today.getFullYear(), today.getMonth() + 1, 1)).end }
+  }, [])
   const [client, setClient] = useState<PickerValue>(null)
   const [startDate, setStartDate] = useState(initial.start)
   const [endDate, setEndDate] = useState(initial.end)

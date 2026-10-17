@@ -6,7 +6,7 @@ import { modulesApi, modulesKeys, summaryNumber, type BillStatementSource } from
 import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { formatDate, money } from '../lib/format'
-import type { AccountsReceivableListItem, BillDetail, BillGenerationPreview } from '../types'
+import type { GeneratedBill, AccountsReceivableListItem, BillDetail, BillGenerationPreview } from '../types'
 import { Badge, Button, CollapsibleFilters, EmptyState, ErrorState, FormField, LoadingState, Modal, StatCard } from './ui'
 import { ClientWorkspaceModal } from './ClientWorkspaceModal'
 
@@ -14,7 +14,7 @@ type BillingType = 'ALL' | 'CONTRACT' | 'ONE_OFF'
 type GeneratedStatus = 'ALL' | 'GENERATED' | 'PENDING'
 type PaymentStatus = 'ALL' | 'PENDING' | 'PAID'
 
-export function AccountsReceivableReview({ showToast, onOpenStatement }: { showToast: (message: string) => void; onOpenStatement?: (source: BillStatementSource) => void }) {
+export function AccountsReceivableReview({ showToast, onOpenStatement, onGenerated }: { showToast: (message: string) => void; onOpenStatement?: (source: BillStatementSource) => void; /** Chamado com os boletos recém-gerados (ex.: para abrir "Boletos gerados e pagamento"). */ onGenerated?: (bills: GeneratedBill[]) => void }) {
   const queryClient = useQueryClient()
   const initialPeriod = useMemo(currentMonthPeriod, [])
   const [search, setSearch] = useState('')
@@ -86,6 +86,7 @@ export function AccountsReceivableReview({ showToast, onOpenStatement }: { showT
         queryClient.invalidateQueries({ queryKey: queryKeys.bills }),
       ])
       showToast(`${result.billCount} boleto(s) gerado(s), ${result.receivableCount} lançamento(s) faturado(s) e ${result.invoiceCount} rascunho(s) de NF criado(s) para clientes auditados.`)
+      if (result.bills?.length) onGenerated?.(result.bills)
     },
     onError: (error) => setActionError(apiErrorMessage(error, 'Não foi possível gerar o boleto.')),
   })
@@ -244,16 +245,16 @@ export function AccountsReceivableReview({ showToast, onOpenStatement }: { showT
           <label className="billing-filter-group billing-filter-group--dates"><span>Vencimento do CR</span><div><input type="date" value={dueStart} max={dueEnd || undefined} onChange={(event) => changeFilter(() => setDueStart(event.target.value))} /><i>até</i><input type="date" value={dueEnd} min={dueStart || undefined} onChange={(event) => changeFilter(() => setDueEnd(event.target.value))} /></div></label>
           <label className="billing-filter-group billing-filter-group--dates"><span>Data das OS (opcional)</span><div><input type="date" value={orderStart} max={orderEnd || undefined} onChange={(event) => changeFilter(() => setOrderStart(event.target.value))} /><i>até</i><input type="date" value={orderEnd} min={orderStart || undefined} onChange={(event) => changeFilter(() => setOrderEnd(event.target.value))} /></div></label>
         </div>
-        <div className="billing-search-row billing-search-row--actions"><Button variant="ghost" onClick={() => changeFilter(() => { setDueStart(initialPeriod.startDate); setDueEnd(initialPeriod.endDate); setOrderStart(''); setOrderEnd(''); setDueDay(''); setBillingType('ALL'); setGeneratedStatus('PENDING'); setPaymentStatus('PENDING'); setSearch('') })}>Limpar filtros</Button><Button variant="secondary" disabled={selectAllMutation.isPending || total === 0} onClick={() => selectAllMutation.mutate()}>{selectAllMutation.isPending ? 'Marcando...' : 'Marcar todos do filtro'}</Button></div>
+      </CollapsibleFilters>
+      <section className="receivable-toolbar" aria-label="Ações das contas a receber">
+        <div className="receivable-toolbar__filters">
+          <div className="billing-filter-group receivable-toolbar__group"><span>Dia fixo</span><div className="billing-day-options"><button type="button" className={dueDay === '' ? 'active' : ''} onClick={() => changeFilter(() => setDueDay(''))}>Todos</button>{([10, 20] as const).map((day) => <button type="button" key={day} className={dueDay === day ? 'active' : ''} onClick={() => changeFilter(() => setDueDay(day))}>{day}</button>)}</div></div>
+          <label className="billing-filter-group receivable-toolbar__group"><span>Pagamento</span><select value={paymentStatus} onChange={(event) => changeFilter(() => setPaymentStatus(event.target.value as PaymentStatus))}><option value="PENDING">Pendentes</option><option value="PAID">Pagos</option><option value="ALL">Todos</option></select></label>
+          <div className="receivable-toolbar__filter-actions"><Button variant="ghost" onClick={() => changeFilter(() => { setDueStart(initialPeriod.startDate); setDueEnd(initialPeriod.endDate); setOrderStart(''); setOrderEnd(''); setDueDay(''); setBillingType('ALL'); setGeneratedStatus('PENDING'); setPaymentStatus('PENDING'); setSearch('') })}>Limpar filtros</Button><Button variant="secondary" disabled={selectAllMutation.isPending || total === 0} onClick={() => selectAllMutation.mutate()}>{selectAllMutation.isPending ? 'Marcando...' : 'Marcar todos do filtro'}</Button></div>
+        </div>
         <div className="receivable-actions"><span><strong>{selectedRows.length}</strong> registro(s) selecionado(s)</span><div><Button type="button" variant="secondary" icon={<FileBarChart size={16} />} disabled={selectedRows.length === 0 || !onOpenStatement} title="Extrato do boleto das contas marcadas (um cliente e um vencimento)" onClick={openSelectionStatement}>Extrato</Button><Button type="button" variant="secondary" onClick={() => void openIss()}>Lançar ISS retido</Button><Button type="button" disabled={selectedRows.length === 0 || previewGenerationMutation.isPending} onClick={openGenerationPreview}>{previewGenerationMutation.isPending ? 'Preparando prévia...' : `Revisar e gerar (${selectedRows.length})`}</Button></div></div>
         {actionError && <div className="receivable-action-error" role="alert">{actionError}</div>}
-      </CollapsibleFilters>
-       
-           <div className="billing-filter-grid receivable-filter-grid externo">
-             <div className="billing-filter-group externo"><span>Dia fixo</span><div className="billing-day-options"><button type="button" className={dueDay === '' ? 'active' : ''} onClick={() => changeFilter(() => setDueDay(''))}>Todos</button>{([10, 20] as const).map((day) => <button type="button" key={day} className={dueDay === day ? 'active' : ''} onClick={() => changeFilter(() => setDueDay(day))}>{day}</button>)}</div></div>
-             <label className="billing-filter-group externo"><span>Pagamento</span><select value={paymentStatus} onChange={(event) => changeFilter(() => setPaymentStatus(event.target.value as PaymentStatus))}><option value="PENDING">Pendentes</option><option value="PAID">Pagos</option><option value="ALL">Todos</option></select></label>         
-           </div>
-         
+      </section>
 
       {query.isLoading ? <LoadingState label="Carregando contas a receber..." /> : query.isError ? <ErrorState message={apiErrorMessage(query.error)} onRetry={() => query.refetch()} /> : rows.length === 0 ? <EmptyState title="Nenhuma conta a receber sem boleto neste vencimento" description="Ajuste o vencimento do CR ou confira se os títulos já foram faturados." /> : <div className="table-wrap"><table className="data-table receivable-table"><thead><tr><th><input type="checkbox" checked={rows.some((row) => !row.generated) && rows.filter((row) => !row.generated).every((row) => Boolean(selected[row.id]))} onChange={togglePage} aria-label="Marcar os registros pendentes desta página" /></th><th>CR</th><th>Cliente</th><th>Contrato</th><th>OS</th><th>Descrição</th><th>Cadastro</th><th>Vencimento</th><th>Valor</th><th>Saldo</th><th>Situação</th><th /></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className={selected[row.id] ? 'receivable-row--selected' : ''} onClick={() => openPreview(row)}>
         <td><input type="checkbox" checked={Boolean(selected[row.id])} disabled={row.generated} onChange={() => toggle(row)} onClick={(event) => event.stopPropagation()} aria-label={`Selecionar conta a receber ${row.id}`} /></td>

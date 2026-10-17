@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { ChevronRight, CircleDollarSign, ExternalLink, FileBarChart, FileSignature, MapPin, ReceiptText, Timer, UserRound, WalletCards, Wrench } from 'lucide-react'
+import { ChevronRight, CircleDollarSign, ExternalLink, FileBarChart, FileCheck2, FileSignature, MapPin, ReceiptText, Timer, UserRound, WalletCards, Wrench } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { enumLabel, formatDate, money } from '../lib/format'
@@ -13,9 +13,10 @@ import { ClientDetail, formatCep } from './ClientDetail'
 import { ClientHourTracking } from './ClientHourTracking'
 import { ClientStatementDetails, DetailTable, formatMinutes } from './BillingDetails'
 import { RenewalHistorySection } from './ContractRenewalHistory'
+import { PartyReceipts } from './ReceiptsPanel'
 import { Badge, Button, EmptyState, ErrorState, LoadingState, Modal } from './ui'
 
-type Section = 'profile' | 'bill' | 'pending' | 'bills' | 'receivables' | 'contracts' | 'locations' | 'orders' | 'hours' | 'statement' | `extra:${string}`
+type Section = 'profile' | 'bill' | 'pending' | 'bills' | 'receivables' | 'contracts' | 'locations' | 'orders' | 'hours' | 'statement' | 'receipts' | `extra:${string}`
 
 /** Seção própria de quem abre o modal (ex.: o contrato), exibida no topo do menu lateral. */
 export type ClientWorkspaceExtraSection = { id: string; label: string; icon: ReactNode; content: ReactNode; actions?: ReactNode }
@@ -61,6 +62,7 @@ export function ClientWorkspaceModal({ open, clientId, clientLabel, bill, onSele
     { id: 'pending', label: 'Boletos a gerar', icon: <ReceiptText size={17} />, hidden: Boolean(bill) || !showPendingBills },
     { id: 'bills', label: 'Boletos do cliente', icon: <WalletCards size={17} /> },
     { id: 'receivables', label: 'Contas a receber', icon: <CircleDollarSign size={17} /> },
+    { id: 'receipts', label: 'Recibos', icon: <FileCheck2 size={17} /> },
     { id: 'contracts', label: 'Contratos', icon: <FileSignature size={17} /> },
     { id: 'locations', label: 'Locais de atendimento', icon: <MapPin size={17} /> },
     { id: 'orders', label: 'Ordens de serviço', icon: <Wrench size={17} /> },
@@ -88,6 +90,7 @@ export function ClientWorkspaceModal({ open, clientId, clientLabel, bill, onSele
           : section === 'pending' ? <div className="client-workspace__section"><PendingBillsBlock clientId={clientId} client={client} onOpenStatement={onOpenStatement} /></div>
           : section === 'bills' ? <ClientBillsSection clientId={clientId} client={client} onSelect={onSelectBill ? selectBill : undefined} onOpenStatement={onOpenStatement} />
           : section === 'receivables' ? <ClientReceivablesSection clientId={clientId} />
+          : section === 'receipts' ? <PartyReceipts kind="receivable" partyId={clientId} />
           : section === 'contracts' ? <ClientContractsSection clientId={clientId} />
           : section === 'locations' ? <ClientLocationsSection clientId={clientId} />
           : section === 'orders' ? <ClientOrdersSection clientId={clientId} />
@@ -174,7 +177,12 @@ function useClientBillingContext(clientId: number) {
 
 function ClientReceivablesSection({ clientId }: { clientId: number }) {
   const contextQuery = useClientBillingContext(clientId)
-  const receivables = contextQuery.data?.openReceivables ?? []
+  // Vencimento mais próximo primeiro e o mais distante por último (sem vencimento vai para o fim).
+  const receivables = [...(contextQuery.data?.openReceivables ?? [])].sort((a, b) => {
+    const left = a.dueAt ? String(a.dueAt).slice(0, 10) : '9999-12-31'
+    const right = b.dueAt ? String(b.dueAt).slice(0, 10) : '9999-12-31'
+    return left.localeCompare(right) || Number(a.id) - Number(b.id)
+  })
   const total = receivables.reduce((sum, item) => sum + Number(item.amount || 0), 0)
   const balance = receivables.reduce((sum, item) => sum + Number(item.balance || 0), 0)
   return <div className="client-workspace__section">

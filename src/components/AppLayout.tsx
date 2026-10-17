@@ -37,9 +37,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
           if (items.length === 0) return null
           return <div key={group.label} className="sidebar__group">
             <div className="sidebar__section-label">{group.label}</div>
-            <nav className="sidebar__nav">{items.map(({ to, label, icon: Icon, end }) => {
+            <nav className="sidebar__nav">{items.map(({ to, label, icon: Icon, end, sub }) => {
               const badge = to === '/ordens-de-servico' ? urgentOrders.length : to === '/notas-fiscais' ? pendingInvoices.length : 0
-              return <NavLink key={to} to={to} end={end} aria-label={label} title={sidebarCollapsed ? label : undefined} className={({ isActive }) => isActive ? 'nav-link nav-link--active' : 'nav-link'}><Icon size={19} /><span>{label}</span>{badge > 0 && <small>{badge}</small>}</NavLink>
+              return <NavLink key={to} to={to} end={end} aria-label={label} title={sidebarCollapsed ? label : undefined} className={({ isActive }) => `nav-link${sub ? ' nav-link--sub' : ''}${isActive ? ' nav-link--active' : ''}`}><Icon size={sub ? 16 : 19} /><span>{label}</span>{badge > 0 && <small>{badge}</small>}</NavLink>
             })}</nav>
           </div>
         })}

@@ -40,8 +40,10 @@ export interface BillStatementAttendance { serviceOrderId: number; date: string 
 export interface BillStatementPurchaseItem { product: string | null; unit: string | null; quantity: number | null; unitValue: number; total: number }
 export interface BillStatementPurchaseOrder { id: number; supplierName: string | null; supplierTradeName: string | null; payableId: number | null; invoiceNumber: string | null; date: string | null; items: BillStatementPurchaseItem[]; total: number }
 export interface BillStatementLocationOrder { date: string | null; serviceOrderId: number; time: string; block: string | null; description: string; amount: number; purchaseOrders: BillStatementPurchaseOrder[] }
-export interface BillStatementLocationGroup { locationId: number | null; description: string; orders: BillStatementLocationOrder[]; minutes: number; time: string }
-export interface BillStatementAllocationRow { locationId: number | null; location: string; minutes: number; time: string; percentage: number; labor: number; materials: number; oneOff: number; thirdParty: number; other: number; total: number }
+export interface BillStatementLocationGroup { locationId: number | null; description: string; address: string | null; orders: BillStatementLocationOrder[]; minutes: number; time: string }
+export interface BillStatementAllocationRow { locationId: number | null; location: string; address: string | null; minutes: number; time: string; percentage: number; labor: number; materials: number; works: number; oneOff: number; thirdParty: number; other: number; total: number }
+/** Horas do contrato no mês dos atendimentos: informativo, só o excedente é cobrado (hora extra). */
+export interface BillStatementContractHours { contractId: number; contractedMinutes: number; contractedTime: string; usedMinutes: number; usedTime: string; extraMinutes: number; extraTime: string }
 export interface BillStatement {
   billId: number | null
   billNumber: number | null
@@ -60,7 +62,8 @@ export interface BillStatement {
   totalTime: string
   allocation: BillStatementAllocationRow[]
   allocationTotal: BillStatementAllocationRow
-  company: { name: string | null; address: string | null } | null
+  company: { name: string | null; address: string | null; phone: string | null; cnpj: string | null; stateRegistration: string | null } | null
+  contractHours: BillStatementContractHours | null
 }
 /** Boleto ainda não gerado: contas a receber selecionadas ou cliente + vencimento. */
 export type BillStatementPreviewPayload = { receivableIds: number[] } | { clientId: number; dueDate: string }

@@ -1,11 +1,12 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Banknote, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, Edit3, FileText, HandCoins, ListChecks, Plus, ReceiptText, Search, SplitSquareHorizontal, Trash2, Undo2, WalletCards } from 'lucide-react'
+import { Banknote, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, Edit3, FileCheck2, FileText, HandCoins, ListChecks, Plus, ReceiptText, Search, SplitSquareHorizontal, Trash2, Undo2, WalletCards } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { apiErrorMessage } from '../api/client'
 import { financeApi, financeKeys } from '../api/finance'
 import { api, queryKeys } from '../api/services'
 import { ClientPicker, type PickerValue } from '../components/AsyncPicker'
 import { InstallmentDialog, MultipleSettlementDialog, suggestedMovementAccount } from '../components/FinanceDialogs'
+import { AccountReceipt, AccountWorkspace, PartyReceipts, receivableReceiptRow } from '../components/ReceiptsPanel'
 import { Badge, Button, CollapsibleFilters, ConfirmDialog, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { downloadCsv, monthBounds, todayIso } from '../lib/export'
@@ -44,6 +45,8 @@ export function AccountsReceivable() {
   const [multiOpen, setMultiOpen] = useState(false)
   const [multiError, setMultiError] = useState('')
   const [formOpen, setFormOpen] = useState(false)
+  // Menu lateral do modal da conta: dados (formulário) e recibos (o desta conta e os demais do cliente).
+  const [accountSection, setAccountSection] = useState<'form' | 'receipts'>('form')
   const [selected, setSelected] = useState<Receivable | null>(null)
   const [formClient, setFormClient] = useState<PickerValue>(null)
   const [formCostCenter, setFormCostCenter] = useState('')
@@ -157,12 +160,13 @@ export function AccountsReceivable() {
     onError: (error) => showToast(apiErrorMessage(error), 'error'),
   })
 
-  function openNew() { setSelected(null); setFormClient(client); setFormCostCenter(''); setFormError(''); setFormOpen(true) }
+  function openNew() { setSelected(null); setFormClient(client); setFormCostCenter(''); setFormError(''); setAccountSection('form'); setFormOpen(true) }
   function openEdit(row: Receivable) {
     setSelected(row)
     setFormClient(row.clientId ? { id: row.clientId, label: `${row.clientTradeName || row.clientName || 'Cliente'} · #${row.clientId}` } : null)
     setFormCostCenter(row.costCenterId ? String(row.costCenterId) : '')
     setFormError('')
+    setAccountSection('form')
     setFormOpen(true)
   }
   function openSettlement(row: Receivable) {
@@ -230,6 +234,39 @@ export function AccountsReceivable() {
   const settlementTotal = settlementValues.cashValue + settlementValues.transferValue + settlementValues.billValue
   const settlementMethod = settlementValues.cashValue > 0 && settlementValues.transferValue + settlementValues.billValue === 0 ? 'CASH' : 'TRANSFER'
 
+  // Campos do formulário da conta: usados direto (conta nova) ou na seção "Dados da conta" do menu lateral.
+  const accountFormFields = <>
+    <FormError message={formError} />
+    <div className="form-section-title"><span>1</span><div><strong>Cliente e descrição</strong><small>Identificação da conta.</small></div></div>
+    <div className="form-grid form-grid--two">
+      <FormField label="Cliente"><ClientPicker value={formClient} onChange={setFormClient} disabled={Boolean(editing?.managedBySystem || editing?.billNumber)} /></FormField>
+      <FormField label="Descrição"><input name="description" required maxLength={100} defaultValue={editing?.description ?? ''} /></FormField>
+    </div>
+    <div className="form-section-title"><span>2</span><div><strong>Valores e datas</strong><small>Valor devido, vencimento e documentos.</small></div></div>
+    <div className="form-grid form-grid--four">
+      <FormField label="Valor devido" hint="Negativo para ajuste/débito"><input name="amount" type="number" step="0.01" required defaultValue={editing?.amount ?? ''} disabled={Boolean(editing?.managedBySystem || editing?.billNumber)} /></FormField>
+      {(editing?.managedBySystem || editing?.billNumber) && <input type="hidden" name="amount" value={editing?.amount ?? 0} />}
+      <FormField label="Vencimento"><input name="dueAt" type="date" required defaultValue={editing?.dueAt?.slice(0, 10) ?? ''} /></FormField>
+      <FormField label="Cadastro"><input name="registeredAt" type="date" defaultValue={editing?.createdAt?.slice(0, 10) ?? todayIso()} /></FormField>
+      <FormField label="Nota fiscal"><input name="invoiceNumber" maxLength={50} defaultValue={editing?.invoiceNumber ?? ''} /></FormField>
+      <FormField label="Ordem de serviço"><input name="serviceOrderId" type="number" min="1" defaultValue={editing?.serviceOrderId ?? ''} /></FormField>
+      <FormField label="Contrato"><input name="contractId" type="number" min="1" defaultValue={editing?.contractId ?? ''} /></FormField>
+      <FormField label="Recebido"><input value={money(editing?.receivedAmount ?? 0)} disabled /></FormField>
+      <FormField label="Saldo"><input value={money(editing?.balance ?? 0)} disabled /></FormField>
+    </div>
+    <div className="form-section-title"><span>3</span><div><strong>Classificação financeira</strong><small>Centro e subcentro de receitas.</small></div></div>
+    <div className="form-grid form-grid--two">
+      <FormField label="Centro de custo"><select name="costCenterId" value={formCostCenter} onChange={(event) => setFormCostCenter(event.target.value)}><option value="">Não informado</option>{centers.map((center) => <option key={center.id} value={center.id}>{center.id} · {center.description}</option>)}</select></FormField>
+      <FormField label="Subcentro de custo"><select name="subCostCenterId" defaultValue={editing?.subCostCenterId ?? ''} key={formCostCenter}><option value="">Não informado</option>{formSubCenters.map((sub) => <option key={sub.id} value={sub.id}>{sub.id} · {sub.description}</option>)}</select></FormField>
+    </div>
+    <FormField label="Observação"><textarea name="notes" rows={2} maxLength={200} defaultValue={editing?.notes ?? ''} /></FormField>
+    {editing && (editing.payments.length > 0 || editing.legacySettlement) && <section className="payable-payment-history"><h3>Recebimentos</h3>
+      {editing.payments.map((payment) => <article key={payment.id}><span><strong>{formatDate(payment.paidAt)} · {money(payment.totalValue)}</strong><small>{[payment.cashValue ? `Dinheiro ${money(payment.cashValue)}` : null, payment.transferValue ? `Transferência ${money(payment.transferValue)}` : null, payment.billValue ? `Boleto ${money(payment.billValue)}` : null, payment.movementAccountName, payment.notes].filter(Boolean).join(' · ')}</small></span><button type="button" disabled={reverseMutation.isPending} onClick={() => reverseMutation.mutate({ id: editing.id, paymentId: payment.id })}><Undo2 size={14} /> Estornar</button></article>)}
+      {editing.legacySettlement && <article><span><strong>{formatDate(editing.receivedAt)} · {money(editing.receivedAmount)}</strong><small>Baixa registrada no sistema anterior{editing.paymentMethodDescription ? ` · ${editing.paymentMethodDescription}` : ''}{editing.movementAccountName ? ` · ${editing.movementAccountName}` : ''}</small></span><button type="button" disabled={reverseMutation.isPending} onClick={() => reverseMutation.mutate({ id: editing.id })}><Undo2 size={14} /> Estornar</button></article>}
+    </section>}
+    {selected && !selected.managedBySystem && !selected.billNumber && <div className="destructive-row"><span><strong>Excluir conta</strong><small>Somente contas sem recebimento e sem boleto.</small></span><Button type="button" variant="danger" icon={<Trash2 size={16} />} onClick={() => { setDeleteError(''); setToDelete(selected) }}>Excluir</Button></div>}
+  </>
+
   return <>
     <PageHeader eyebrow="Financeiro" title="Contas a receber" subtitle="Inclusão, baixa, baixa múltipla, prestações e recibos das contas a receber." actions={<><Button variant="secondary" icon={<FileText size={18} />} disabled={exportMutation.isPending} onClick={() => exportMutation.mutate()}>{exportMutation.isPending ? 'Exportando...' : 'Exportar Excel'}</Button><Button icon={<Plus size={18} />} onClick={openNew}>Nova conta</Button></>} />
 
@@ -284,37 +321,20 @@ export function AccountsReceivable() {
       {selected && detailQuery.isLoading ? <LoadingState label="Carregando conta..." /> : <ModalForm key={`${editing?.id ?? 'new'}-${detailQuery.dataUpdatedAt}`} onSubmit={submitForm} onCancel={() => setFormOpen(false)} submitting={saveMutation.isPending} submitLabel={saveMutation.isPending ? 'Gravando...' : 'Salvar'} actions={editing && selected ? <>
         {editing.status === 'OPEN' && <Button type="button" variant="secondary" icon={<WalletCards size={16} />} onClick={() => { setFormOpen(false); openSettlement(editing) }}>Dar baixa</Button>}
         {editing.status === 'OPEN' && editing.receivedAmount === 0 && !editing.billNumber && !editing.managedBySystem && editing.amount > 0 && <Button type="button" variant="secondary" icon={<SplitSquareHorizontal size={16} />} onClick={() => { setInstallmentError(''); setInstallmentTarget(editing) }}>Gerar prestações</Button>}
-        {editing.receivedAmount !== 0 && <Button type="button" variant="secondary" icon={<ReceiptText size={16} />} onClick={() => receiptMutation.mutate(editing.id)}>Recibo</Button>}
+        {editing.receivedAmount !== 0 && accountSection !== 'receipts' && <Button type="button" variant="secondary" icon={<ReceiptText size={16} />} onClick={() => setAccountSection('receipts')}>Recibo</Button>}
       </> : undefined}>
-        <FormError message={formError} />
-        <div className="form-section-title"><span>1</span><div><strong>Cliente e descrição</strong><small>Identificação da conta.</small></div></div>
-        <div className="form-grid form-grid--two">
-          <FormField label="Cliente"><ClientPicker value={formClient} onChange={setFormClient} disabled={Boolean(editing?.managedBySystem || editing?.billNumber)} /></FormField>
-          <FormField label="Descrição"><input name="description" required maxLength={100} defaultValue={editing?.description ?? ''} /></FormField>
-        </div>
-        <div className="form-section-title"><span>2</span><div><strong>Valores e datas</strong><small>Valor devido, vencimento e documentos.</small></div></div>
-        <div className="form-grid form-grid--four">
-          <FormField label="Valor devido" hint="Negativo para ajuste/débito"><input name="amount" type="number" step="0.01" required defaultValue={editing?.amount ?? ''} disabled={Boolean(editing?.managedBySystem || editing?.billNumber)} /></FormField>
-          {(editing?.managedBySystem || editing?.billNumber) && <input type="hidden" name="amount" value={editing?.amount ?? 0} />}
-          <FormField label="Vencimento"><input name="dueAt" type="date" required defaultValue={editing?.dueAt?.slice(0, 10) ?? ''} /></FormField>
-          <FormField label="Cadastro"><input name="registeredAt" type="date" defaultValue={editing?.createdAt?.slice(0, 10) ?? todayIso()} /></FormField>
-          <FormField label="Nota fiscal"><input name="invoiceNumber" maxLength={50} defaultValue={editing?.invoiceNumber ?? ''} /></FormField>
-          <FormField label="Ordem de serviço"><input name="serviceOrderId" type="number" min="1" defaultValue={editing?.serviceOrderId ?? ''} /></FormField>
-          <FormField label="Contrato"><input name="contractId" type="number" min="1" defaultValue={editing?.contractId ?? ''} /></FormField>
-          <FormField label="Recebido"><input value={money(editing?.receivedAmount ?? 0)} disabled /></FormField>
-          <FormField label="Saldo"><input value={money(editing?.balance ?? 0)} disabled /></FormField>
-        </div>
-        <div className="form-section-title"><span>3</span><div><strong>Classificação financeira</strong><small>Centro e subcentro de receitas.</small></div></div>
-        <div className="form-grid form-grid--two">
-          <FormField label="Centro de custo"><select name="costCenterId" value={formCostCenter} onChange={(event) => setFormCostCenter(event.target.value)}><option value="">Não informado</option>{centers.map((center) => <option key={center.id} value={center.id}>{center.id} · {center.description}</option>)}</select></FormField>
-          <FormField label="Subcentro de custo"><select name="subCostCenterId" defaultValue={editing?.subCostCenterId ?? ''} key={formCostCenter}><option value="">Não informado</option>{formSubCenters.map((sub) => <option key={sub.id} value={sub.id}>{sub.id} · {sub.description}</option>)}</select></FormField>
-        </div>
-        <FormField label="Observação"><textarea name="notes" rows={2} maxLength={200} defaultValue={editing?.notes ?? ''} /></FormField>
-        {editing && (editing.payments.length > 0 || editing.legacySettlement) && <section className="payable-payment-history"><h3>Recebimentos</h3>
-          {editing.payments.map((payment) => <article key={payment.id}><span><strong>{formatDate(payment.paidAt)} · {money(payment.totalValue)}</strong><small>{[payment.cashValue ? `Dinheiro ${money(payment.cashValue)}` : null, payment.transferValue ? `Transferência ${money(payment.transferValue)}` : null, payment.billValue ? `Boleto ${money(payment.billValue)}` : null, payment.movementAccountName, payment.notes].filter(Boolean).join(' · ')}</small></span><button type="button" disabled={reverseMutation.isPending} onClick={() => reverseMutation.mutate({ id: editing.id, paymentId: payment.id })}><Undo2 size={14} /> Estornar</button></article>)}
-          {editing.legacySettlement && <article><span><strong>{formatDate(editing.receivedAt)} · {money(editing.receivedAmount)}</strong><small>Baixa registrada no sistema anterior{editing.paymentMethodDescription ? ` · ${editing.paymentMethodDescription}` : ''}{editing.movementAccountName ? ` · ${editing.movementAccountName}` : ''}</small></span><button type="button" disabled={reverseMutation.isPending} onClick={() => reverseMutation.mutate({ id: editing.id })}><Undo2 size={14} /> Estornar</button></article>}
-        </section>}
-        {selected && !selected.managedBySystem && !selected.billNumber && <div className="destructive-row"><span><strong>Excluir conta</strong><small>Somente contas sem recebimento e sem boleto.</small></span><Button type="button" variant="danger" icon={<Trash2 size={16} />} onClick={() => { setDeleteError(''); setToDelete(selected) }}>Excluir</Button></div>}
+        {editing && selected ? <AccountWorkspace active={accountSection} onSelect={setAccountSection} sections={[
+          { id: 'form', label: 'Dados da conta', icon: <FileText size={17} /> },
+          { id: 'receipts', label: 'Recibos', icon: <FileCheck2 size={17} /> },
+        ]}>
+          {/* O formulário fica montado (só oculto) nas outras seções, para "Salvar" continuar valendo. */}
+          <div hidden={accountSection !== 'form'}>
+            {accountFormFields}
+          </div>
+          {accountSection === 'receipts' && (editing.clientId
+            ? <PartyReceipts kind="receivable" partyId={editing.clientId} currentAccount={receivableReceiptRow(editing)} />
+            : <div className="client-workspace__section"><AccountReceipt kind="receivable" id={editing.id} settledAmount={editing.receivedAmount} /></div>)}
+        </AccountWorkspace> : accountFormFields}
       </ModalForm>}
     </Modal>
 

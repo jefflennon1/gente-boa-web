@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { Banknote, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, Edit3, FileText, HandCoins, Package, PieChart, Plus, SplitSquareHorizontal, Truck, WalletCards } from 'lucide-react'
+import { Banknote, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, Edit3, FileCheck2, FileText, HandCoins, Package, PieChart, Plus, SplitSquareHorizontal, Truck, WalletCards } from 'lucide-react'
 import { apiErrorMessage } from '../api/client'
 import { financeApi, type PayableFilterParams } from '../api/finance'
 import { api, queryKeys } from '../api/services'
@@ -10,9 +10,10 @@ import { formatDate, money } from '../lib/format'
 import { useRouter } from '../router'
 import type { PayableAccount, Supplier } from '../types'
 import type { usePayableDialogs } from './PayableDialogs'
+import { PartyReceipts } from './ReceiptsPanel'
 import { Badge, Button, EmptyState, ErrorState, LoadingState } from './ui'
 
-type Section = 'profile' | 'payables' | 'allocation' | 'purchases'
+type Section = 'profile' | 'payables' | 'receipts' | 'allocation' | 'purchases'
 type PayableDialogs = ReturnType<typeof usePayableDialogs>
 type StatusFilter = NonNullable<PayableFilterParams['status']>
 
@@ -26,6 +27,7 @@ export function SupplierWorkspace({ supplier, form, payableDialogs, onOpenReport
   const menu: Array<{ id: Section | 'report'; label: string; icon: ReactNode }> = [
     { id: 'profile', label: 'Cadastro', icon: <Truck size={17} /> },
     { id: 'payables', label: 'Contas a pagar', icon: <HandCoins size={17} /> },
+    { id: 'receipts', label: 'Recibos', icon: <FileCheck2 size={17} /> },
     { id: 'allocation', label: 'Rateio das contas', icon: <PieChart size={17} /> },
     { id: 'purchases', label: 'Pedidos de compra', icon: <Package size={17} /> },
     { id: 'report', label: 'Relatório (PDF / Excel)', icon: <FileText size={17} /> },
@@ -37,6 +39,7 @@ export function SupplierWorkspace({ supplier, form, payableDialogs, onOpenReport
     <div className="client-workspace__content">
       {section === 'profile' ? form
         : section === 'payables' ? <SupplierPayables supplier={supplier} payableDialogs={payableDialogs} />
+        : section === 'receipts' ? <PartyReceipts kind="payable" partyId={supplier.id} />
         : section === 'allocation' ? <SupplierAllocation supplierId={supplier.id} />
         : <SupplierPurchases supplierId={supplier.id} />}
     </div>

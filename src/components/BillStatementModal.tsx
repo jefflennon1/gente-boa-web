@@ -73,13 +73,20 @@ function StatementDocument({ statement }: { statement: BillStatement }) {
       <p>Endereço: {statement.clientAddress}</p>
     </div>
     <p className="statement-doc__number">Boleto: {statement.billNumber ?? 'a gerar'}</p>
-    <p className="statement-doc__notice">Em caso de dúvida com relação à Ordem de Serviço (OS) executada, por gentileza solicite uma cópia da OS completa através da nossa Central de Atendimento.</p>
+    <p className="statement-doc__notice">Em caso de dúvida com relação à Ordem de Serviço (OS) executada, por gentileza solicite uma cópia da OS completa através da nossa Central de Atendimento{statement.company?.phone ? ` pelo telefone ${statement.company.phone}` : ''}.</p>
 
     <table className="statement-doc__summary">
       <thead><tr><th>Resumo</th><th className="num">Valor</th></tr></thead>
       <tbody>{statement.summary.map((line, index) => <tr key={`${line.label}-${index}`}><td>{line.label.endsWith(':') ? line.label : `${line.label}:`}</td><td className="num">{moneyText(line.amount)}</td></tr>)}</tbody>
     </table>
     <p className="statement-doc__total">Valor Total do Boleto Bancário: <strong>{moneyText(statement.total)}</strong></p>
+    {statement.contractHours && <table className="statement-doc__table statement-doc__contract-hours">
+      <thead>
+        <tr><th colSpan={4} className="statement-doc__band">Horas do contrato {statement.contractHours.contractId} — as horas dentro do contrato já estão na parcela e não são cobradas neste extrato</th></tr>
+        <tr><th>Utilização no mês dos atendimentos</th><th className="num">Contratadas</th><th className="num">Utilizadas</th><th className="num">Excedentes (hora extra)</th></tr>
+      </thead>
+      <tbody><tr><td>Tempo</td><td className="num">{statement.contractHours.contractedTime}</td><td className="num">{statement.contractHours.usedTime}</td><td className="num"><strong>{statement.contractHours.extraTime}</strong></td></tr></tbody>
+    </table>}
 
     <table className="statement-doc__table">
       <thead><tr><th>O.S.</th><th>Data</th><th>Categoria</th><th>Local de Atend.</th><th>Descrição</th><th className="num">Tempo Total</th></tr></thead>
@@ -88,7 +95,7 @@ function StatementDocument({ statement }: { statement: BillStatement }) {
     <p className="statement-doc__count">{statement.attendances.length} Atendimento(s) Realizado(s).</p>
 
     {statement.locations.map((group) => <section key={`${group.locationId ?? 'cliente'}`} className="statement-doc__location">
-      <div className="statement-doc__band">Local de Atendimento: {group.locationId ?? ''} <strong>{group.description}</strong></div>
+      <div className="statement-doc__band">Local de Atendimento: {group.locationId ?? ''} <strong>{group.description}</strong>{group.address && <small className="statement-doc__address">Endereço: {group.address}</small>}</div>
       <table className="statement-doc__table">
         <thead><tr><th>Data</th><th>OS</th><th>Tempo</th><th>Bloco</th><th>Descrição</th></tr></thead>
         <tbody>{group.orders.map((order) => <OrderRows key={order.serviceOrderId} order={order} />)}</tbody>
@@ -99,13 +106,13 @@ function StatementDocument({ statement }: { statement: BillStatement }) {
     <h3 className="statement-doc__allocation-title">Rateio das Despesas gerais por Local de Atendimento</h3>
     <div className="table-wrap"><table className="statement-doc__table statement-doc__allocation">
       <thead>
-        <tr><th colSpan={3} /><th colSpan={6} className="center">Valor Total Relativo a:</th></tr>
-        <tr><th>Local do Atendimento</th><th className="num">Tempo Utilizado</th><th className="num">% Rateado</th><th className="num">Mão-de-Obra</th><th className="num">Materiais</th><th className="num">OS Avulsas</th><th className="num">Serv. Terc.</th><th className="num">Diversos</th><th className="num">Total</th></tr>
+        <tr><th colSpan={3} /><th colSpan={7} className="center">Valor Total Relativo a:</th></tr>
+        <tr><th>Local do Atendimento</th><th className="num">Tempo Utilizado</th><th className="num">% Rateado</th><th className="num">Mão-de-Obra</th><th className="num">Materiais</th><th className="num">Obras</th><th className="num">OS Avulsas</th><th className="num">Serv. Terc.</th><th className="num">Diversos</th><th className="num">Total</th></tr>
       </thead>
       <tbody>{statement.allocation.map((row) => <AllocationLine key={`${row.locationId ?? 'cliente'}`} row={row} />)}</tbody>
       <tfoot><AllocationLine row={statement.allocationTotal} total /></tfoot>
     </table></div>
-    <footer className="statement-doc__footer"><strong>{statement.company?.name}</strong>{statement.company?.address && <span>{statement.company.address}</span>}</footer>
+    <footer className="statement-doc__footer"><strong>{statement.company?.name}</strong>{statement.company?.address && <span>Endereço: {statement.company.address}</span>}{companyContact(statement) && <span>{companyContact(statement)}</span>}</footer>
   </article>
 }
 
@@ -128,10 +135,16 @@ function OrderRows({ order }: { order: BillStatement['locations'][number]['order
 
 function AllocationLine({ row, total = false }: { row: BillStatementAllocationRow; total?: boolean }) {
   return <tr className={total ? 'total-row' : ''}>
-    <td>{total ? '' : row.location}</td><td className="num">{row.time}</td><td className="num">{total ? '' : moneyText(row.percentage)}</td>
-    <td className="num">{moneyText(row.labor)}</td><td className="num">{moneyText(row.materials)}</td><td className="num">{moneyText(row.oneOff)}</td>
+    <td>{total ? '' : <>{row.location}{row.address && <small className="statement-doc__address">{row.address}</small>}</>}</td><td className="num">{row.time}</td><td className="num">{total ? '' : moneyText(row.percentage)}</td>
+    <td className="num">{moneyText(row.labor)}</td><td className="num">{moneyText(row.materials)}</td><td className="num">{moneyText(row.works ?? 0)}</td><td className="num">{moneyText(row.oneOff)}</td>
     <td className="num">{moneyText(row.thirdParty)}</td><td className="num">{moneyText(row.other)}</td><td className="num"><strong>{moneyText(row.total)}</strong></td>
   </tr>
+}
+
+function companyContact(statement: BillStatement) {
+  const company = statement.company
+  if (!company) return ''
+  return [company.phone && `Fone: ${company.phone}`, company.cnpj && `C.N.P.J.: ${company.cnpj}`, company.stateRegistration && `Inscr. Estadual: ${company.stateRegistration}`].filter(Boolean).join(' - ')
 }
 
 function longDate(value: string) {

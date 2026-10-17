@@ -5,7 +5,7 @@ import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { formatDate, money } from '../lib/format'
-import type { BillDetail, BillListItem, ClientStatementSummary } from '../types'
+import type { BillDetail, BillListItem, ClientStatementSummary, GeneratedBill } from '../types'
 import { Badge, Button, CollapsibleFilters, ConfirmDialog, DetailModal, EmptyState, ErrorState, LoadingState, Modal, PageHeader, StatCard, Toast } from '../components/ui'
 import { financeApi } from '../api/finance'
 import { modulesApi, modulesKeys, openPdf, summaryNumber } from '../api/modules'
@@ -41,6 +41,8 @@ export function Statements() {
   const [toast, setToast] = useState('')
   const [emailTarget, setEmailTarget] = useState<BillDetail | null>(null)
   const [emailError, setEmailError] = useState('')
+  // Boletos recém-gerados na "Criação de boletos": ficam destacados em "Boletos gerados e pagamento".
+  const [recentBills, setRecentBills] = useState<GeneratedBill[]>([])
   const [billPdfPreview, setBillPdfPreview] = useState<{ url: string; bill: Pick<BillListItem, 'id' | 'number'> } | null>(null)
   const initialBillPeriod = useMemo(currentMonthPeriod, [])
   const [billOrderStart, setBillOrderStart] = useState('')
@@ -167,6 +169,29 @@ export function Statements() {
     window.setTimeout(() => setToast(''), 3200)
   }
 
+  // Após gerar: limpa os filtros, filtra pelo número (um boleto) ou pelo período de vencimento dos novos boletos
+  // (vários) e abre "Boletos gerados e pagamento" com eles em destaque.
+  function showGeneratedBills(generated: GeneratedBill[]) {
+    const dueDates = generated.map((bill) => String(bill.dueAt ?? '').slice(0, 10)).filter(Boolean).sort()
+    setSearch('')
+    setBillCpf('')
+    setBillCnpj('')
+    setBillServiceOrder('')
+    setBillContract('')
+    setBillOrderStart('')
+    setBillOrderEnd('')
+    setOpenUntil('')
+    setBillDueDay('')
+    setBillingType('ALL')
+    setPaymentStatus('ALL')
+    setSelectedBills({})
+    setBillNumber(generated.length === 1 && generated[0].number ? String(generated[0].number) : '')
+    setBillDueStart(dueDates[0] ?? initialBillPeriod.startDate)
+    setBillDueEnd(dueDates[dueDates.length - 1] ?? initialBillPeriod.endDate)
+    setRecentBills(generated)
+    changeView('generated')
+  }
+
   function previewBillPdf(bill: Pick<BillListItem, 'id' | 'number'>) {
     pdfMutation.mutate(bill)
   }
@@ -196,7 +221,7 @@ export function Statements() {
       <button type="button" className={billingView === 'statements' ? 'active' : ''} onClick={() => changeView('statements')}><FileBarChart size={17} />Extratos</button>
       <button type="button" className={billingView === 'printing' ? 'active' : ''} onClick={() => changeView('printing')}><Printer size={17} />Impressões</button>
     </nav>
-    {billingView === 'receivables' ? <AccountsReceivableReview showToast={showToast} onOpenStatement={setStatementSource} /> : billingView === 'statements' ? <>
+    {billingView === 'receivables' ? <AccountsReceivableReview showToast={showToast} onOpenStatement={setStatementSource} onGenerated={showGeneratedBills} /> : billingView === 'statements' ? <>
       <ClientStatementTab showToast={showToast} />
       <details className="os-detail-accordion bill-statements-batch">
         <summary><span><strong>Extratos dos boletos gerados</strong><small>Impressão em lote: extrato de cada boleto do vencimento e PDF único do período.</small></span><ChevronDown size={17} /></summary>
@@ -209,6 +234,11 @@ export function Statements() {
       <StatCard label="Pendentes" value={summaryNumber(billSummaryQuery.data, 'pending').toLocaleString('pt-BR')} helper={money(summaryNumber(billSummaryQuery.data, 'pendingAmount'))} icon={<Clock3 />} tone="orange" />
       <StatCard label="Pagos" value={summaryNumber(billSummaryQuery.data, 'paid').toLocaleString('pt-BR')} helper={money(summaryNumber(billSummaryQuery.data, 'paidAmount'))} icon={<CheckCircle2 />} tone="green" />
     </section>
+
+    {recentBills.length > 0 && <section className="recent-bills" aria-live="polite">
+      <header><span className="recent-bills__icon"><CheckCircle2 size={18} /></span><div><strong>{recentBills.length === 1 ? `Boleto #${recentBills[0].number || recentBills[0].id} gerado agora` : `${recentBills.length} boletos gerados agora`}</strong><small>{recentBills.length === 1 ? 'A lista abaixo já está filtrada por este boleto.' : 'A lista abaixo está filtrada pelo vencimento dos novos boletos, que aparecem destacados.'}</small></div><Button type="button" variant="ghost" onClick={() => setRecentBills([])}>Fechar</Button></header>
+      <div className="recent-bills__list">{recentBills.map((bill) => <article key={bill.id}><div><strong>#{bill.number || bill.id}</strong><small>Cliente #{bill.clientId} · venc. {formatDate(bill.dueAt)} · {bill.receivableCount} conta(s)</small></div><b>{money(bill.amount)}</b><span><button type="button" className="bill-pdf-button" onClick={() => openBillStatement(bill.id)} aria-label={`Abrir extrato do boleto ${bill.number || bill.id}`} title="Extrato"><FileBarChart size={16} /></button><button type="button" className="bill-pdf-button" disabled={pdfMutation.isPending} onClick={() => previewBillPdf({ id: bill.id, number: bill.number })} aria-label={`Visualizar demonstrativo ${bill.number || bill.id}`} title="Demonstrativo"><Eye size={16} /></button></span></article>)}</div>
+    </section>}
 
     <section className="panel data-panel bill-panel">
       <CollapsibleFilters summary="Cliente, boleto, OS, contrato, documentos, situação e períodos" contentClassName="billing-filter-panel collapsible-filter-content--block">
@@ -230,7 +260,7 @@ export function Statements() {
         <div className="billing-search-row billing-search-row--actions"><Button variant="ghost" onClick={() => { setBillOrderStart(''); setBillOrderEnd(''); setBillDueStart(initialBillPeriod.startDate); setBillDueEnd(initialBillPeriod.endDate); setOpenUntil(''); setBillDueDay(''); setBillingType('ALL'); setPaymentStatus('ALL'); setSearch(''); setBillCpf(''); setBillCnpj(''); setBillNumber(''); setBillServiceOrder(''); setBillContract(''); setPage(0); setSelectedBills({}) }}>Limpar filtros</Button></div>
         <div className="receivable-actions"><span><strong>{selectedBillRows.length}</strong> boleto(s) selecionado(s)</span><Button disabled={!selectedBillRows.length} icon={<CheckCircle2 size={16} />} onClick={() => { setSettleError(''); setBatchSettleOpen(true) }}>Registrar pagamento em lote</Button></div>
       </CollapsibleFilters>
-      {billsQuery.isLoading ? <LoadingState label="Carregando boletos..." /> : billsQuery.isError ? <ErrorState message={apiErrorMessage(billsQuery.error)} onRetry={() => billsQuery.refetch()} /> : bills.length === 0 ? <EmptyState title="Nenhum boleto encontrado" description="Os boletos serão gerados quando uma ordem de serviço for finalizada." /> : <div className="table-wrap"><table className="data-table bill-table"><thead><tr><th><input type="checkbox" aria-label="Selecionar boletos em aberto desta página" checked={bills.some((bill) => !isPaid(bill)) && bills.filter((bill) => !isPaid(bill)).every((bill) => selectedBills[bill.id])} onChange={() => { const open = bills.filter((bill) => !isPaid(bill)); const all = open.every((bill) => selectedBills[bill.id]); setSelectedBills((current) => { const next = { ...current }; open.forEach((bill) => { if (all) delete next[bill.id]; else next[bill.id] = bill }); return next }) }} /></th><th>Boleto</th><th>OS</th><th>Cliente</th><th>Contrato</th><th>Data cadastro</th><th>Processamento</th><th>Vencimento</th><th>Valor</th><th>Enviado e-mail</th><th>Pagamento</th><th>Extrato</th><th>Demonstrativo</th><th /></tr></thead><tbody>{bills.map((bill) => <tr key={bill.id} onClick={() => openClientWorkspace(bill)}>
+      {billsQuery.isLoading ? <LoadingState label="Carregando boletos..." /> : billsQuery.isError ? <ErrorState message={apiErrorMessage(billsQuery.error)} onRetry={() => billsQuery.refetch()} /> : bills.length === 0 ? <EmptyState title="Nenhum boleto encontrado" description="Os boletos serão gerados quando uma ordem de serviço for finalizada." /> : <div className="table-wrap"><table className="data-table bill-table"><thead><tr><th><input type="checkbox" aria-label="Selecionar boletos em aberto desta página" checked={bills.some((bill) => !isPaid(bill)) && bills.filter((bill) => !isPaid(bill)).every((bill) => selectedBills[bill.id])} onChange={() => { const open = bills.filter((bill) => !isPaid(bill)); const all = open.every((bill) => selectedBills[bill.id]); setSelectedBills((current) => { const next = { ...current }; open.forEach((bill) => { if (all) delete next[bill.id]; else next[bill.id] = bill }); return next }) }} /></th><th>Boleto</th><th>OS</th><th>Cliente</th><th>Contrato</th><th>Data cadastro</th><th>Processamento</th><th>Vencimento</th><th>Valor</th><th>Enviado e-mail</th><th>Pagamento</th><th>Extrato</th><th>Demonstrativo</th><th /></tr></thead><tbody>{bills.map((bill) => <tr key={bill.id} className={recentBills.some((recent) => recent.id === bill.id) ? 'bill-row--new' : undefined} onClick={() => openClientWorkspace(bill)}>
         <td><input type="checkbox" disabled={isPaid(bill)} checked={Boolean(selectedBills[bill.id])} onClick={(event) => event.stopPropagation()} onChange={() => setSelectedBills((current) => { const next = { ...current }; if (next[bill.id]) delete next[bill.id]; else next[bill.id] = bill; return next })} aria-label={`Selecionar boleto ${bill.number || bill.id}`} /></td>
         <td><strong>#{bill.number || bill.id}</strong><small className="table-secondary">Registro {bill.id}</small></td>
         <td><strong>{bill.serviceOrderId || 'CR'}</strong></td>

@@ -930,11 +930,15 @@ h1, h2, h3, p { margin-top: 0; }
 .nfse-customer-card--state { color: var(--muted); font-size: 9px; }
 .services-table td:nth-child(n+4):nth-child(-n+7), .services-table th:nth-child(n+4):nth-child(-n+7) { white-space: nowrap; }
 .service-form-grid .form-field:nth-child(4) { grid-column: span 2; }
-.billing-filter-grid.receivable-filter-grid.externo {
-    padding: 20px;
-}
-.billing-filter-group.externo {
-  max-width: 120px;
+/* Contas a receber: filtros rápidos e ações fora do painel de filtros avançados */
+.receivable-toolbar { margin: 12px 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.receivable-toolbar__filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 16px; }
+.receivable-toolbar__group { min-width: 0; }
+.receivable-toolbar__group select { min-width: 140px; }
+.receivable-toolbar__filter-actions { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+@media (max-width: 760px) {
+  .receivable-toolbar__filter-actions { margin-left: 0; width: 100%; }
+  .receivable-toolbar__filter-actions > * { flex: 1 1 auto; }
 }
 
 @media (min-width: 981px) {
@@ -1339,3 +1343,33 @@ input.payable-balance-paid { color: #08705f; font-weight: 750; }
 .os-contract-rate-warning svg { flex: 0 0 auto; margin-top: 1px; }
 .os-contract-rate-warning strong { display: block; font-size: 10.5px; }
 .os-contract-rate-warning small { display: block; margin-top: 2px; font-size: 9.5px; line-height: 1.45; }
+
+/* Boletos gerados agora (após "Criação de boletos") */
+.recent-bills { margin: 0 0 12px; padding: 12px 14px; border: 1px solid #bfe3da; border-radius: 12px; background: #f1fbf8; }
+.recent-bills > header { display: flex; align-items: center; gap: 10px; }
+.recent-bills > header > div { flex: 1; min-width: 0; }
+.recent-bills > header strong { display: block; color: #08705f; font-size: 10.5px; }
+.recent-bills > header small { display: block; margin-top: 2px; color: var(--muted); font-size: 8.5px; }
+.recent-bills__icon { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; color: #08705f; background: #dff4ee; }
+.recent-bills__list { margin-top: 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+.recent-bills__list article { min-width: 0; padding: 8px 10px; border: 1px solid #d6efe8; border-radius: 9px; display: flex; align-items: center; gap: 10px; background: #fff; }
+.recent-bills__list article > div { flex: 1; min-width: 0; }
+.recent-bills__list article strong { display: block; color: var(--navy); font-size: 10px; }
+.recent-bills__list article small { display: block; color: var(--muted); font-size: 8.3px; overflow-wrap: anywhere; }
+.recent-bills__list article b { color: var(--navy); font-size: 10px; white-space: nowrap; }
+.recent-bills__list article > span { display: flex; gap: 4px; }
+.bill-table tr.bill-row--new td { background: #f1fbf8; }
+.bill-table tr.bill-row--new td:first-child { box-shadow: inset 3px 0 0 #1aa384; }
+
+/* Menu lateral: subitem (ex.: Recibos abaixo de Contas a receber/pagar) */
+.nav-link.nav-link--sub { min-height: 34px; margin-left: 18px; padding-left: 12px; font-size: 0.92em; }
+.sidebar--collapsed .nav-link.nav-link--sub { margin-left: 0; padding-left: 0; }
+.receipts-table td:last-child { white-space: nowrap; }
+
+/* Recibos: visualizador do PDF (modais de conta, cliente, fornecedor e tela de recibos) */
+.receipt-document { display: grid; gap: 10px; }
+.receipt-document__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.receipt-document__frame { height: min(68vh, 760px); min-height: 420px; border: 1px solid var(--line); border-radius: 10px; }
+.account-workspace { min-height: 0; }
+.receipts-notice { margin: 0; padding: 9px 12px; border-radius: 9px; color: #6b4a12; background: #fff8ee; font-size: 9.5px; }
+.receipts-table tr.receipts-table__current td { background: #f3f6ff; font-weight: 600; }

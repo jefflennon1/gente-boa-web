@@ -19,6 +19,12 @@ function orderValues(order: BillDetail) {
 const categoryLabels: Record<string, string> = { MAO_DE_OBRA: 'Mão de obra', GARANTIA: 'Garantia', VISITA_TECNICA: 'Visita técnica', CANCELAMENTO: 'Cancelamento', DESLOCAMENTO: 'Deslocamento', ORCAMENTO: 'Orçamento', TRANSPORTE: 'Transporte', SERVICO_TERCEIRIZADO: 'Serviço terceirizado' }
 const orderType = (order: BillDetail) => `${enumLabel(order.serviceOrderOrigin)} · ${categoryLabels[order.serviceOrderCategory ?? ''] ?? enumLabel(order.serviceOrderCategory)}`
 
+/** Endereço completo do local: endereço, complemento, bairro, cidade, CEP e ponto de referência. */
+function locationAddress(location: ClientStatementLocation) {
+  const address = [location.address, location.complement, location.district, location.city, location.zipCode ? `CEP ${location.zipCode}` : null].filter(Boolean).join(', ')
+  return location.referencePoint ? [address, `Ref.: ${location.referencePoint}`].filter(Boolean).join(' · ') : address
+}
+
 function minutesOf(value?: string | null) {
   const match = /^(\d+):(\d{2})$/.exec(value?.trim() ?? '')
   return match ? Number(match[1]) * 60 + Number(match[2]) : 0
@@ -93,17 +99,31 @@ export function ClientStatementReport({ statement }: { statement: ClientStatemen
 
     <section>
       <h3>Utilização de horas</h3>
-      <table className="statement-report__table"><thead><tr><th>Horas contratadas</th><th>Horas utilizadas</th><th>Saldo do período</th><th>Horas excedentes</th><th>Ordens de serviço</th><th>Locais atendidos</th></tr></thead>
+      <table className="statement-report__table"><thead><tr><th>Horas contratadas</th><th>Horas utilizadas</th><th>Saldo do período</th><th>Horas excedentes</th><th>Ordens de serviço</th><th>Locais de atendimento</th></tr></thead>
         <tbody><tr>
           <td>{statement.contractId ? formatMinutes(statement.contractedMinutes) : '—'}</td>
           <td>{formatMinutes(statement.usedMinutes)}</td>
           <td>{statement.contractId ? formatMinutes(statement.availableMinutes) : '—'}</td>
           <td className={statement.extraMinutes > 0 ? 'statement-report__alert' : ''}>{statement.contractId ? formatMinutes(statement.extraMinutes) : '—'}</td>
           <td>{orders.length}</td>
-          <td>{statement.attendanceLocations.length}</td>
+          <td>{statement.attendanceLocations.length} cadastrado(s) · {statement.attendanceLocations.filter((location) => location.serviceOrderCount > 0).length} com OS</td>
         </tr></tbody>
       </table>
     </section>
+
+    {statement.attendanceLocations.length > 0 && <section>
+      <h3>Locais de atendimento</h3>
+      <table className="statement-report__table"><thead><tr><th>Código</th><th>Descrição</th><th>Endereço</th><th>Contato</th><th className="num">OS</th><th className="num">Tempo</th></tr></thead>
+        <tbody>{statement.attendanceLocations.map((location, index) => <tr key={location.locationId ?? `legado-${index}`}>
+          <td>{location.locationId ?? '—'}</td>
+          <td><strong>{location.description || 'Sem descrição'}</strong></td>
+          <td>{locationAddress(location) || 'Não informado'}</td>
+          <td>{[location.contactName, location.contactPhone].filter(Boolean).join(' · ') || '—'}</td>
+          <td className="num">{location.serviceOrderCount}</td>
+          <td className="num">{formatMinutes(location.usedMinutes)}</td>
+        </tr>)}</tbody>
+      </table>
+    </section>}
 
     <section>
       <h3>Resumo de valores</h3>

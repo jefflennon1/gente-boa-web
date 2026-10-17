@@ -92,6 +92,10 @@ export const financeApi = {
     },
   },
   payables: {
+    async receipt(id: number) {
+      const { data } = await http.get<Blob>(`/payables/${id}/receipt`, { responseType: 'blob' })
+      return data
+    },
     async list(params: PayableFilterParams & { page?: number; size?: number } = {}) {
       const { data } = await http.get<PagedResponse<PayableAccount>>('/payables', { params: { page: 0, size: 20, status: 'OPEN', ...params } })
       return data

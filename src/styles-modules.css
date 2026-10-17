@@ -225,3 +225,4 @@
   .statement-doc__header div { text-align: left; }
   .statement-doc__client { margin-left: 0; }
 }
+.statement-doc__address { display: block; margin-top: 2px; font-weight: 400; font-size: 0.9em; color: #3b3f55; }
