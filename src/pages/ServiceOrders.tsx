@@ -911,15 +911,16 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       ? [selectedLocation, ...locations]
       : locations
   }, [attendanceLocationsQuery.data, selectedAttendanceLocationQuery.data])
-  // Mesmas regras do backend: a OS de contrato desconta o tempo realizado (sem mínimo) das horas do contrato e cobra
-  // só o excedente pelo valor do minuto extra do contrato; a OS avulsa cobra o mínimo por atendimento.
+  // Mesmas regras do backend.
+  // Contrato: cada atendimento desconta das horas contratadas no mínimo o tempo mínimo do contrato (ex.: 20 min); o
+  // serviço já está coberto pelo contrato e só os minutos além do saldo são cobrados, pelo minuto extra do contrato.
+  // Avulsa: soma o tempo dos atendimentos do serviço; até o mínimo (ex.: 30 min) cobra o valor mínimo; acima dele cobra
+  // a primeira hora pelo valor do serviço e cada minuto além da primeira hora pelo valor do minuto extra do serviço.
   const contracted = orderOrigin === 'C'
-  const minimumMinutes = contracted ? 0 : systemParametersQuery.data?.oneOffMinimumMinutes ?? 30
-  const actualMinutes = schedules.reduce((sum, item) => sum + (minutesFromTime(item.actualDuration) || durationMinutes(item.actualStart, item.actualEnd)), 0)
-  const billableMinutes = schedules.reduce((sum, item) => {
-    const realized = minutesFromTime(item.actualDuration) || durationMinutes(item.actualStart, item.actualEnd)
-    return realized > 0 ? sum + Math.max(realized, minimumMinutes) : sum
-  }, 0)
+  const minimumMinutes = contracted
+    ? systemParametersQuery.data?.contractMinimumMinutes ?? 20
+    : systemParametersQuery.data?.oneOffMinimumMinutes ?? 30
+  const actualMinutes = schedules.reduce((sum, item) => sum + realizedMinutesOf(item), 0)
   const selectedOrderPeriod = toDateInput(selected?.dtordem || selected?.scheduledDate)?.slice(0, 7)
   const currentPeriod = requestDate.slice(0, 7)
   // OS já gravada (aberta ou finalizada) já está somada ao utilizado do mês; descontamos para não contar duas vezes.
@@ -931,43 +932,51 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   const balanceBeforeThisOrder = contractBalance
     ? Math.max(0, contractBalance.contractedMinutes - Math.max(0, contractBalance.usedMinutes - previouslyAccountedMinutes))
     : 0
-  const officialMinutesByService = useMemo(() => {
+  const timeAccounting = useMemo(() => {
+    const official = new Map<number, number>()
+    const realizedByService = new Map<number, number>()
+    const contractExtra = new Map<number, number>()
+    let billable = 0
+    if (contracted) {
+      let remainingContractMinutes = balanceBeforeThisOrder
+      schedules.forEach((schedule) => {
+        const realized = realizedMinutesOf(schedule)
+        if (realized <= 0) return
+        const accounted = Math.max(realized, minimumMinutes)
+        billable += accounted
+        if (!schedule.serviceId) return
+        official.set(schedule.serviceId, (official.get(schedule.serviceId) ?? 0) + accounted)
+        contractExtra.set(schedule.serviceId, (contractExtra.get(schedule.serviceId) ?? 0) + Math.max(0, accounted - remainingContractMinutes))
+        remainingContractMinutes = Math.max(0, remainingContractMinutes - accounted)
+      })
+      return { official, realizedByService, contractExtra, billable }
+    }
     const totals = new Map<number, number>()
     schedules.forEach((schedule) => {
-      if (!schedule.serviceId) return
-      const realized = minutesFromTime(schedule.actualDuration) || durationMinutes(schedule.actualStart, schedule.actualEnd)
-      if (realized > 0) totals.set(schedule.serviceId, (totals.get(schedule.serviceId) ?? 0) + Math.max(realized, minimumMinutes))
+      const realized = realizedMinutesOf(schedule)
+      if (realized > 0) totals.set(schedule.serviceId ?? 0, (totals.get(schedule.serviceId ?? 0) ?? 0) + realized)
     })
-    return totals
-  }, [minimumMinutes, schedules])
-  const overageMinutesByService = useMemo(() => {
-    const totals = new Map<number, { regular: number; extra: number }>()
-    let remainingContractMinutes = orderOrigin === 'C' ? balanceBeforeThisOrder : 0
-    schedules.forEach((schedule) => {
-      if (!schedule.serviceId) return
-      const realized = minutesFromTime(schedule.actualDuration) || durationMinutes(schedule.actualStart, schedule.actualEnd)
-      if (realized <= 0) return
-      const current = totals.get(schedule.serviceId) ?? { regular: 0, extra: 0 }
-      if (contracted) {
-        totals.set(schedule.serviceId, { regular: current.regular, extra: current.extra + Math.max(0, realized - remainingContractMinutes) })
-        remainingContractMinutes = Math.max(0, remainingContractMinutes - realized)
-      } else {
-        totals.set(schedule.serviceId, { regular: current.regular + Math.max(0, realized - minimumMinutes), extra: current.extra })
-      }
+    totals.forEach((realized, serviceId) => {
+      const accounted = oneOffAccountedMinutes(realized, minimumMinutes)
+      billable += accounted
+      if (!serviceId) return
+      official.set(serviceId, accounted)
+      realizedByService.set(serviceId, realized)
     })
-    return totals
+    return { official, realizedByService, contractExtra, billable }
   }, [balanceBeforeThisOrder, contracted, minimumMinutes, schedules])
+  const billableMinutes = timeAccounting.billable
+  const officialMinutesByService = timeAccounting.official
   const scheduledServiceIds = useMemo(() => new Set(schedules.map((schedule) => schedule.serviceId).filter((id): id is number => Boolean(id))), [schedules])
   const pricedServiceItems = useMemo(() => serviceItems.map((item) => {
-    const serviceMinutes = officialMinutesByService.get(item.serviceId) ?? 0
+    const serviceMinutes = timeAccounting.official.get(item.serviceId) ?? 0
     const quantity = Math.max(1, numberValue(item.quantity))
-    const overage = overageMinutesByService.get(item.serviceId) ?? { regular: 0, extra: 0 }
     const extraValue = contracted ? contractExtraMinuteRate(item.serviceId, activeContract?.services, item.extraValue) : item.extraValue
     const totalValue = serviceMinutes <= 0
       ? quantity * numberValue(item.unitValue)
       : contracted
-        ? overage.extra * numberValue(extraValue)
-        : numberValue(item.minimumValue) * quantity + overage.regular * numberValue(item.oneOffValue ?? item.minuteValue)
+        ? (timeAccounting.contractExtra.get(item.serviceId) ?? 0) * numberValue(extraValue)
+        : oneOffAmount(timeAccounting.realizedByService.get(item.serviceId) ?? 0, minimumMinutes, item, quantity)
     const unitValue = totalValue / quantity
     return {
       ...item,
@@ -977,7 +986,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       unitValue: currencyValue(unitValue),
       totalValue: currencyValue(totalValue),
     }
-  }), [activeContract?.services, contracted, officialMinutesByService, overageMinutesByService, scheduledServiceIds, serviceItems])
+  }), [activeContract?.services, contracted, minimumMinutes, scheduledServiceIds, serviceItems, timeAccounting])
   const serviceSubtotal = pricedServiceItems.reduce((sum, item) => sum + numberValue(item.totalValue), 0)
   const materialGross = materialItems.reduce((sum, item) => sum + numberValue(item.quantity) * numberValue(item.unitValue), 0)
   const materialDiscountValue = materialGross * Math.min(100, numberValue(purchaseDiscount)) / 100
@@ -1394,10 +1403,10 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
         </section>
         <section className="os-grid-section os-services-section">
           <header><div><strong>Relação de serviços cadastrados</strong><span>Itens de tbordemservicoservico</span></div><Button type="button" variant="secondary" icon={<Plus size={15} />} onClick={addService} disabled={!catalog.length}>Adicionar serviço</Button></header>
-          {pricedServiceItems.length ? <div className="os-edit-table-wrap"><table className="os-edit-table os-services-table"><thead><tr><th>Grupo</th><th>Serviço</th><th>Qtd.</th><th>Horas oficiais</th><th>Vl. mínimo</th><th>Vl. unitário</th><th>Vl. total</th><th /></tr></thead><tbody>{pricedServiceItems.map((item, index) => {
+          {pricedServiceItems.length ? <div className="os-edit-table-wrap"><table className="os-edit-table os-services-table"><thead><tr><th>Grupo</th><th>Serviço</th><th>Qtd.</th><th>Horas oficiais</th><th title="Na OS avulsa, valor cobrado quando o atendimento não passa do tempo mínimo">Vl. mínimo</th><th title="Na OS avulsa, valor da primeira hora quando o atendimento passa do tempo mínimo (Valor contrato do serviço)">Vl. 1ª hora</th><th>Vl. unitário</th><th>Vl. total</th><th /></tr></thead><tbody>{pricedServiceItems.map((item, index) => {
             const catalogItem = catalog.find((service) => service.id === item.serviceId)
             const calculatedByTime = numberValue(item.minuteValue) > 0
-            return <tr key={item.rowKey}><td><input value={catalogItem?.groupId ?? '—'} readOnly /></td><td><select value={item.serviceId} onChange={(event) => changeService(index, Number(event.target.value))}>{catalog.map((service) => <option key={service.id} value={service.id} disabled={serviceItems.some((row, rowIndex) => rowIndex !== index && row.serviceId === service.id)}>{service.description || `Serviço #${service.id}`}</option>)}</select></td><td><input type="number" min="1" value={item.quantity ?? 1} onChange={(event) => updateService(index, { quantity: Number(event.target.value) })} /></td><td><input type="time" value={item.hours || '00:00'} readOnly title="Somatório do tempo oficial contabilizado nos atendimentos vinculados" /></td><td><input type="number" min="0" step="0.01" value={item.minimumValue ?? 0} onChange={(event) => updateService(index, { minimumValue: Number(event.target.value) })} /></td><td><input type="number" min="0" step="0.01" value={item.unitValue ?? 0} onChange={(event) => updateService(index, { unitValue: Number(event.target.value) })} readOnly={calculatedByTime} title={calculatedByTime ? `${item.hours || '00:00'} × ${money(item.minuteValue)} por minuto, respeitando o valor mínimo` : 'Valor unitário do serviço'} /></td><td><input value={money(item.totalValue)} readOnly /></td><td><button type="button" className="os-remove-row" onClick={() => removeService(index)} aria-label="Remover serviço"><X size={16} /></button></td></tr>
+            return <tr key={item.rowKey}><td><input value={catalogItem?.groupId ?? '—'} readOnly /></td><td><select value={item.serviceId} onChange={(event) => changeService(index, Number(event.target.value))}>{catalog.map((service) => <option key={service.id} value={service.id} disabled={serviceItems.some((row, rowIndex) => rowIndex !== index && row.serviceId === service.id)}>{service.description || `Serviço #${service.id}`}</option>)}</select></td><td><input type="number" min="1" value={item.quantity ?? 1} onChange={(event) => updateService(index, { quantity: Number(event.target.value) })} /></td><td><input type="time" value={item.hours || '00:00'} readOnly title="Somatório do tempo oficial contabilizado nos atendimentos vinculados" /></td><td><input type="number" min="0" step="0.01" value={item.minimumValue ?? 0} onChange={(event) => updateService(index, { minimumValue: Number(event.target.value) })} /></td><td><input type="number" min="0" step="0.01" value={item.firstHourValue ?? 0} onChange={(event) => updateService(index, { firstHourValue: Number(event.target.value) })} /></td><td><input type="number" min="0" step="0.01" value={item.unitValue ?? 0} onChange={(event) => updateService(index, { unitValue: Number(event.target.value) })} readOnly={calculatedByTime} title={calculatedByTime ? (contracted ? 'Minutos excedentes do contrato × valor do minuto extra do contrato' : `Até ${minimumMinutes} min: ${money(item.minimumValue)}; acima: 1ª hora ${money(item.firstHourValue)} + minutos além da 1ª hora × ${money(item.extraValue ?? item.minuteValue)}`) : 'Valor unitário do serviço'} /></td><td><input value={money(item.totalValue)} readOnly /></td><td><button type="button" className="os-remove-row" onClick={() => removeService(index)} aria-label="Remover serviço"><X size={16} /></button></td></tr>
           })}</tbody></table></div> : <div className="os-empty-grid">Nenhum serviço adicionado. Use “Adicionar serviço” para montar a cobrança.</div>}
         </section>
       </div>
@@ -1493,9 +1502,27 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
   </>
 }
 
+const FIRST_HOUR_MINUTES = 60
+
+function realizedMinutesOf(schedule: { actualDuration?: string | null; actualStart?: string | null; actualEnd?: string | null }) {
+  return minutesFromTime(schedule.actualDuration) || durationMinutes(schedule.actualStart, schedule.actualEnd)
+}
+
+function oneOffAccountedMinutes(realized: number, minimumMinutes: number) {
+  if (realized <= 0) return 0
+  return realized <= minimumMinutes ? minimumMinutes : Math.max(realized, FIRST_HOUR_MINUTES)
+}
+
+function oneOffAmount(realized: number, minimumMinutes: number, item: ServiceOrderServiceItem, quantity: number) {
+  if (realized <= 0) return 0
+  if (realized <= minimumMinutes) return numberValue(item.minimumValue) * quantity
+  const firstHour = numberValue(item.firstHourValue) > 0 ? numberValue(item.firstHourValue) : numberValue(item.minimumValue)
+  return firstHour * quantity + Math.max(0, realized - FIRST_HOUR_MINUTES) * numberValue(item.extraValue ?? item.minuteValue)
+}
+
 function serviceDraft(service: ServiceCatalogItem): ServiceDraft {
   const unitValue = numberValue(service.defaultPrice ?? service.defaultValue)
-  return { rowKey: `service-new-${service.id}-${Date.now()}`, serviceId: service.id, quantity: 1, hours: '00:00', unitValue, totalValue: unitValue, minimumValue: numberValue(service.minimumValue), minuteValue: numberValue(service.legacyMinuteValue), extraValue: numberValue(service.extraValue ?? service.legacyMinuteValue), oneOffValue: numberValue(service.oneOffValue ?? service.legacyMinuteValue) }
+  return { rowKey: `service-new-${service.id}-${Date.now()}`, serviceId: service.id, quantity: 1, hours: '00:00', unitValue, totalValue: unitValue, minimumValue: numberValue(service.minimumValue), firstHourValue: numberValue(service.defaultPrice), minuteValue: numberValue(service.legacyMinuteValue), extraValue: numberValue(service.extraValue ?? service.legacyMinuteValue), oneOffValue: numberValue(service.oneOffValue ?? service.legacyMinuteValue) }
 }
 
 function materialDraft(material: Material): MaterialDraft {

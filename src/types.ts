@@ -770,6 +770,8 @@ export interface ServiceOrderServiceItem {
   minuteValue?: number | null
   extraValue?: number | null
   oneOffValue?: number | null
+  /** OS avulsa: valor da primeira hora quando o atendimento passa do tempo mínimo. */
+  firstHourValue?: number | null
 }
 
 export interface ServiceOrderTracking {

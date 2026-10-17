@@ -15,7 +15,7 @@ import { ClientStatementDetails, DetailTable, formatMinutes } from './BillingDet
 import { RenewalHistorySection } from './ContractRenewalHistory'
 import { Badge, Button, EmptyState, ErrorState, LoadingState, Modal } from './ui'
 
-type Section = 'profile' | 'bill' | 'bills' | 'receivables' | 'contracts' | 'locations' | 'orders' | 'hours' | 'statement'
+type Section = 'profile' | 'bill' | 'pending' | 'bills' | 'receivables' | 'contracts' | 'locations' | 'orders' | 'hours' | 'statement'
 
 type ClientWorkspaceModalProps = {
   open: boolean
@@ -28,6 +28,10 @@ type ClientWorkspaceModalProps = {
   onSelectBill?: (billId: number) => void
   /** Abre o extrato de um boleto a gerar (horas utilizadas, rateio por local e valores). */
   onOpenStatement?: (source: BillStatementSource) => void
+  /** Ações do rodapé em "Dados cadastrais" (ex.: editar/excluir no cadastro de clientes). */
+  profileActions?: ReactNode
+  /** Mostra "Boletos a gerar" como item do menu (usado quando não há boleto selecionado). */
+  showPendingBills?: boolean
   onClose: () => void
 }
 
@@ -35,7 +39,7 @@ type ClientWorkspaceModalProps = {
  * Modal "Dados do cliente" no formato da tela do Delphi: ficha cadastral à primeira vista e um menu lateral
  * com tudo o que está vinculado ao cliente (boletos, contas a receber, contratos, locais, OS, horas e extrato).
  */
-export function ClientWorkspaceModal({ open, clientId, clientLabel, bill, onSelectBill, onOpenStatement, onClose }: ClientWorkspaceModalProps) {
+export function ClientWorkspaceModal({ open, clientId, clientLabel, bill, onSelectBill, onOpenStatement, profileActions, showPendingBills, onClose }: ClientWorkspaceModalProps) {
   const { navigate } = useRouter()
   const [section, setSection] = useState<Section>('profile')
   const clientQuery = useQuery({ queryKey: [...queryKeys.clients, 'detail', clientId], queryFn: () => api.clients.find(clientId!), enabled: open && clientId !== null })
@@ -45,6 +49,7 @@ export function ClientWorkspaceModal({ open, clientId, clientLabel, bill, onSele
   const menu: Array<{ id: Section; label: string; icon: ReactNode; hidden?: boolean }> = [
     { id: 'profile', label: 'Dados cadastrais', icon: <UserRound size={17} /> },
     { id: 'bill', label: bill?.label ?? 'Boleto selecionado', icon: <ReceiptText size={17} />, hidden: !bill },
+    { id: 'pending', label: 'Boletos a gerar', icon: <ReceiptText size={17} />, hidden: Boolean(bill) || !showPendingBills },
     { id: 'bills', label: 'Boletos do cliente', icon: <WalletCards size={17} /> },
     { id: 'receivables', label: 'Contas a receber', icon: <CircleDollarSign size={17} /> },
     { id: 'contracts', label: 'Contratos', icon: <FileSignature size={17} /> },
@@ -59,7 +64,7 @@ export function ClientWorkspaceModal({ open, clientId, clientLabel, bill, onSele
     setSection('bill')
   }
 
-  const footer = section === 'bill' ? bill?.actions : section === 'profile' && clientId ? <Button variant="secondary" icon={<ExternalLink size={16} />} onClick={() => navigate(`/clientes?id=${clientId}`)}>Abrir no cadastro de clientes</Button> : null
+  const footer = section === 'bill' ? bill?.actions : section === 'profile' && profileActions ? profileActions : section === 'profile' && clientId ? <Button variant="secondary" icon={<ExternalLink size={16} />} onClick={() => navigate(`/clientes?id=${clientId}`)}>Abrir no cadastro de clientes</Button> : null
 
   return <Modal open={open} onClose={onClose} title={`Dados do cliente · ${name}`} description={clientId ? `Cliente #${clientId}${client?.document ? ` · ${client.document}` : ''}` : undefined} size="xlarge">
     <div className="modal__body client-workspace">
@@ -70,6 +75,7 @@ export function ClientWorkspaceModal({ open, clientId, clientLabel, bill, onSele
         {section === 'bill' && bill ? <div className="client-workspace__section">{bill.content}{bill.showPendingBills && clientId !== null && <PendingBillsBlock clientId={clientId} client={client} onOpenStatement={onOpenStatement} />}</div>
           : clientId === null ? <EmptyState title="Cliente não identificado" description="Este registro não está vinculado a um cadastro de cliente." />
           : section === 'profile' ? (clientQuery.isLoading ? <LoadingState label="Carregando cadastro do cliente..." /> : clientQuery.isError ? <ErrorState message={apiErrorMessage(clientQuery.error)} onRetry={() => clientQuery.refetch()} /> : client ? <ClientDetail client={client} /> : null)
+          : section === 'pending' ? <div className="client-workspace__section"><PendingBillsBlock clientId={clientId} client={client} onOpenStatement={onOpenStatement} /></div>
           : section === 'bills' ? <ClientBillsSection clientId={clientId} client={client} onSelect={onSelectBill ? selectBill : undefined} onOpenStatement={onOpenStatement} />
           : section === 'receivables' ? <ClientReceivablesSection clientId={clientId} />
           : section === 'contracts' ? <ClientContractsSection clientId={clientId} />

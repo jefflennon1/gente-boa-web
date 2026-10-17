@@ -8,9 +8,10 @@ import { useAuth } from '../auth'
 import { useRouter } from '../router'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money } from '../lib/format'
-import { ClientDetail, flagIsOn, formatCep } from '../components/ClientDetail'
+import { flagIsOn, formatCep } from '../components/ClientDetail'
+import { ClientWorkspaceModal } from '../components/ClientWorkspaceModal'
 import type { Client, ClientAddress, ClientAddressPayload, ClientKind, ClientListSortBy, ClientPayload, SortDirection } from '../types'
-import { Badge, Button, CollapsibleFilters, ConfirmDialog, DetailModal, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
+import { Badge, Button, CollapsibleFilters, ConfirmDialog, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
 const referralDescriptionsQueryKey = [...queryKeys.clients, 'referral-descriptions'] as const
 
@@ -646,16 +647,15 @@ export function Clients() {
         </ModalForm>
       </Modal>
 
-      <DetailModal
+      <ClientWorkspaceModal
+        key={detailId ?? 'sem-cliente'}
         open={detailId !== null}
+        clientId={detailId}
+        clientLabel={detailQuery.data ? detailQuery.data.name || detailQuery.data.nmfanta || undefined : undefined}
+        showPendingBills
+        profileActions={detailQuery.data ? <><Button variant="danger" icon={<Trash2 size={17} />} disabled={deleteMutation.isPending} onClick={() => setClientToDelete(detailQuery.data)}>Excluir</Button><Button icon={<Edit3 size={17} />} onClick={() => openEdit(detailQuery.data)}>Editar cadastro</Button></> : undefined}
         onClose={() => setDetailId(null)}
-        title={detailQuery.data ? `Cliente #${detailQuery.data.id} · ${detailQuery.data.name || detailQuery.data.nmfanta}` : 'Detalhes do cliente'}
-        description="Cadastro completo, contatos, endereço, preferências e histórico contratual."
-        size="xlarge"
-        actions={detailQuery.data ? <><Button variant="danger" icon={<Trash2 size={17} />} disabled={deleteMutation.isPending} onClick={() => setClientToDelete(detailQuery.data)}>Excluir</Button><Button icon={<Edit3 size={17} />} onClick={() => openEdit(detailQuery.data)}>Editar cadastro</Button></> : undefined}
-      >
-        {detailQuery.isLoading ? <LoadingState label="Carregando cadastro completo..." /> : detailQuery.isError ? <ErrorState message={apiErrorMessage(detailQuery.error)} onRetry={() => detailQuery.refetch()} /> : detailQuery.data ? <ClientDetail client={detailQuery.data} /> : null}
-      </DetailModal>
+      />
 
       <ConfirmDialog
         open={Boolean(clientToDelete)}
