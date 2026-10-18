@@ -22,7 +22,9 @@ export const navGroups: NavGroup[] = [
       { to: '/', label: 'Visão geral', icon: LayoutDashboard, end: true, permission: 'dashboard' },
       { to: '/ordens-de-servico', label: 'Ordens de serviço', icon: ClipboardList, permission: 'service-orders' },
       { to: '/acompanhamento-colaboradores', label: 'Acomp. de colaboradores', icon: CalendarClock, permission: 'employee-tracking' },
-      { to: '/boletos', label: 'Boletos', icon: FileText, permission: 'bills' }
+      { to: '/boletos', label: 'Boletos', icon: FileText, permission: 'bills' },
+      { to: '/extratos', label: 'Extratos', icon: FileBarChart, permission: 'bills' },
+      
     ],
   },
   {
@@ -48,7 +50,7 @@ export const navGroups: NavGroup[] = [
       { to: '/caixa-diario', label: 'Caixa diário', icon: Wallet, permission: 'cash' },
       { to: '/centros-de-custo', label: 'Centros de custo', icon: FolderTree, permission: 'cost-centers' },
       // { to: '/boletos', label: 'Boletos', icon: FileText, permission: 'bills' },
-      { to: '/extratos', label: 'Extratos', icon: FileBarChart, permission: 'bills' },
+      // { to: '/extratos', label: 'Extratos', icon: FileBarChart, permission: 'bills' },
       { to: '/notas-fiscais', label: 'Notas fiscais', icon: ReceiptText, permission: 'invoices' },
     ],
   },
