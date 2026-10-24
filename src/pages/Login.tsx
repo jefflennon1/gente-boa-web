@@ -2,11 +2,9 @@ import { useState } from 'react'
 import { ArrowRight, CheckCircle2, CircleAlert, Eye, EyeOff, LockKeyhole, ShieldCheck, UserRound, Wrench } from 'lucide-react'
 import { useAuth } from '../auth'
 import { apiErrorMessage } from '../api/client'
-import { useRouter } from '../router'
 
 export function Login() {
   const { login } = useAuth()
-  const { navigate } = useRouter()
   const [loginName, setLoginName] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -20,7 +18,6 @@ export function Login() {
     setLoading(true)
     try {
       await login(loginName, password, remember)
-      navigate('/', { replace: true })
     } catch (requestError) {
       setError(apiErrorMessage(requestError, 'Não foi possível realizar o login.'))
     } finally {

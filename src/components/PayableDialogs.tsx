@@ -11,7 +11,8 @@ import { AccountReceipt, AccountWorkspace, PartyReceipts, payableReceiptRow } fr
 import { Button, ConfirmDialog, FormError, FormField, LoadingState, Modal, ModalForm } from './ui'
 import { todayIso } from '../lib/export'
 import { formatDate, money } from '../lib/format'
-import type { PayableAccount, PayableAccountPayload, PayablePaymentPayload } from '../types'
+import type { BillListItem, PayableAccount, PayableAccountPayload, PayableLinkedBill, PayablePaymentPayload } from '../types'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
 
 type ShowToast = (message: string, variant?: 'success' | 'error') => void
 type PaidMethod = 'CASH' | 'TRANSFER' | 'BILL'
@@ -25,6 +26,43 @@ function addMonths(isoDate: string, months: number) {
 }
 
 type PaidAdjustment = { amountPaid: number; paidAt: string | null; paymentMethod: PaidMethod; movementAccountId: number | null }
+
+function linkedBillFrom(bill: BillListItem): PayableLinkedBill {
+  return { id: bill.id, number: bill.number, clientId: bill.clientId, clientName: bill.clientTradeName || bill.clientName, dueAt: bill.dueAt, amount: bill.amount, paid: bill.paid }
+}
+
+/** Campo "Boleto": busca o boleto pelo número, mostra os dados principais e vincula à conta a pagar. */
+function BillLinkField({ value, onChange }: { value: PayableLinkedBill | null; onChange: (bill: PayableLinkedBill | null) => void }) {
+  const [code, setCode] = useState('')
+  const debouncedCode = useDebouncedValue(code.trim(), 400)
+  const validCode = /^\d+$/.test(debouncedCode)
+  const lookupQuery = useQuery({
+    queryKey: [...queryKeys.bills, 'payable-link', debouncedCode],
+    queryFn: () => api.bills.list({ billNumber: Number(debouncedCode), paymentStatus: 'ALL', page: 0, size: 10 }),
+    enabled: validCode && !value,
+  })
+  const matches = lookupQuery.data?.content ?? []
+
+  if (value) {
+    return <FormField label="Boleto">
+      <div className="payable-bill-link payable-bill-link--linked">
+        <span><strong>Boleto #{value.number ?? value.id}{value.paid ? ' · Pago' : ' · Em aberto'}</strong><small>{[value.clientName || (value.clientId ? `Cliente #${value.clientId}` : null), value.dueAt ? `venc. ${formatDate(value.dueAt)}` : null, value.amount != null ? money(value.amount) : null].filter(Boolean).join(' · ')}</small></span>
+        <button type="button" onClick={() => { onChange(null); setCode('') }} aria-label="Desvincular boleto">Desvincular</button>
+      </div>
+    </FormField>
+  }
+
+  return <FormField label="Boleto" hint="Digite o número do boleto para vincular.">
+    <div className="payable-bill-link">
+      <input type="text" inputMode="numeric" value={code} placeholder="Número do boleto" onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))} />
+      {validCode && code.trim() === debouncedCode && <div className="payable-bill-link__results" role="listbox" aria-label="Boletos encontrados">
+        {lookupQuery.isFetching ? <small>Buscando boleto...</small> : lookupQuery.isError ? <small className="payable-bill-link__error">{apiErrorMessage(lookupQuery.error)}</small> : matches.length === 0 ? <small className="payable-bill-link__error">Nenhum boleto encontrado com este número.</small> : matches.map((bill) => <button type="button" role="option" aria-selected={false} key={bill.id} onClick={() => onChange(linkedBillFrom(bill))}>
+          <span><strong>Boleto #{bill.number ?? bill.id} · {bill.clientTradeName || bill.clientName || `Cliente #${bill.clientId}`}</strong><small>venc. {formatDate(bill.dueAt)} · {money(bill.amount)} · {bill.paid ? 'Pago' : 'Em aberto'}</small></span><em>Vincular</em>
+        </button>)}
+      </div>}
+    </div>
+  </FormField>
+}
 
 /**
  * Diálogos de conta a pagar compartilhados (tela de Contas a pagar e modal "Dados do fornecedor"):
@@ -54,6 +92,7 @@ export function usePayableDialogs(showToast: ShowToast) {
   // Valor pago editável na alteração da conta (pagamento parcial).
   const [amounts, setAmounts] = useState({ due: '', paid: '' })
   const [paidDetails, setPaidDetails] = useState<{ paidAt: string; method: PaidMethod; movementAccountId: number | '' }>({ paidAt: todayIso(), method: 'CASH', movementAccountId: '' })
+  const [linkedBill, setLinkedBill] = useState<PayableLinkedBill | null>(null)
   const costCentersQuery = useQuery({ queryKey: [...financeKeys.costCenters, 'Despesas'], queryFn: () => financeApi.costCenters.list('Despesas') })
   const movementAccountsQuery = useQuery({ queryKey: [...queryKeys.payables, 'movement-accounts'], queryFn: () => api.payables.movementAccounts() })
   const detailQuery = useQuery({ queryKey: [...queryKeys.payables, 'detail', selected?.id], queryFn: () => api.payables.find(selected!.id), enabled: modalOpen && selected !== null })
@@ -142,9 +181,10 @@ export function usePayableDialogs(showToast: ShowToast) {
     setAmounts({ due: due === '' ? '' : String(due), paid: String(paid) })
     setPaidDetails({ paidAt: todayIso(), method: 'CASH', movementAccountId: '' })
   }
-  function openNew(defaultSupplier: PickerValue = null) { setSelected(null); setFormSupplier(defaultSupplier); setFormCostCenter(''); setFormError(''); resetPaidForm('', 0); setAccountSection('form'); setModalOpen(true) }
+  function openNew(defaultSupplier: PickerValue = null) { setSelected(null); setFormSupplier(defaultSupplier); setFormCostCenter(''); setFormError(''); setLinkedBill(null); resetPaidForm('', 0); setAccountSection('form'); setModalOpen(true) }
   function openEdit(account: PayableAccount) {
     setSelected(account)
+    setLinkedBill(account.bill ?? null)
     setFormSupplier({ id: account.supplierId, label: `${account.supplierName || 'Fornecedor'} · #${account.supplierId}` })
     setFormCostCenter(account.costCenterId ? String(account.costCenterId) : '')
     setFormError('')
@@ -193,6 +233,7 @@ export function usePayableDialogs(showToast: ShowToast) {
         supplierId: formSupplier.id,
         purchaseOrderId: numberOrNull('purchaseOrderId'),
         invoiceNumber: textOrNull('invoiceNumber'),
+        billId: linkedBill?.id ?? null,
         serviceOrderId: numberOrNull('serviceOrderId'),
         contractId: numberOrNull('contractId'),
         orderedAt: dateOrNull('orderedAt'),
@@ -228,11 +269,11 @@ export function usePayableDialogs(showToast: ShowToast) {
     <FormError message={formError} />
     <div className="form-section-title"><span>1</span><div><strong>Documento e fornecedor</strong><small>Identificação principal da conta.</small></div></div>
     <div className="form-grid form-grid--two"><FormField label="Fornecedor"><SupplierPicker value={formSupplier} onChange={setFormSupplier} /></FormField><FormField label="Documento"><input name="documentCode" maxLength={50} defaultValue={editingAccount?.documentCode ?? ''} /></FormField></div>
-    <div className="form-section-title"><span>2</span><div><strong>Origem do título</strong><small>Pedido de compra, nota fiscal, contrato e ordem de serviço.</small></div></div>
-    <div className="form-grid form-grid--four"><FormField label="Nº pedido de compra"><input name="purchaseOrderId" type="number" min="1" defaultValue={editingAccount?.purchaseOrderId || ''} /></FormField><FormField label="Data do pedido"><input name="orderedAt" type="date" defaultValue={editingAccount?.orderedAt?.slice(0, 10) ?? ''} /></FormField><FormField label="Nota fiscal"><input name="invoiceNumber" maxLength={50} defaultValue={editingAccount?.invoiceNumber ?? ''} /></FormField><FormField label="Nº contrato"><input name="contractId" type="number" min="1" defaultValue={editingAccount?.contractId || ''} /></FormField><FormField label="Ordem de serviço"><input name="serviceOrderId" type="number" min="1" defaultValue={editingAccount?.serviceOrderId || ''} /></FormField></div>
+    <div className="form-section-title"><span>2</span><div><strong>Origem do título</strong><small>Pedido de compra, boleto, contrato e ordem de serviço.</small></div></div>
+    <div className="form-grid form-grid--four"><FormField label="Nº pedido de compra"><input name="purchaseOrderId" type="number" min="1" defaultValue={editingAccount?.purchaseOrderId || ''} /></FormField><FormField label="Data do pedido"><input name="orderedAt" type="date" defaultValue={editingAccount?.orderedAt?.slice(0, 10) ?? ''} /></FormField><input type="hidden" name="invoiceNumber" defaultValue={editingAccount?.invoiceNumber ?? ''} /><BillLinkField value={linkedBill} onChange={setLinkedBill} /><FormField label="Nº contrato"><input name="contractId" type="number" min="1" defaultValue={editingAccount?.contractId || ''} /></FormField><FormField label="Ordem de serviço"><input name="serviceOrderId" type="number" min="1" defaultValue={editingAccount?.serviceOrderId || ''} /></FormField></div>
     <div className="form-section-title"><span>3</span><div><strong>Descrição e valores</strong><small>Informações do lançamento e totalizadores.</small></div></div>
     <div className="form-grid form-grid--three"><FormField label="Descrição"><input name="description" required maxLength={100} defaultValue={editingAccount?.description ?? ''} /></FormField><FormField label="Data de cadastro"><input name="registeredAt" type="date" defaultValue={editingAccount?.registeredAt?.slice(0, 10) || todayIso()} /></FormField><FormField label="Vencimento"><input name="dueAt" required type="date" defaultValue={editingAccount?.dueAt?.slice(0, 10) ?? ''} /></FormField><FormField label="Valor devido"><input name="amountDue" required type="number" min="0.01" step="0.01" value={amounts.due} onChange={(event) => setAmounts((current) => ({ ...current, due: event.target.value }))} /></FormField><FormField label="Valor pago" hint="Informe o que já foi pago, mesmo que seja só uma parte."><input type="number" min="0" step="0.01" value={amounts.paid} onChange={(event) => setAmounts((current) => ({ ...current, paid: event.target.value }))} /></FormField><FormField label="Saldo a pagar"><input className={formBalance > 0 ? 'payable-balance-open' : 'payable-balance-paid'} value={money(formBalance)} readOnly tabIndex={-1} /></FormField></div>
-    {paidChange > 0 && <div className="payable-paid-change"><p><strong>Pagamento de {money(paidChange)}</strong> será registrado como baixa{formBalance > 0 ? `, ficando ${money(formBalance)} a pagar` : ' e a conta ficará quitada'}.</p><div className="form-grid form-grid--three">
+    {paidChange > 0 && <div className="payable-paid-change"><p><strong>Pagamento de {money(paidChange)}</strong> será registrado como baixa{formBalance > 0 ? `, ficando ${money(formBalance)} a pagar` : ' e a conta ficará quitada'}.{linkedBill && !linkedBill.paid && formBalance === 0 ? ` O boleto #${linkedBill.number ?? linkedBill.id} vinculado também receberá a baixa.` : ''}</p><div className="form-grid form-grid--three">
       <FormField label="Data do pagamento"><input type="date" required value={paidDetails.paidAt} onChange={(event) => setPaidDetails((current) => ({ ...current, paidAt: event.target.value }))} /></FormField>
       <FormField label="Forma de pagamento"><select value={paidDetails.method} onChange={(event) => setPaidDetails((current) => ({ ...current, method: event.target.value as PaidMethod, movementAccountId: '' }))}><option value="CASH">Dinheiro</option><option value="TRANSFER">Transferência</option><option value="BILL">Boleto</option></select></FormField>
       <FormField label="Conta movimento"><select required value={paidDetails.movementAccountId || suggestedMovementAccount(movementAccountsQuery.data, paidDetails.method === 'CASH' ? 'CASH' : 'TRANSFER')} onChange={(event) => setPaidDetails((current) => ({ ...current, movementAccountId: Number(event.target.value) }))}><option value="">Selecione</option>{movementAccountsQuery.data?.map((item) => <option key={item.id} value={item.id}>{item.id} · {item.name}</option>)}</select></FormField>

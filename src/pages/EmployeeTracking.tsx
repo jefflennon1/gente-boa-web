@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarClock, Clock3, Edit3, FileSpreadsheet, ListOrdered, Plus, Printer, Save, Search, Trash2, UsersRound } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { apiErrorMessage } from '../api/client'
 import { detailKindLabels, employeeTrackingApi, employeeTrackingKeys, hours, percent, type DailyReportEntry, type DetailPayload, type DetailRow, type OvertimeReport, type PeriodReport, type Workday } from '../api/employeeTracking'
 import { api, queryKeys } from '../api/services'
 import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 import { dateText, downloadCsv, monthBounds, moneyText, printElement, todayIso } from '../lib/export'
+
+const ServiceOrderEditModal = lazy(() => import('./ServiceOrders').then((module) => ({ default: module.ServiceOrderEditModal })))
 
 type Tab = 'workload' | 'detail' | 'reports'
 type ReportKind = 'daily' | 'period' | 'overtime'
@@ -54,25 +56,87 @@ function WorkloadTab({ date, setDate, onOpenDetail, showToast }: { date: string;
         <span className="muted employee-weekday">{weekday(date)}</span>
         <label className="checkbox-inline"><input type="checkbox" checked={includeTerminated} onChange={(event) => setIncludeTerminated(event.target.checked)} /> Verificar com funcionários demitidos</label>
       </div>
-      {dayQuery.isLoading ? <LoadingState label="Carregando carga horária..." /> : dayQuery.isError ? <ErrorState message={apiErrorMessage(dayQuery.error)} onRetry={() => dayQuery.refetch()} /> : rows.length === 0 ? <EmptyState title="Nenhum colaborador" description="Não há colaboradores ativos para a data." /> : <div className="table-wrap"><table className="data-table workload-table">
-        <thead><tr><th rowSpan={2}>Colaborador</th><th rowSpan={2}>Carga</th><th rowSpan={2}>Entrada</th><th colSpan={3}>Intervalo almoço</th><th rowSpan={2}>Saída</th><th colSpan={2}>Totais</th><th colSpan={5}>Horários registrados em OS</th><th rowSpan={2}>Observações</th><th rowSpan={2} /></tr>
-          <tr><th>Início</th><th>Final</th><th>Total</th><th>Tempo</th><th>%</th><th>Trab.</th><th>Trans.</th><th>Mater.</th><th>Garant.</th><th>Total</th></tr></thead>
-        <tbody>{rows.map((row) => <WorkloadRow key={`${row.employeeId}-${date}-${row.workdayId ?? 'new'}`} row={row} date={date} onOpenDetail={onOpenDetail} showToast={showToast} />)}</tbody>
-      </table></div>}
+      {dayQuery.isLoading ? <LoadingState label="Carregando carga horária..." /> : dayQuery.isError ? <ErrorState message={apiErrorMessage(dayQuery.error)} onRetry={() => dayQuery.refetch()} /> : rows.length === 0 ? <EmptyState title="Nenhum colaborador" description="Não há colaboradores ativos para a data." /> : <>
+        <p className="workload-autosave-hint">Os horários são gravados automaticamente ao preencher. Use Enter para ir ao próximo campo.</p>
+        {/* data-enter-navigation: Enter avança para o próximo campo, como o Tab (mesma regra dos formulários). */}
+        <div className="table-wrap" data-enter-navigation><table className="data-table workload-table workload-table--legacy">
+          <thead>
+            <tr><th rowSpan={3}>Colaborador</th><th rowSpan={3}>Carga<br />Horária</th><th colSpan={5}>Horários por Colaborador</th><th colSpan={2} rowSpan={2}>Totais</th><th colSpan={4} rowSpan={2}>Horários Registrados em OS</th><th rowSpan={3}>Total<br />Regist.</th><th rowSpan={3}>Observações</th></tr>
+            <tr><th rowSpan={2}>Entrada</th><th colSpan={3}>Intervalo Almoço</th><th rowSpan={2}>Saída</th></tr>
+            <tr><th>Início</th><th>Final</th><th>Total</th><th>Tempo</th><th>%</th><th>Trab.</th><th>Trans.</th><th>Mater.</th><th>Garant.</th></tr>
+          </thead>
+          <tbody>{rows.map((row) => <WorkloadRow key={`${row.employeeId}-${date}`} row={row} date={date} onOpenDetail={onOpenDetail} showToast={showToast} />)}</tbody>
+        </table></div>
+      </>}
     </section>
   </>
 }
 
+type WorkdayValues = { workload: string; entryTime: string; lunchStart: string; lunchEnd: string; exitTime: string; notes: string }
+
+const AUTOSAVE_DELAY_MS = 800
+
+/** Mesmas regras da API: o salvamento automático espera a linha ficar consistente para não acusar erro durante a digitação. */
+function workdayPendingReason(values: WorkdayValues) {
+  const toMinutes = (value: string) => { const [h, m] = value.split(':').map(Number); return value && Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null }
+  const entry = toMinutes(values.entryTime), exit = toMinutes(values.exitTime), lunchStart = toMinutes(values.lunchStart), lunchEnd = toMinutes(values.lunchEnd)
+  if ((lunchStart === null) !== (lunchEnd === null)) return 'Informe início e fim do almoço'
+  if (lunchStart !== null && lunchEnd !== null && lunchEnd < lunchStart) return 'Fim do almoço antes do início'
+  if (entry !== null && exit !== null && exit <= entry) return 'Saída antes da entrada'
+  if (lunchStart !== null && lunchEnd !== null && entry !== null && exit !== null && (lunchStart < entry || lunchEnd > exit)) return 'Almoço fora da jornada'
+  return ''
+}
+
 function WorkloadRow({ row, date, onOpenDetail, showToast }: { row: Workday; date: string; onOpenDetail: (employeeId: number) => void; showToast: (message: string, variant?: 'success' | 'error') => void }) {
   const queryClient = useQueryClient()
-  const initial = { workload: row.workload ?? '', entryTime: row.entryTime ?? '', lunchStart: row.lunchStart ?? '', lunchEnd: row.lunchEnd ?? '', exitTime: row.exitTime ?? '', notes: row.notes ?? '' }
-  const [values, setValues] = useState(initial)
-  const dirty = JSON.stringify(values) !== JSON.stringify(initial)
+  const [values, setValues] = useState<WorkdayValues>(() => ({ workload: row.workload ?? '', entryTime: row.entryTime ?? '', lunchStart: row.lunchStart ?? '', lunchEnd: row.lunchEnd ?? '', exitTime: row.exitTime ?? '', notes: row.notes ?? '' }))
+  // Salvamento automático: grava pouco depois de cada alteração, ao sair do campo e ao trocar de tela.
+  const savedRef = useRef(JSON.stringify(values))
+  const latestRef = useRef(values)
+  latestRef.current = values
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const mutation = useMutation({
-    mutationFn: () => employeeTrackingApi.saveWorkday({ date, employeeId: row.employeeId, ...values }),
-    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: employeeTrackingKeys.all }); showToast(`Jornada de ${row.employeeName} gravada.`) },
-    onError: (error) => showToast(apiErrorMessage(error), 'error'),
+    mutationFn: (payload: WorkdayValues) => employeeTrackingApi.saveWorkday({ date, employeeId: row.employeeId, ...payload }),
+    onMutate: () => setSaveState('saving'),
+    onSuccess: async () => { setSaveState('saved'); await queryClient.invalidateQueries({ queryKey: employeeTrackingKeys.all }) },
+    onError: (error) => {
+      savedRef.current = ''
+      setSaveState('error')
+      showToast(`${row.employeeName}: ${apiErrorMessage(error)}`, 'error')
+    },
   })
+  const dirty = JSON.stringify(values) !== savedRef.current
+
+  const pendingReason = workdayPendingReason(values)
+
+  function save(current: WorkdayValues) {
+    const serialized = JSON.stringify(current)
+    if (serialized === savedRef.current || workdayPendingReason(current)) return
+    savedRef.current = serialized
+    mutation.mutate(current)
+  }
+
+  useEffect(() => {
+    if (JSON.stringify(values) === savedRef.current) return
+    const timer = window.setTimeout(() => save(values), AUTOSAVE_DELAY_MS)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values])
+
+  useEffect(() => () => {
+    // Saiu da tela (ou trocou a data) antes do salvamento automático: grava o que foi digitado.
+    if (JSON.stringify(latestRef.current) !== savedRef.current) {
+      const reason = workdayPendingReason(latestRef.current)
+      if (reason) {
+        showToast(`${row.employeeName}: horários não gravados (${reason.toLowerCase()}).`, 'error')
+        return
+      }
+      employeeTrackingApi.saveWorkday({ date, employeeId: row.employeeId, ...latestRef.current })
+        .then(() => queryClient.invalidateQueries({ queryKey: employeeTrackingKeys.all }))
+        .catch((error) => showToast(`${row.employeeName}: ${apiErrorMessage(error)}`, 'error'))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const preview = useMemo(() => {
     const toMinutes = (value: string) => { const [h, m] = value.split(':').map(Number); return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null }
     const entry = toMinutes(values.entryTime), exit = toMinutes(values.exitTime), ls = toMinutes(values.lunchStart), le = toMinutes(values.lunchEnd), workload = toMinutes(values.workload) ?? row.workloadMinutes
@@ -80,20 +144,21 @@ function WorkloadRow({ row, date, onOpenDetail, showToast }: { row: Workday; dat
     const worked = entry !== null && exit !== null && exit > entry ? exit - entry - lunch : row.workedMinutes
     return { lunch, worked, workload }
   }, [row.workedMinutes, row.workloadMinutes, values])
-  const set = (key: keyof typeof values) => (event: React.ChangeEvent<HTMLInputElement>) => setValues((current) => ({ ...current, [key]: event.target.value }))
-  return <tr className={dirty ? 'is-selected' : ''}>
-    <td><strong className="table-primary">{row.employeeName}</strong><small className="table-secondary">{row.position || (row.active ? 'Ativo' : 'Desligado')}</small></td>
-    <td><input className="time-input" type="time" value={values.workload} onChange={set('workload')} /></td>
-    <td><input className="time-input" type="time" value={values.entryTime} onChange={set('entryTime')} /></td>
-    <td><input className="time-input" type="time" value={values.lunchStart} onChange={set('lunchStart')} /></td>
-    <td><input className="time-input" type="time" value={values.lunchEnd} onChange={set('lunchEnd')} /></td>
-    <td>{hours(preview.lunch)}</td>
-    <td><input className="time-input" type="time" value={values.exitTime} onChange={set('exitTime')} /></td>
-    <td><strong>{hours(preview.worked)}</strong></td>
-    <td>{percent(preview.worked, preview.workload)}</td>
-    <td>{hours(row.registered.service)}</td><td>{hours(row.registered.transfer)}</td><td>{hours(row.registered.material)}</td><td>{hours(row.registered.warranty)}</td><td><strong>{hours(row.registered.total)}</strong></td>
-    <td><input className="notes-input" value={values.notes} maxLength={300} onChange={set('notes')} placeholder="Observações" /></td>
-    <td><div className="row-actions"><button className="row-action row-action--success" disabled={!dirty || mutation.isPending} title="Gravar jornada" onClick={() => mutation.mutate()}><Save size={16} /></button><button className="row-action" title="Detalhamento do dia" onClick={() => onOpenDetail(row.employeeId)}><ListOrdered size={16} /></button></div></td>
+  const set = (key: keyof WorkdayValues) => (event: React.ChangeEvent<HTMLInputElement>) => setValues((current) => ({ ...current, [key]: event.target.value }))
+  const saveOnBlur = () => save(latestRef.current)
+  const status = mutation.isPending || saveState === 'saving' ? 'Salvando...' : dirty && pendingReason ? pendingReason : saveState === 'error' ? 'Não gravado' : dirty ? 'Alterado' : saveState === 'saved' ? 'Gravado' : ''
+  return <tr className={saveState === 'error' ? 'workload-row--error' : dirty ? 'is-selected' : ''} onBlur={saveOnBlur}>
+    <td className="workload-employee"><button type="button" className="workload-employee__name" title="Abrir o detalhamento do dia" onClick={() => onOpenDetail(row.employeeId)}>{row.nickname || row.employeeName}<ListOrdered size={12} /></button>{status && <small className={`workload-save-status workload-save-status--${saveState}`}>{saveState === 'saved' && !dirty ? <Save size={10} /> : null}{status}</small>}</td>
+    <td><input className="time-input" type="time" value={values.workload} onChange={set('workload')} aria-label={`Carga horária de ${row.employeeName}`} /></td>
+    <td><input className="time-input" type="time" value={values.entryTime} onChange={set('entryTime')} aria-label={`Entrada de ${row.employeeName}`} /></td>
+    <td><input className="time-input" type="time" value={values.lunchStart} onChange={set('lunchStart')} aria-label={`Início do almoço de ${row.employeeName}`} /></td>
+    <td><input className="time-input" type="time" value={values.lunchEnd} onChange={set('lunchEnd')} aria-label={`Final do almoço de ${row.employeeName}`} /></td>
+    <td className="workload-calculated">{hours(preview.lunch)}</td>
+    <td><input className="time-input" type="time" value={values.exitTime} onChange={set('exitTime')} aria-label={`Saída de ${row.employeeName}`} /></td>
+    <td className="workload-calculated">{hours(preview.worked)}</td>
+    <td className="workload-calculated">{percent(preview.worked, preview.workload)}</td>
+    <td className="workload-calculated">{hours(row.registered.service)}</td><td className="workload-calculated">{hours(row.registered.transfer)}</td><td className="workload-calculated">{hours(row.registered.material)}</td><td className="workload-calculated">{hours(row.registered.warranty)}</td><td className="workload-calculated"><strong>{hours(row.registered.total)}</strong></td>
+    <td><input className="notes-input" value={values.notes} maxLength={300} onChange={set('notes')} aria-label={`Observações de ${row.employeeName}`} /></td>
   </tr>
 }
 
@@ -103,6 +168,8 @@ function DetailTab({ date, setDate, employeeId, setEmployeeId, showToast }: { da
   const [kind, setKind] = useState<DetailPayload['kind']>('SERVICE')
   const [formError, setFormError] = useState('')
   const [toDelete, setToDelete] = useState<DetailRow | null>(null)
+  // Clique na linha com OS vinculada abre a própria OS para edição (como no sistema anterior).
+  const [orderToEdit, setOrderToEdit] = useState<number | null>(null)
   const employeesQuery = useQuery({ queryKey: [...queryKeys.employees, 'tracking-options'], queryFn: () => api.employees.search('') })
   const detailQuery = useQuery({ queryKey: [...employeeTrackingKeys.all, 'detail', date, employeeId], queryFn: () => employeeTrackingApi.detail(date, employeeId!), enabled: employeeId !== null })
   const detail = detailQuery.data
@@ -134,10 +201,10 @@ function DetailTab({ date, setDate, employeeId, setEmployeeId, showToast }: { da
     </div>
     {!employeeId ? <EmptyState title="Selecione o colaborador" description="Escolha a data e o colaborador para ver e alimentar os atendimentos do dia." /> : detailQuery.isLoading ? <LoadingState label="Carregando atendimentos..." /> : detailQuery.isError ? <ErrorState message={apiErrorMessage(detailQuery.error)} onRetry={() => detailQuery.refetch()} /> : !detail || detail.rows.length === 0 ? <EmptyState title="Nenhum atendimento registrado" description="Adicione os atendimentos, translados e compras de material enviados pelo técnico." /> : <div className="table-wrap"><table className="data-table">
       <thead><tr><th>O.S.</th><th>Tipo</th><th>Cat.</th><th>Cliente</th><th>Descrição</th><th>Hr. ini</th><th>Hr. fin</th><th>Total</th><th /></tr></thead>
-      <tbody>{detail.rows.map((row) => <tr key={row.id}>
+      <tbody>{detail.rows.map((row) => <tr key={row.id} className={row.serviceOrderId || !row.fromServiceOrderTimer ? 'employee-detail-row--clickable' : undefined} title={row.serviceOrderId ? `Abrir a OS ${row.serviceOrderId} para edição` : undefined} onClick={() => { if (row.serviceOrderId) setOrderToEdit(row.serviceOrderId); else if (!row.fromServiceOrderTimer) openForm(row) }}>
         <td><strong>{row.serviceOrderId ?? '0'}</strong></td><td><Badge tone={row.kind === 'TRANSFER' ? 'neutral' : row.kind === 'MATERIAL' ? 'purple' : row.kind === 'WARRANTY' ? 'orange' : 'blue'}>{detailKindLabels[row.kind]}</Badge></td><td>{row.categoryFlag ?? ''}</td>
         <td>{row.clientId ? `${row.clientId} · ${row.clientName ?? ''}` : '—'}</td><td>{row.description}</td><td>{row.startTime}</td><td>{row.endTime}</td><td><strong>{hours(row.minutes)}</strong></td>
-        <td><div className="row-actions">{row.fromServiceOrderTimer ? <small className="table-secondary">Cronômetro da OS</small> : <><button className="row-action" title="Alterar" onClick={() => openForm(row)}><Edit3 size={16} /></button><button className="row-action row-action--danger" title="Excluir" onClick={() => setToDelete(row)}><Trash2 size={16} /></button></>}</div></td>
+        <td><div className="row-actions">{row.fromServiceOrderTimer ? <small className="table-secondary">Cronômetro da OS</small> : <><button className="row-action" title="Alterar registro do dia" onClick={(event) => { event.stopPropagation(); openForm(row) }}><Edit3 size={16} /></button><button className="row-action row-action--danger" title="Excluir" onClick={(event) => { event.stopPropagation(); setToDelete(row) }}><Trash2 size={16} /></button></>}</div></td>
       </tr>)}</tbody>
       <tfoot><tr><td colSpan={7}>Trabalho {hours(detail.registered.service)} · Translado {hours(detail.registered.transfer)} · Materiais {hours(detail.registered.material)} · Garantia {hours(detail.registered.warranty)}</td><td>{hours(detail.registered.total)}</td><td /></tr></tfoot>
     </table></div>}
@@ -155,6 +222,7 @@ function DetailTab({ date, setDate, employeeId, setEmployeeId, showToast }: { da
         <div className="form-grid form-grid--two"><FormField label="Hora inicial"><input name="startTime" type="time" required defaultValue={editingRow?.startTime ?? lastEnd} /></FormField><FormField label="Hora final"><input name="endTime" type="time" required defaultValue={editingRow?.endTime ?? ''} /></FormField></div>
       </ModalForm>
     </Modal>
+    {orderToEdit !== null && <Suspense fallback={null}><ServiceOrderEditModal orderId={orderToEdit} onClose={() => setOrderToEdit(null)} onSaved={(order) => { void invalidate(); showToast(`Ordem de serviço ${order.id} atualizada.`) }} /></Suspense>}
     <ConfirmDialog open={toDelete !== null} title="Excluir registro?" description={`${toDelete ? detailKindLabels[toDelete.kind] : ''} das ${toDelete?.startTime ?? ''} às ${toDelete?.endTime ?? ''}.`} busy={deleteMutation.isPending} onCancel={() => setToDelete(null)} onConfirm={() => toDelete && deleteMutation.mutate(toDelete.id)} />
   </section>
 }

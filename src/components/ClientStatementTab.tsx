@@ -13,12 +13,15 @@ import { Button, EmptyState, ErrorState, LoadingState, Modal } from './ui'
  * Extrato do cliente ("conta de bar"): tudo o que o cliente utilizou no período — OS finalizadas e em andamento,
  * horas, serviços, materiais e valores — independente de boleto gerado. O cliente é obrigatório.
  */
-export function ClientStatementTab({ showToast }: { showToast: (message: string) => void }) {
-  // Período padrão: do 1º dia do mês atual ao último dia do mês seguinte (ex.: 01/10 a 30/11).
+export function ClientStatementTab({ showToast, period = 'current-and-next-month' }: { showToast: (message: string) => void; period?: 'current-month' | 'current-and-next-month' }) {
+  // Período padrão: mês atual (menu Extratos) ou do 1º dia do mês atual ao último dia do mês seguinte (ex.: 01/10 a 30/11).
   const initial = useMemo(() => {
     const today = new Date()
-    return { start: monthBounds(today).start, end: monthBounds(new Date(today.getFullYear(), today.getMonth() + 1, 1)).end }
-  }, [])
+    const current = monthBounds(today)
+    return period === 'current-month'
+      ? current
+      : { start: current.start, end: monthBounds(new Date(today.getFullYear(), today.getMonth() + 1, 1)).end }
+  }, [period])
   const [client, setClient] = useState<PickerValue>(null)
   const [startDate, setStartDate] = useState(initial.start)
   const [endDate, setEndDate] = useState(initial.end)

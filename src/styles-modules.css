@@ -226,3 +226,63 @@
   .statement-doc__client { margin-left: 0; }
 }
 .statement-doc__address { display: block; margin-top: 2px; font-weight: 400; font-size: 0.9em; color: #3b3f55; }
+
+/* OS: vários pedidos de compra, conflito de horário e saldo do contrato em tempo real */
+.os-contract-balance { grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); }
+.os-contract-balance__exceeded strong { color: #b73c3c; }
+.os-schedule-conflict { margin-top: 4px; display: flex; align-items: flex-start; gap: 4px; color: #b73c3c; font-size: 7.5px; font-weight: 700; line-height: 1.3; white-space: normal; }
+.os-schedule-conflict svg { flex: 0 0 auto; margin-top: 1px; }
+.os-purchase-switcher { margin: 10px 0 12px; display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; }
+.os-purchase-switcher > button[role="tab"] { min-width: 170px; padding: 8px 11px; display: grid; gap: 2px; border: 1px solid #dfe1ea; border-radius: 9px; color: var(--ink); background: white; text-align: left; cursor: pointer; transition: .15s ease; }
+.os-purchase-switcher > button[role="tab"]:hover { border-color: #bfc2df; background: #f9f9ff; }
+.os-purchase-switcher > button[role="tab"].active { border-color: var(--brand); background: var(--brand-soft); box-shadow: 0 0 0 1px var(--brand) inset; }
+.os-purchase-switcher strong { font-size: 9px; }
+.os-purchase-switcher small { overflow: hidden; color: var(--muted); font-size: 7.5px; text-overflow: ellipsis; white-space: nowrap; }
+.os-purchase-footer > .button, .os-purchase-footer > button { justify-self: start; }
+.detail-purchase-order + .detail-purchase-order { margin-top: 14px; padding-top: 14px; border-top: 1px dashed #dfe1ea; }
+
+/* Boletos gerados: pagamento em lote sempre visível e quitação por linha */
+.bill-batch-actions { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fafafd; justify-content: flex-end; }
+.bill-batch-actions > span { margin-right: auto; }
+.bill-settle-button { height: 29px; padding: 0 9px; display: inline-flex; align-items: center; gap: 4px; border: 1px solid #bfe5da; border-radius: 8px; color: #087867; background: #eef9f6; font-size: 8px; font-weight: 800; white-space: nowrap; cursor: pointer; }
+.bill-settle-button:hover { border-color: #087867; background: #e1f4ee; }
+
+/* Criação de boletos: agrupamento por cliente */
+.receivable-table .receivable-client-group td { padding-top: 9px; padding-bottom: 9px; border-top: 2px solid #dfe1ef; background: #f6f6fc; cursor: pointer; }
+.receivable-table .receivable-client-group td strong { display: block; color: var(--navy); font-size: 9.5px; }
+.receivable-table .receivable-client-group td small { display: block; margin-top: 2px; color: var(--muted); font-size: 7.5px; }
+.receivable-table .receivable-client-group:hover td { background: #efeffa; }
+
+/* Conta a pagar: vínculo com boleto */
+.payable-bill-link { position: relative; display: grid; gap: 6px; }
+.payable-bill-link--linked { min-height: 38px; padding: 6px 9px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid #bfe5da; border-radius: 8px; background: #eef9f6; }
+.payable-bill-link--linked span, .payable-bill-link__results button span { min-width: 0; display: grid; gap: 2px; }
+.payable-bill-link strong { overflow: hidden; color: var(--navy); font-size: 8.5px; text-overflow: ellipsis; white-space: nowrap; }
+.payable-bill-link small { overflow: hidden; color: var(--muted); font-size: 7.5px; text-overflow: ellipsis; white-space: nowrap; }
+.payable-bill-link--linked button { flex: 0 0 auto; height: 26px; padding: 0 8px; border: 1px solid #f0c9c9; border-radius: 6px; color: #a14848; background: white; font-size: 7.5px; font-weight: 750; cursor: pointer; }
+.payable-bill-link__results { display: grid; gap: 4px; }
+.payable-bill-link__results button { padding: 6px 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--line); border-radius: 7px; background: white; text-align: left; cursor: pointer; }
+.payable-bill-link__results button:hover { border-color: var(--brand); background: var(--brand-soft); }
+.payable-bill-link__results em { flex: 0 0 auto; color: var(--brand); font-size: 7.5px; font-style: normal; font-weight: 800; }
+.payable-bill-link__error { color: #b73c3c !important; }
+
+/* Carga horária por dia no formato da grade do Delphi: linhas compactas, cabeçalho agrupado e células calculadas */
+.workload-autosave-hint { margin: 0 0 8px; color: var(--muted); font-size: 8px; }
+.workload-table--legacy { min-width: 1180px; border-collapse: collapse; }
+.workload-table--legacy th { padding: 4px 6px; border: 1px solid #cfd2de; background: #f1f2f7; color: #3b3f55; font-size: 8px; font-weight: 750; line-height: 1.2; text-align: center; white-space: nowrap; }
+.workload-table--legacy td { height: 30px; padding: 2px 4px; border: 1px solid #e1e3ea; font-size: 8.5px; text-align: center; white-space: nowrap; }
+.workload-table--legacy tbody tr:hover td { background: #fafaff; }
+.workload-table--legacy tbody tr.is-selected td { background: #fffbea; }
+.workload-table--legacy tbody tr.workload-row--error td { background: #fdeeee; }
+.workload-table--legacy .time-input { width: 74px; height: 25px; padding: 0 4px; border-radius: 4px; font-size: 9px; }
+.workload-table--legacy .notes-input { width: 100%; min-width: 220px; height: 25px; border-radius: 4px; }
+.workload-table--legacy .workload-calculated { color: #3b3f55; font-variant-numeric: tabular-nums; }
+.workload-employee { min-width: 130px; text-align: left !important; }
+.workload-employee__name { padding: 0; display: inline-flex; align-items: center; gap: 4px; border: 0; color: var(--navy); background: transparent; font-size: 8.5px; font-weight: 800; text-transform: uppercase; cursor: pointer; }
+.workload-employee__name svg { color: var(--muted); }
+.workload-employee__name:hover { color: var(--brand); }
+.workload-save-status { margin-top: 1px; display: flex; align-items: center; gap: 3px; color: var(--muted); font-size: 7px; }
+.workload-save-status--saved { color: #087867; }
+.workload-save-status--error { color: #b73c3c; font-weight: 750; }
+.employee-detail-row--clickable { cursor: pointer; }
+.employee-detail-row--clickable:hover td { background: #f6f6fc; }

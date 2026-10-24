@@ -145,7 +145,8 @@ export function AccountsReceivable() {
     onError: (error) => setDeleteError(apiErrorMessage(error)),
   })
   const receiptMutation = useMutation({
-    mutationFn: (id: number) => financeApi.receivables.receipt(id),
+    // Conta de uma OS: recibo único com todos os lançamentos recebidos da OS.
+    mutationFn: ({ id, serviceOrderId }: { id: number; serviceOrderId: number | null }) => serviceOrderId ? financeApi.receivables.serviceOrderReceipt(serviceOrderId) : financeApi.receivables.receipt(id),
     onSuccess: (blob) => { const url = URL.createObjectURL(blob); window.open(url, '_blank', 'noopener'); window.setTimeout(() => URL.revokeObjectURL(url), 60_000) },
     onError: (error) => showToast(apiErrorMessage(error), 'error'),
   })
@@ -309,7 +310,7 @@ export function AccountsReceivable() {
           <td><Badge tone={row.status === 'PAID' ? 'green' : row.overdue ? 'red' : 'orange'}>{row.status === 'PAID' ? 'Quitada' : row.overdue ? 'Vencida' : 'Aberta'}</Badge></td>
           <td><div className="row-actions">
             {row.status === 'OPEN' && <button className="row-action row-action--success" onClick={(event) => { event.stopPropagation(); openSettlement(row) }} title="Dar baixa"><WalletCards size={16} /></button>}
-            {row.receivedAmount !== 0 && <button className="row-action" onClick={(event) => { event.stopPropagation(); receiptMutation.mutate(row.id) }} title="Recibo"><ReceiptText size={16} /></button>}
+            {row.receivedAmount !== 0 && <button className="row-action" onClick={(event) => { event.stopPropagation(); receiptMutation.mutate({ id: row.id, serviceOrderId: row.serviceOrderId }) }} title={row.serviceOrderId ? `Recibo da O.S. ${row.serviceOrderId}` : 'Recibo'}><ReceiptText size={16} /></button>}
             <button className="row-action" onClick={(event) => { event.stopPropagation(); openEdit(row) }} title="Alterar"><Edit3 size={16} /></button>
           </div></td>
         </tr>)}</tbody></table>
@@ -333,7 +334,7 @@ export function AccountsReceivable() {
           </div>
           {accountSection === 'receipts' && (editing.clientId
             ? <PartyReceipts kind="receivable" partyId={editing.clientId} currentAccount={receivableReceiptRow(editing)} />
-            : <div className="client-workspace__section"><AccountReceipt kind="receivable" id={editing.id} settledAmount={editing.receivedAmount} /></div>)}
+            : <div className="client-workspace__section"><AccountReceipt kind="receivable" id={editing.id} settledAmount={editing.receivedAmount} serviceOrderId={editing.serviceOrderId} /></div>)}
         </AccountWorkspace> : accountFormFields}
       </ModalForm>}
     </Modal>

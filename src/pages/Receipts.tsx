@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, FileCheck2, Search } from 'lucide-react'
 import { apiErrorMessage } from '../api/client'
 import { financeApi, financeKeys } from '../api/finance'
 import { queryKeys } from '../api/services'
-import { payableReceiptRow, ReceiptDocument, receivableReceiptRow, type ReceiptKind, type ReceiptRow } from '../components/ReceiptsPanel'
+import { groupReceiptsByServiceOrder, payableReceiptRow, ReceiptDocument, receiptTitle, receivableReceiptRow, type ReceiptKind, type ReceiptRow } from '../components/ReceiptsPanel'
 import { Button, CollapsibleFilters, EmptyState, ErrorState, LoadingState, Modal, PageHeader } from '../components/ui'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { monthBounds } from '../lib/export'
@@ -58,7 +58,8 @@ function ReceiptsPage({ kind }: { kind: ReceiptKind }) {
     queryFn: async () => {
       if (kind === 'receivable') {
         const data = await financeApi.receivables.list({ query: query || undefined, dateField: 'RECEIPT_DATE', startDate: startDate || undefined, endDate: endDate || undefined, status: 'ALL', sortBy: 'RECEIPT_DATE', direction: 'DESC', page, size: pageSize })
-        return { ...data, rows: data.content.map(receivableReceiptRow) }
+        // Recibo único por OS: os lançamentos da mesma OS (mão de obra, material, taxas...) viram uma linha.
+        return { ...data, rows: groupReceiptsByServiceOrder(data.content.map(receivableReceiptRow)) }
       }
       const data = await financeApi.payables.list({ query: query || undefined, dateField: 'PAYMENT_DATE', startDate: startDate || undefined, endDate: endDate || undefined, status: 'ALL', page, size: pageSize })
       return { ...data, rows: data.content.map(payableReceiptRow) }
@@ -86,7 +87,7 @@ function ReceiptsPage({ kind }: { kind: ReceiptKind }) {
       {listQuery.isLoading ? <LoadingState label="Carregando contas..." /> : listQuery.isError ? <ErrorState message={apiErrorMessage(listQuery.error)} onRetry={() => listQuery.refetch()} /> : rows.length === 0 ? <EmptyState title="Nenhum recibo disponível" description={copy.empty} /> : <div className="table-wrap"><table className="data-table receipts-table">
         <thead><tr><th>{copy.code}</th><th>{copy.party}</th><th>Descrição</th><th>OS</th><th>Documento</th><th>Vencimento</th><th>{copy.settled}</th><th className="num">Valor</th><th className="num">{copy.settledAmount}</th><th className="num">Saldo</th><th /></tr></thead>
         <tbody>{rows.map((row) => <tr key={row.id}>
-          <td><strong>#{row.id}</strong></td>
+          <td><strong>#{row.ids.join(', #')}</strong></td>
           <td><strong className="table-primary">{row.party}</strong></td>
           <td>{row.description || 'Sem descrição'}</td>
           <td>{row.serviceOrderId || '—'}</td>
@@ -102,8 +103,8 @@ function ReceiptsPage({ kind }: { kind: ReceiptKind }) {
       <footer className="table-footer table-footer--pagination"><span>Mostrando <strong>{total === 0 ? 0 : page * pageSize + 1}–{Math.min((page + 1) * pageSize, total)}</strong> de <strong>{total.toLocaleString('pt-BR')}</strong> contas</span><div className="pagination-controls"><label>Por página <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(0) }}>{[10, 20, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label><button disabled={page === 0 || listQuery.isFetching} onClick={() => setPage((value) => Math.max(0, value - 1))} aria-label="Página anterior"><ChevronLeft size={16} /></button><span>Página <strong>{totalPages ? page + 1 : 0}</strong> de <strong>{totalPages}</strong></span><button disabled={page + 1 >= totalPages || listQuery.isFetching} onClick={() => setPage((value) => value + 1)} aria-label="Próxima página"><ChevronRight size={16} /></button></div></footer>
     </section>
 
-    <Modal open={preview !== null} onClose={() => setPreview(null)} title={preview ? `Recibo ${copy.code} #${preview.id}` : 'Recibo'} description={preview ? `${preview.party} · ${money(preview.settledAmount)} em ${formatDate(preview.settledAt)}` : undefined} size="xlarge">
-      <div className="modal__body">{preview && <ReceiptDocument kind={kind} id={preview.id} />}</div>
+    <Modal open={preview !== null} onClose={() => setPreview(null)} title={preview ? receiptTitle(kind, preview) : 'Recibo'} description={preview ? (preview.serviceOrderReceipt ? `${preview.party} · todos os lançamentos recebidos da O.S. ${preview.serviceOrderId} em um único recibo` : `${preview.party} · ${money(preview.settledAmount)} em ${formatDate(preview.settledAt)}`) : undefined} size="xlarge">
+      <div className="modal__body">{preview && <ReceiptDocument kind={kind} id={preview.id} serviceOrderId={preview.serviceOrderReceipt ? preview.serviceOrderId : null} />}</div>
     </Modal>
   </>
 }

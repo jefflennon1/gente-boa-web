@@ -82,6 +82,11 @@ export const financeApi = {
       const { data } = await http.get<Blob>(`/accounts-receivable/entries/${id}/receipt`, { responseType: 'blob' })
       return data
     },
+    /** Recibo único com todos os lançamentos recebidos da OS. */
+    async serviceOrderReceipt(serviceOrderId: number) {
+      const { data } = await http.get<Blob>(`/accounts-receivable/entries/service-orders/${serviceOrderId}/receipt`, { responseType: 'blob' })
+      return data
+    },
     async settleBill(billId: number, payload: { paidAt: string; movementAccountId: number; paymentMethod?: string }) {
       const { data } = await http.post<BatchOperationResult>(`/accounts-receivable/entries/bills/${billId}/settle`, payload)
       return data

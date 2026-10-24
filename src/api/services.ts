@@ -1,4 +1,5 @@
 import type {
+  ScheduleConflict,
   AccountsReceivableListItem,
   AppUser,
   BillDetail,
@@ -161,6 +162,7 @@ export type AccountsReceivableListParams = Pick<ListParams, 'query' | 'page' | '
   serviceOrderStart?: string
   serviceOrderEnd?: string
   dueDay?: 10 | 20
+  clientId?: number
   billingType?: 'ALL' | 'CONTRACT' | 'ONE_OFF'
   generatedStatus?: 'ALL' | 'GENERATED' | 'PENDING'
   paymentStatus?: 'ALL' | 'PAID' | 'PENDING'
@@ -212,6 +214,10 @@ export const api = {
     },
     async me() {
       const { data } = await http.get<AppUser>('/auth/me')
+      return data
+    },
+    async refresh() {
+      const { data } = await http.post<AuthResponse>('/auth/refresh')
       return data
     },
   },
@@ -502,6 +508,10 @@ export const api = {
     },
     async summary(params: Omit<ServiceOrderListParams, 'status' | 'urgentOnly' | 'page' | 'size'> = {}) {
       const { data } = await http.get<ServiceOrderSummary>('/service-orders/summary', { params })
+      return data
+    },
+    async scheduleConflicts(params: { employeeId: number; date: string; start: string; end: string; excludeServiceOrderId?: number }) {
+      const { data } = await http.get<ScheduleConflict[]>('/service-orders/schedule-conflicts', { params })
       return data
     },
     async create(payload: ServiceOrderPayload) {

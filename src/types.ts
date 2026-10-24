@@ -523,12 +523,25 @@ export interface PayableAccount {
   movementAccountName: string | null
   username: string | null
   payments: PayablePayment[]
+  /** Boleto vinculado: é baixado junto quando a conta é quitada. */
+  bill?: PayableLinkedBill | null
+}
+
+export interface PayableLinkedBill {
+  id: number
+  number: number | null
+  clientId: number | null
+  clientName: string | null
+  dueAt: ISODateTime | null
+  amount: number | null
+  paid: boolean
 }
 
 export interface PayableAccountPayload {
   supplierId: number
   purchaseOrderId?: number | null
   invoiceNumber?: string | null
+  billId?: number | null
   serviceOrderId?: number | null
   contractId?: number | null
   orderedAt?: ISODateTime | null
@@ -666,6 +679,15 @@ export interface Contract {
   lastAdjustmentDate: ISODateTime | null
   status: ContractStatus
   services: ContractServiceItem[]
+}
+
+export interface ScheduleConflict {
+  serviceOrderId: number
+  scheduleId: number
+  startsAt: ISODateTime
+  endsAt: ISODateTime
+  clientName: string | null
+  status: string | null
 }
 
 export interface ClientContractContext {
@@ -891,6 +913,7 @@ export interface ServiceOrder {
   schedules?: ServiceOrderSchedule[] | null
   serviceItems?: ServiceOrderServiceItem[] | null
   materialOrder?: ServiceOrderMaterialOrder | null
+  materialOrders?: ServiceOrderMaterialOrder[] | null
   trackingDetails?: ServiceOrderTracking[] | null
 }
 

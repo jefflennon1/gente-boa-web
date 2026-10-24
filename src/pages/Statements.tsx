@@ -38,6 +38,8 @@ export function Statements() {
   const [settleTarget, setSettleTarget] = useState<BillDetail | null>(null)
   const [selectedBills, setSelectedBills] = useState<Record<number, BillListItem>>({})
   const [batchSettleOpen, setBatchSettleOpen] = useState(false)
+  // Quitação direta de um boleto pela linha da tabela.
+  const [rowSettle, setRowSettle] = useState<BillListItem | null>(null)
   const [settleError, setSettleError] = useState('')
   const [toast, setToast] = useState('')
   const [emailTarget, setEmailTarget] = useState<BillDetail | null>(null)
@@ -82,16 +84,21 @@ export function Statements() {
     queryFn: () => modulesApi.summaries.get('bills', billFilters),
     enabled: billingView === 'generated',
   })
-  const movementAccountsQuery = useQuery({ queryKey: [...queryKeys.payables, 'movement-accounts'], queryFn: () => api.payables.movementAccounts(), enabled: settleTarget !== null || batchSettleOpen })
+  const movementAccountsQuery = useQuery({ queryKey: [...queryKeys.payables, 'movement-accounts'], queryFn: () => api.payables.movementAccounts(), enabled: settleTarget !== null || rowSettle !== null || batchSettleOpen })
   const settleMutation = useMutation({
     mutationFn: ({ billIds, paidAt, movementAccountId, paymentMethod }: { billIds: number[]; paidAt: string; movementAccountId: number; paymentMethod: string }) => billIds.length === 1
       ? financeApi.receivables.settleBill(billIds[0], { paidAt, movementAccountId, paymentMethod })
       : financeApi.receivables.settleBills(billIds, { paidAt, movementAccountId, paymentMethod }),
-    onSuccess: async (result) => {
+    onSuccess: async (result, variables) => {
       await Promise.all([queryClient.invalidateQueries({ queryKey: queryKeys.bills }), queryClient.invalidateQueries({ queryKey: modulesKeys.summaries })])
       setSettleTarget(null)
       setBatchSettleOpen(false)
-      setSelectedBills({})
+      setRowSettle(null)
+      setSelectedBills((current) => {
+        const next = { ...current }
+        variables.billIds.forEach((id) => delete next[id])
+        return next
+      })
       showToast(`Pagamento registrado: ${result.count} conta(s) a receber baixada(s), total ${money(result.totalAmount)}.`)
     },
     onError: (error) => setSettleError(apiErrorMessage(error, 'Não foi possível registrar o pagamento do boleto.')),
@@ -223,7 +230,7 @@ export function Statements() {
       <button type="button" className={billingView === 'printing' ? 'active' : ''} onClick={() => changeView('printing')}><Printer size={17} />Impressões</button>
     </nav>
     {billingView === 'receivables' ? <AccountsReceivableReview showToast={showToast} onOpenStatement={setStatementSource} onGenerated={showGeneratedBills} /> : billingView === 'statements' ? <>
-      <ClientStatementTab showToast={showToast} />
+      <ClientStatementTab showToast={showToast} period={pathname === '/extratos' ? 'current-month' : 'current-and-next-month'} />
       <details className="os-detail-accordion bill-statements-batch">
         <summary><span><strong>Extratos dos boletos gerados</strong><small>Impressão em lote: extrato de cada boleto do vencimento e PDF único do período.</small></span><ChevronDown size={17} /></summary>
         <BillStatementsTab onOpen={setStatementSource} showToast={showToast} />
@@ -259,9 +266,13 @@ export function Statements() {
           <label className="billing-filter-group"><span>Em aberto até a data</span><input type="date" value={openUntil} onChange={(event) => { setOpenUntil(event.target.value); setPage(0); setSelectedBills({}) }} /><small>Lista de inadimplentes conforme a situação das CRs.</small></label>
         </div>
         <div className="billing-search-row billing-search-row--actions"><Button variant="ghost" onClick={() => { setBillOrderStart(''); setBillOrderEnd(''); setBillDueStart(initialBillPeriod.startDate); setBillDueEnd(initialBillPeriod.endDate); setOpenUntil(''); setBillDueDay(''); setBillingType('ALL'); setPaymentStatus('ALL'); setSearch(''); setBillCpf(''); setBillCnpj(''); setBillNumber(''); setBillServiceOrder(''); setBillContract(''); setPage(0); setSelectedBills({}) }}>Limpar filtros</Button></div>
-        <div className="receivable-actions"><span><strong>{selectedBillRows.length}</strong> boleto(s) selecionado(s)</span><Button disabled={!selectedBillRows.length} icon={<CheckCircle2 size={16} />} onClick={() => { setSettleError(''); setBatchSettleOpen(true) }}>Registrar pagamento em lote</Button></div>
       </CollapsibleFilters>
-      {billsQuery.isLoading ? <LoadingState label="Carregando boletos..." /> : billsQuery.isError ? <ErrorState message={apiErrorMessage(billsQuery.error)} onRetry={() => billsQuery.refetch()} /> : bills.length === 0 ? <EmptyState title="Nenhum boleto encontrado" description="Os boletos serão gerados quando uma ordem de serviço for finalizada." /> : <div className="table-wrap"><table className="data-table bill-table"><thead><tr><th><input type="checkbox" aria-label="Selecionar boletos em aberto desta página" checked={bills.some((bill) => !isPaid(bill)) && bills.filter((bill) => !isPaid(bill)).every((bill) => selectedBills[bill.id])} onChange={() => { const open = bills.filter((bill) => !isPaid(bill)); const all = open.every((bill) => selectedBills[bill.id]); setSelectedBills((current) => { const next = { ...current }; open.forEach((bill) => { if (all) delete next[bill.id]; else next[bill.id] = bill }); return next }) }} /></th><th>Boleto</th><th>OS</th><th>Cliente</th><th>Contrato</th><th>Data cadastro</th><th>Processamento</th><th>Vencimento</th><th>Valor</th><th>Enviado e-mail</th><th>Pagamento</th><th>Extrato</th><th>Demonstrativo</th><th /></tr></thead><tbody>{bills.map((bill) => <tr key={bill.id} className={recentBills.some((recent) => recent.id === bill.id) ? 'bill-row--new' : undefined} onClick={() => openClientWorkspace(bill)}>
+      <div className="receivable-actions bill-batch-actions" aria-live="polite">
+        <span><strong>{selectedBillRows.length}</strong> boleto(s) selecionado(s){selectedBillRows.length > 0 && <> · <strong>{money(selectedBillRows.reduce((sum, bill) => sum + Number(bill.amount || 0), 0))}</strong></>}</span>
+        {selectedBillRows.length > 0 && <Button variant="ghost" onClick={() => setSelectedBills({})}>Limpar seleção</Button>}
+        <Button disabled={!selectedBillRows.length} icon={<CheckCircle2 size={16} />} onClick={() => { setSettleError(''); setBatchSettleOpen(true) }}>Pagar boletos selecionados</Button>
+      </div>
+      {billsQuery.isLoading ? <LoadingState label="Carregando boletos..." /> : billsQuery.isError ? <ErrorState message={apiErrorMessage(billsQuery.error)} onRetry={() => billsQuery.refetch()} /> : bills.length === 0 ? <EmptyState title="Nenhum boleto encontrado" description="Os boletos serão gerados quando uma ordem de serviço for finalizada." /> : <div className="table-wrap"><table className="data-table bill-table"><thead><tr><th><input type="checkbox" aria-label="Selecionar boletos em aberto desta página" checked={bills.some((bill) => !isPaid(bill)) && bills.filter((bill) => !isPaid(bill)).every((bill) => selectedBills[bill.id])} onChange={() => { const open = bills.filter((bill) => !isPaid(bill)); const all = open.every((bill) => selectedBills[bill.id]); setSelectedBills((current) => { const next = { ...current }; open.forEach((bill) => { if (all) delete next[bill.id]; else next[bill.id] = bill }); return next }) }} /></th><th>Boleto</th><th>OS</th><th>Cliente</th><th>Contrato</th><th>Data cadastro</th><th>Processamento</th><th>Vencimento</th><th>Valor</th><th>Enviado e-mail</th><th>Pagamento</th><th>Quitar</th><th>Extrato</th><th>Demonstrativo</th><th /></tr></thead><tbody>{bills.map((bill) => <tr key={bill.id} className={recentBills.some((recent) => recent.id === bill.id) ? 'bill-row--new' : undefined} onClick={() => openClientWorkspace(bill)}>
         <td><input type="checkbox" disabled={isPaid(bill)} checked={Boolean(selectedBills[bill.id])} onClick={(event) => event.stopPropagation()} onChange={() => setSelectedBills((current) => { const next = { ...current }; if (next[bill.id]) delete next[bill.id]; else next[bill.id] = bill; return next })} aria-label={`Selecionar boleto ${bill.number || bill.id}`} /></td>
         <td><strong>#{bill.number || bill.id}</strong><small className="table-secondary">Registro {bill.id}</small></td>
         <td><strong>{bill.serviceOrderId || 'CR'}</strong></td>
@@ -270,6 +281,7 @@ export function Statements() {
         <td>{formatDate(bill.serviceOrderDate)}</td><td>{formatDate(bill.processedAt, true)}</td><td>{formatDate(bill.dueAt)}</td><td><strong>{money(bill.amount)}</strong></td>
         <td><Badge tone={bill.emailSent ? 'green' : 'neutral'}>{bill.emailSent ? 'Sim' : 'Não'}</Badge>{bill.emailSentAt && <small className="table-secondary">{formatDate(bill.emailSentAt, true)}</small>}</td>
         <td><Badge tone={isPaid(bill) ? 'green' : 'orange'}>{isPaid(bill) ? 'Pago' : 'Pendente'}</Badge>{bill.paidAt && <small className="table-secondary">{formatDate(bill.paidAt)}</small>}</td>
+        <td>{isPaid(bill) ? <span className="table-secondary">—</span> : <button type="button" className="bill-settle-button" onClick={(event) => { event.stopPropagation(); setSettleError(''); setRowSettle(bill) }} aria-label={`Quitar boleto ${bill.number || bill.id}`}><CheckCircle2 size={14} />Quitar</button>}</td>
         <td><button type="button" className="bill-pdf-button" onClick={(event) => { event.stopPropagation(); openBillStatement(bill.id) }} aria-label={`Abrir extrato do boleto ${bill.number || bill.id}`}><FileBarChart size={16} /></button></td>
         <td><button type="button" className="bill-pdf-button" disabled={pdfMutation.isPending} onClick={(event) => { event.stopPropagation(); previewBillPdf(bill) }} aria-label={`Visualizar demonstrativo ${bill.number || bill.id}`}><Eye size={16} /></button></td>
         <td><button className="row-action" aria-label={`Visualizar boleto ${bill.number || bill.id}`}><ChevronRight size={18} /></button></td>
@@ -292,7 +304,7 @@ export function Statements() {
       onOpenStatement={setStatementSource}
       onClose={closeClientWorkspace}
     />
-    <MultipleSettlementDialog key={settleTarget ? `settle-${settleTarget.id}` : batchSettleOpen ? `settle-batch-${selectedBillRows.map((bill) => bill.id).join('-')}` : 'settle-closed'} open={settleTarget !== null || batchSettleOpen} title={settleTarget ? `Pagamento do boleto #${settleTarget.number || settleTarget.id}` : `Pagamento em lote de ${selectedBillRows.length} boleto(s)`} count={settleTarget?.receivables?.length || selectedBillRows.length} total={settleTarget?.amount ?? selectedBillRows.reduce((sum, bill) => sum + Number(bill.amount || 0), 0)} movementAccounts={movementAccountsQuery.data} busy={settleMutation.isPending} error={settleError} defaultMethod="BILL" onClose={() => { setSettleTarget(null); setBatchSettleOpen(false) }} onSubmit={(payload) => settleMutation.mutate({ billIds: settleTarget ? [settleTarget.id] : selectedBillRows.map((bill) => bill.id), paidAt: payload.paidAt, movementAccountId: payload.movementAccountId, paymentMethod: payload.paymentMethod })} />
+    <MultipleSettlementDialog key={settleTarget ? `settle-${settleTarget.id}` : rowSettle ? `settle-row-${rowSettle.id}` : batchSettleOpen ? `settle-batch-${selectedBillRows.map((bill) => bill.id).join('-')}` : 'settle-closed'} open={settleTarget !== null || rowSettle !== null || batchSettleOpen} title={settleTarget ? `Pagamento do boleto #${settleTarget.number || settleTarget.id}` : rowSettle ? `Quitar boleto #${rowSettle.number || rowSettle.id} · ${rowSettle.clientTradeName || rowSettle.clientName || `Cliente #${rowSettle.clientId}`}` : `Pagamento em lote de ${selectedBillRows.length} boleto(s)`} count={settleTarget?.receivables?.length || (rowSettle ? 1 : selectedBillRows.length)} total={settleTarget?.amount ?? rowSettle?.amount ?? selectedBillRows.reduce((sum, bill) => sum + Number(bill.amount || 0), 0)} movementAccounts={movementAccountsQuery.data} busy={settleMutation.isPending} error={settleError} defaultMethod="BILL" onClose={() => { setSettleTarget(null); setRowSettle(null); setBatchSettleOpen(false) }} onSubmit={(payload) => settleMutation.mutate({ billIds: settleTarget ? [settleTarget.id] : rowSettle ? [rowSettle.id] : selectedBillRows.map((bill) => bill.id), paidAt: payload.paidAt, movementAccountId: payload.movementAccountId, paymentMethod: payload.paymentMethod })} />
     <Modal open={billPdfPreview !== null} onClose={closeBillPdfPreview} title={billPdfPreview ? `Demonstrativo #${billPdfPreview.bill.number || billPdfPreview.bill.id}` : 'Demonstrativo'} description="Este documento não é o boleto bancário; ele detalha a cobrança." size="xlarge">
       <div className="modal__body contract-document-modal__body">
         {billPdfPreview && <iframe id="bill-pdf-preview" className="contract-document-frame" src={billPdfPreview.url} title={`Visualização do boleto ${billPdfPreview.bill.number || billPdfPreview.bill.id}`} />}

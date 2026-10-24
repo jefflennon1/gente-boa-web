@@ -7,6 +7,7 @@ import { canAccess, navItemForPath } from './navigation'
 import { useRouter } from './router'
 import { handleEnterNavigation } from './lib/enterNavigation'
 import { watchResponsiveTables } from './lib/responsiveTables'
+import { consumeReturnPath, storeReturnPath } from './api/storage'
 
 const pages: Partial<Record<string, LazyExoticComponent<ComponentType>>> = {
   '/': lazy(() => import('./pages/MonthlyDashboard').then((module) => ({ default: module.MonthlyDashboard }))),
@@ -60,12 +61,15 @@ export default function App() {
   useEffect(() => watchResponsiveTables(), [])
 
   useEffect(() => {
-    if (PublicPage) return
-    if (!isAuthenticated && pathname !== '/login') navigate('/login', { replace: true })
-    else if (isAuthenticated && pathname === '/login') navigate('/', { replace: true })
+    if (PublicPage || initializing) return
+    if (!isAuthenticated && pathname !== '/login') {
+      storeReturnPath(`${pathname}${window.location.search}`)
+      navigate('/login', { replace: true })
+    }
+    else if (isAuthenticated && pathname === '/login') navigate(consumeReturnPath(), { replace: true })
     else if (isAuthenticated && navItemForPath(pathname) && !canAccess(navItemForPath(pathname), user) && pathname !== '/') navigate('/', { replace: true })
     else if (isAuthenticated && !Page) navigate('/', { replace: true })
-  }, [Page, PublicPage, isAuthenticated, navigate, pathname, user?.role])
+  }, [Page, PublicPage, initializing, isAuthenticated, navigate, pathname, user?.role])
 
   if (PublicPage) {
     return (

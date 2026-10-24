@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, ChevronLeft, ChevronRight, Clock3, Eye, FileBarChart, Landmark, ReceiptText, Search } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
@@ -65,7 +65,17 @@ export function AccountsReceivableReview({ showToast, onOpenStatement, onGenerat
     enabled: previewRow?.serviceOrderId != null,
   })
 
-  const rows = query.data?.content ?? []
+  const rows = useMemo(() => query.data?.content ?? [], [query.data])
+  // A API já entrega os títulos agrupados por cliente (vencimento mais próximo de hoje primeiro).
+  const clientGroups = useMemo(() => {
+    const groups: Array<{ key: string; clientId: number | null; label: string; rows: AccountsReceivableListItem[] }> = []
+    rows.forEach((row) => {
+      const last = groups[groups.length - 1]
+      if (last && last.clientId === row.clientId) last.rows.push(row)
+      else groups.push({ key: `${row.clientId ?? 'sem-cliente'}-${groups.length}`, clientId: row.clientId, label: row.clientTradeName || row.clientName || `Cliente #${row.clientId}`, rows: [row] })
+    })
+    return groups
+  }, [rows])
   const total = query.data?.total ?? 0
   const totalPages = query.data?.totalPages ?? 0
   const selectedRows = Object.values(selected)
@@ -100,20 +110,30 @@ export function AccountsReceivableReview({ showToast, onOpenStatement, onGenerat
     },
     onError: (error) => setActionError(apiErrorMessage(error, 'Não foi possível preparar a prévia dos boletos.')),
   })
+  const selectionFilters = {
+    query: debouncedSearch || undefined,
+    dueStart: dueStart || undefined,
+    dueEnd: dueEnd || undefined,
+    serviceOrderStart: orderStart || undefined,
+    serviceOrderEnd: orderEnd || undefined,
+    dueDay: dueDay || undefined,
+    billingType,
+    generatedStatus,
+    paymentStatus,
+  }
   const selectAllMutation = useMutation({
-    mutationFn: () => api.accountsReceivable.selection({
-      query: debouncedSearch || undefined,
-      dueStart: dueStart || undefined,
-      dueEnd: dueEnd || undefined,
-      serviceOrderStart: orderStart || undefined,
-      serviceOrderEnd: orderEnd || undefined,
-      dueDay: dueDay || undefined,
-      billingType,
-      generatedStatus,
-      paymentStatus,
-    }),
+    mutationFn: () => api.accountsReceivable.selection(selectionFilters),
     onSuccess: (items) => setSelected(Object.fromEntries(items.map((item) => [item.id, item]))),
     onError: (error) => setActionError(apiErrorMessage(error, 'Não foi possível marcar todos os títulos do filtro.')),
+  })
+  // Ao marcar o primeiro título de um cliente, todos os títulos dele no filtro são marcados (inclusive de outras páginas).
+  const selectClientMutation = useMutation({
+    mutationFn: (row: AccountsReceivableListItem) => api.accountsReceivable.selection({ ...selectionFilters, clientId: row.clientId! }),
+    onSuccess: (items, row) => setSelected((current) => ({ ...current, [row.id]: row, ...Object.fromEntries(items.filter((item) => !item.generated).map((item) => [item.id, item])) })),
+    onError: (error, row) => {
+      setSelected((current) => ({ ...current, [row.id]: row }))
+      setActionError(apiErrorMessage(error, 'Não foi possível marcar todos os títulos do cliente.'))
+    },
   })
 
   const issMutation = useMutation({
@@ -169,14 +189,34 @@ export function AccountsReceivableReview({ showToast, onOpenStatement, onGenerat
   function toggle(row: AccountsReceivableListItem) {
     if (row.generated) return
     setActionError('')
-    setSelected((current) => {
-      if (current[row.id]) {
+    if (selected[row.id]) {
+      setSelected((current) => {
         const copy = { ...current }
         delete copy[row.id]
         return copy
-      }
-      return { ...current, [row.id]: row }
-    })
+      })
+      return
+    }
+    const clientAlreadySelected = row.clientId != null && selectedRows.some((item) => item.clientId === row.clientId)
+    if (row.clientId == null || clientAlreadySelected) {
+      setSelected((current) => ({ ...current, [row.id]: row }))
+      return
+    }
+    setSelected((current) => ({ ...current, [row.id]: row }))
+    selectClientMutation.mutate(row)
+  }
+
+  function toggleClient(clientId: number | null, clientRows: AccountsReceivableListItem[]) {
+    const selectable = clientRows.filter((row) => !row.generated)
+    if (!selectable.length) return
+    setActionError('')
+    const anySelected = selectedRows.some((item) => item.clientId === clientId)
+    if (anySelected) {
+      setSelected((current) => Object.fromEntries(Object.entries(current).filter(([, item]) => item.clientId !== clientId)))
+      return
+    }
+    setSelected((current) => ({ ...current, ...Object.fromEntries(selectable.map((row) => [row.id, row])) }))
+    if (clientId != null) selectClientMutation.mutate(selectable[0])
   }
 
   function togglePage() {
@@ -236,7 +276,7 @@ export function AccountsReceivableReview({ showToast, onOpenStatement, onGenerat
 
     <section className="panel data-panel bill-panel">
       <CollapsibleFilters summary="Cliente, vencimento do CR, data das OS e situação" contentClassName="billing-filter-panel collapsible-filter-content--block">
-        <div className="billing-filter-panel__heading"><div><strong>Criação de boletos</strong><small>Selecione contas sem boleto pelo vencimento e confira os grupos antes de gerar.</small></div><Badge tone="orange">Um boleto por cliente e vencimento</Badge></div>
+        <div className="billing-filter-panel__heading"><div><strong>Criação de boletos</strong><small>Selecione contas sem boleto pelo vencimento e confira os grupos antes de gerar.</small></div><Badge tone="orange">Agrupado por cliente · um boleto por cliente e vencimento</Badge></div>
         <div className="billing-filter-grid receivable-filter-grid">
           <label className="billing-filter-group"><span>Cliente ou código</span><div className="search-box"><Search size={18} /><input value={search} onChange={(event) => changeFilter(() => setSearch(event.target.value))} placeholder="CR, cliente, CPF/CNPJ, contrato, boleto ou OS" /></div></label>
           <label className="billing-filter-group"><span>Faturamento</span><select value={billingType} onChange={(event) => changeFilter(() => setBillingType(event.target.value as BillingType))}><option value="ALL">Todos</option><option value="CONTRACT">Contratos fixos</option><option value="ONE_OFF">Avulsos</option></select></label>
@@ -257,12 +297,22 @@ export function AccountsReceivableReview({ showToast, onOpenStatement, onGenerat
         {actionError && <div className="receivable-action-error" role="alert">{actionError}</div>}
       </section>
 
-      {query.isLoading ? <LoadingState label="Carregando contas a receber..." /> : query.isError ? <ErrorState message={apiErrorMessage(query.error)} onRetry={() => query.refetch()} /> : rows.length === 0 ? <EmptyState title="Nenhuma conta a receber sem boleto neste vencimento" description="Ajuste o vencimento do CR ou confira se os títulos já foram faturados." /> : <div className="table-wrap"><table className="data-table receivable-table"><thead><tr><th><input type="checkbox" checked={rows.some((row) => !row.generated) && rows.filter((row) => !row.generated).every((row) => Boolean(selected[row.id]))} onChange={togglePage} aria-label="Marcar os registros pendentes desta página" /></th><th>CR</th><th>Cliente</th><th>Contrato</th><th>OS</th><th>Descrição</th><th>Cadastro</th><th>Vencimento</th><th>Valor</th><th>Saldo</th><th>Situação</th><th /></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className={selected[row.id] ? 'receivable-row--selected' : ''} onClick={() => openPreview(row)}>
+      {query.isLoading ? <LoadingState label="Carregando contas a receber..." /> : query.isError ? <ErrorState message={apiErrorMessage(query.error)} onRetry={() => query.refetch()} /> : rows.length === 0 ? <EmptyState title="Nenhuma conta a receber sem boleto neste vencimento" description="Ajuste o vencimento do CR ou confira se os títulos já foram faturados." /> : <div className="table-wrap"><table className="data-table receivable-table"><thead><tr><th><input type="checkbox" checked={rows.some((row) => !row.generated) && rows.filter((row) => !row.generated).every((row) => Boolean(selected[row.id]))} onChange={togglePage} aria-label="Marcar os registros pendentes desta página" /></th><th>CR</th><th>Cliente</th><th>Contrato</th><th>OS</th><th>Descrição</th><th>Cadastro</th><th>Vencimento</th><th>Valor</th><th>Saldo</th><th>Situação</th><th /></tr></thead><tbody>{clientGroups.map((group) => {
+        const selectableRows = group.rows.filter((row) => !row.generated)
+        const selectedCount = selectedRows.filter((item) => item.clientId === group.clientId).length
+        return <Fragment key={group.key}>
+        <tr className="receivable-client-group" onClick={() => toggleClient(group.clientId, group.rows)}>
+          <td><input type="checkbox" checked={selectableRows.length > 0 && selectableRows.every((row) => Boolean(selected[row.id]))} disabled={!selectableRows.length || selectClientMutation.isPending} onChange={() => toggleClient(group.clientId, group.rows)} onClick={(event) => event.stopPropagation()} aria-label={`Marcar todos os títulos de ${group.label}`} /></td>
+          <td colSpan={11}><strong>{group.label}</strong><small>Cliente #{group.clientId ?? '—'} · vencimento mais próximo {formatDate(group.rows[0].dueAt)} · {group.rows.length} título(s) nesta página{selectedCount > 0 ? ` · ${selectedCount} marcado(s) no total` : ''}</small></td>
+        </tr>
+        {group.rows.map((row) => <tr key={row.id} className={selected[row.id] ? 'receivable-row--selected' : ''} onClick={() => openPreview(row)}>
         <td><input type="checkbox" checked={Boolean(selected[row.id])} disabled={row.generated} onChange={() => toggle(row)} onClick={(event) => event.stopPropagation()} aria-label={`Selecionar conta a receber ${row.id}`} /></td>
         <td><strong>#{row.id}</strong>{row.billNumber && <small className="table-secondary">Boleto #{row.billNumber}</small>}</td>
         <td><strong className="table-primary">{row.clientTradeName || row.clientName || `Cliente #${row.clientId}`}</strong><small className="table-secondary">{row.clientDocument || `Código ${row.clientId || '—'}`}</small><TaxRetentionBadges iss={row.issRetained} inss={row.inssRetained} /></td>
         <td>{row.contractId ? `#${row.contractId}` : 'Avulso'}</td><td>{row.serviceOrderId || '—'}</td><td>{row.description || 'Não informada'}</td><td>{formatDate(row.createdAt)}</td><td>{formatDate(row.dueAt)}</td><td className={Number(row.amount) < 0 ? 'receivable-negative' : ''}><strong>{money(row.amount)}</strong></td><td>{money(row.balance)}</td><td><Badge tone={row.generated ? 'green' : row.paid ? 'blue' : 'orange'}>{row.generated ? `Boleto #${row.billNumber}` : row.paid ? 'Pago' : 'A faturar'}</Badge></td><td><button type="button" className="row-action" onClick={(event) => { event.stopPropagation(); openPreview(row) }} aria-label={`Visualizar registro ${row.id}`}><Eye size={16} /></button></td>
-      </tr>)}</tbody></table></div>}
+      </tr>)}
+        </Fragment>
+      })}</tbody></table></div>}
 
       <div className="receivable-selection-footer"><span>Qtd. títulos <strong>{selectedRows.length}</strong></span><span>Qtd. clientes <strong>{selectedClients}</strong></span><span>Valor selecionado <strong>{money(selectedAmount)}</strong></span></div>
 
