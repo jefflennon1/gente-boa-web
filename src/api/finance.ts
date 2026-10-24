@@ -155,6 +155,11 @@ export const financeApi = {
       const { data } = await http.get<CashDaily>('/cash/daily', { params, timeout: 60_000 })
       return data
     },
+    /** Relatório de caixa em PDF, no formato de extrato bancário. */
+    async dailyPdf(params: { startDate: string; endDate: string; movementAccountId?: number }) {
+      const { data } = await http.get<Blob>('/cash/daily/pdf', { params, responseType: 'blob', timeout: 60_000 })
+      return data
+    },
     async close(startDate: string, endDate: string) {
       const { data } = await http.post<CashDayStatus[]>('/cash/close', { startDate, endDate })
       return data

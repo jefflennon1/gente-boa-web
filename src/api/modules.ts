@@ -10,7 +10,7 @@ export interface ServiceChange { sequence: number; serviceName: string; quantity
 export interface ContractChange { contractId: number; clientId: number | null; clientName: string | null; percentage: number; currentContractDate: string | null; currentRenewalDate: string | null; newContractDate: string | null; newRenewalDate: string | null; currentMonthly: number; newMonthly: number; services: ServiceChange[] }
 export interface ReadjustmentPreview { percentage: number; contracts: number; currentMonthly: number; newMonthly: number; changes: ContractChange[]; applied: boolean }
 /** Prévia do reajuste programado em Parâmetros do sistema (tabela de serviços + contratos ativos). */
-export interface ServicePriceAdjustmentPreview { services: number; contracts: number; skippedContractIds: number[]; contractPreview: ReadjustmentPreview | null }
+export interface ServicePriceAdjustmentPreview { services: number; contracts: number; skippedContractIds: number[]; contractPreview: ReadjustmentPreview | null; competence: string; receivables: number; receivablesCurrentAmount: number; receivablesAdjustedAmount: number; bills: number }
 export interface RenewalHistory { id: number; contractId: number; clientId: number | null; clientName: string | null; contractDate: string | null; renewalDate: string | null; changedAt: string | null; previousTotal: number; newTotal: number; previousExtra: number; newExtra: number; previousMinute: number; newMinute: number; percentage: number }
 
 /* ---------- Modelos de documentos (POP p.27-28) ---------- */
@@ -31,7 +31,7 @@ export interface MonthlySummary {
   ordersByType: SummaryLine[]
   ordersByCategory: SummaryLine[]
   operational: { purchaseOrders: SummaryLine[]; contractHourPrice: number; oneOffHourPrice: number; generalHourPrice: number; contractHours: HoursLine[]; oneOffMinutes: number; oneOffPercentage: number; totalMinutes: number }
-  financial: { receivedCount: number; received: number; paidCount: number; paid: number; result: number; availability: SummaryLine[]; totalAvailable: number; overdue: SummaryLine; materialSales: SummaryLine; equipmentRental: SummaryLine }
+  financial: { receivedCount: number; received: number; paidCount: number; paid: number; result: number; availability: SummaryLine[]; totalAvailable: number; overdue: SummaryLine; materialSales: SummaryLine; transportFee: SummaryLine }
 }
 
 /* ---------- Extrato explicativo do boleto (POP p.40-41) ---------- */

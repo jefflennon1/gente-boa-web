@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowDownCircle, ArrowUpCircle, Landmark, Lock, LockOpen, MinusCircle, Printer, Search, Wallet } from 'lucide-react'
+import { ArrowDownCircle, ArrowUpCircle, Download, Landmark, Lock, LockOpen, MinusCircle, Printer, Search, Wallet } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { apiErrorMessage } from '../api/client'
 import { financeApi, financeKeys } from '../api/finance'
@@ -10,7 +10,36 @@ import { dateText, moneyText, printElement, todayIso } from '../lib/export'
 import { money } from '../lib/format'
 import type { CashAccountSummary, CashDaily as CashDailyData, CashEntry } from '../types-finance'
 
-type Tab = 'summary' | 'credits' | 'debits'
+type Tab = 'statement' | 'summary'
+
+type StatementLine = { entry: CashEntry; balance: number }
+type AccountStatement = { account: CashAccountSummary; lines: StatementLine[] }
+
+/** Créditos e débitos juntos por conta, como no extrato bancário: em ordem de data, com o saldo após cada lançamento. */
+function accountStatements(data: CashDailyData): AccountStatement[] {
+  const all = [...data.credits, ...data.debits]
+  return [...data.accounts]
+    .sort((a, b) => Number(a.fixedFund === false) - Number(b.fixedFund === false) || a.id - b.id)
+    .map((account) => {
+      let balance = account.previousBalance
+      const lines = all
+        .filter((entry) => entry.movementAccountId === account.id)
+        .sort((a, b) => String(a.date ?? '').localeCompare(String(b.date ?? '')) || (a.kind === b.kind ? 0 : a.kind === 'CR' ? -1 : 1) || a.documentId - b.documentId)
+        .map((entry) => {
+          balance += entry.kind === 'CR' ? entry.total : -entry.total
+          return { entry, balance }
+        })
+      return { account, lines }
+    })
+}
+
+function entryDocument(entry: CashEntry) {
+  return `${entry.kind} ${entry.documentId}${entry.billNumber ? ` · Bol. ${entry.billNumber}` : ''}`
+}
+
+function entryHistory(entry: CashEntry) {
+  return [entry.partyName, entry.description, entry.serviceOrderId ? `OS ${entry.serviceOrderId}` : null].filter(Boolean).join(' — ')
+}
 
 /** Acompanhamento do caixa (POP p.20-21). */
 export function CashDaily() {
@@ -18,7 +47,7 @@ export function CashDaily() {
   const today = todayIso()
   const [draft, setDraft] = useState({ startDate: today, endDate: today, movementAccountId: '' })
   const [filters, setFilters] = useState(draft)
-  const [tab, setTab] = useState<Tab>('summary')
+  const [tab, setTab] = useState<Tab>('statement')
   const [confirm, setConfirm] = useState<'close' | 'reopen' | null>(null)
   const [confirmError, setConfirmError] = useState('')
   const [adjustOpen, setAdjustOpen] = useState(false)
@@ -53,11 +82,23 @@ export function CashDaily() {
     onError: (error) => setAdjustError(apiErrorMessage(error)),
   })
 
-  const fixedFund = data?.accounts.filter((account) => account.fixedFund) ?? []
-  const bankAccounts = data?.accounts.filter((account) => !account.fixedFund) ?? []
+  const pdfMutation = useMutation({
+    mutationFn: () => financeApi.cash.dailyPdf({ startDate: filters.startDate, endDate: filters.endDate, movementAccountId: filters.movementAccountId ? Number(filters.movementAccountId) : undefined }),
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `relatorio-caixa-${filters.startDate}-a-${filters.endDate}.pdf`
+      link.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    },
+    onError: (error) => showToast(apiErrorMessage(error, 'Não foi possível gerar o PDF do caixa.'), 'error'),
+  })
+
+  const statements = data ? accountStatements(data) : []
 
   return <>
-    <PageHeader eyebrow="Financeiro" title="Caixa diário" subtitle="Créditos e débitos das contas a receber e a pagar quitadas, por conta movimento (Caixa e Banco)." actions={<><Button variant="secondary" icon={<MinusCircle size={18} />} onClick={() => { setAdjustError(''); setAdjustClient(null); setAdjustOpen(true) }}>Lançar CR negativa</Button><Button icon={<Printer size={18} />} disabled={!data} onClick={() => printElement(printRef.current, 'Caixa Diário')}>Caixa diário</Button></>} />
+    <PageHeader eyebrow="Financeiro" title="Caixa diário" subtitle="Créditos e débitos das contas a receber e a pagar quitadas, por conta movimento (Caixa e Banco)." actions={<><Button variant="secondary" icon={<MinusCircle size={18} />} onClick={() => { setAdjustError(''); setAdjustClient(null); setAdjustOpen(true) }}>Lançar CR negativa</Button><Button variant="secondary" icon={<Printer size={18} />} disabled={!data} onClick={() => printElement(printRef.current, 'Relatório de Caixa')}>Imprimir</Button><Button icon={<Download size={18} />} disabled={!data || pdfMutation.isPending} onClick={() => pdfMutation.mutate()}>{pdfMutation.isPending ? 'Gerando PDF...' : 'Baixar PDF'}</Button></>} />
 
     <section className="panel data-panel">
       <form className="cash-filters" data-allow-enter-submit="true" onSubmit={(event) => { event.preventDefault(); setFilters(draft) }}>
@@ -82,15 +123,13 @@ export function CashDaily() {
       </section>
       <section className="panel data-panel">
         <nav className="system-parameters-menu" aria-label="Visões do caixa">
-          <button className={tab === 'summary' ? 'active' : ''} onClick={() => setTab('summary')}>Resumo</button>
-          <button className={tab === 'credits' ? 'active' : ''} onClick={() => setTab('credits')}>Créditos (detalhado)</button>
-          <button className={tab === 'debits' ? 'active' : ''} onClick={() => setTab('debits')}>Débitos (detalhado)</button>
+          <button className={tab === 'statement' ? 'active' : ''} onClick={() => setTab('statement')}>Extrato (créditos e débitos)</button>
+          <button className={tab === 'summary' ? 'active' : ''} onClick={() => setTab('summary')}>Resumo por conta</button>
         </nav>
+        {tab === 'statement' && <div className="cash-statements">{statements.map((statement) => <StatementTable key={statement.account.id} statement={statement} startDate={data.startDate} />)}</div>}
         {tab === 'summary' && <div className="cash-summary-grid">{data.accounts.map((account) => <AccountCard key={account.id} account={account} />)}</div>}
-        {tab === 'credits' && <EntriesTable entries={data.credits} kind="CR" />}
-        {tab === 'debits' && <EntriesTable entries={data.debits} kind="CP" />}
       </section>
-      <div className="print-source" ref={printRef} aria-hidden="true"><CashReport data={data} fixedFund={fixedFund} bankAccounts={bankAccounts} /></div>
+      <div className="print-source" ref={printRef} aria-hidden="true"><CashReport data={data} statements={statements} /></div>
     </> : <EmptyState title="Informe o período" description="Selecione as datas e clique em Pesquisar." />}
 
     <ConfirmDialog open={confirm !== null} variant={confirm === 'close' ? 'primary' : 'danger'} icon={confirm === 'close' ? <Lock size={22} /> : <LockOpen size={22} />} eyebrow="Caixa diário" title={confirm === 'close' ? 'Fechar o caixa do período?' : 'Reabrir o caixa do período?'} description={confirm === 'close' ? `De ${dateText(filters.startDate)} a ${dateText(filters.endDate)}. Depois de fechado, não será possível registrar ou estornar baixas nessas datas até reabrir.` : `De ${dateText(filters.startDate)} a ${dateText(filters.endDate)}. As baixas nessas datas voltarão a poder ser alteradas.`} confirmLabel={confirm === 'close' ? 'Fechar caixa' : 'Reabrir caixa'} busyLabel="Processando..." busy={statusMutation.isPending} error={confirmError} onCancel={() => setConfirm(null)} onConfirm={() => confirm && statusMutation.mutate(confirm)} />
@@ -136,68 +175,45 @@ function AccountCard({ account }: { account: CashAccountSummary }) {
   </article>
 }
 
-function EntriesTable({ entries, kind }: { entries: CashEntry[]; kind: 'CR' | 'CP' }) {
-  if (entries.length === 0) return <EmptyState title={kind === 'CR' ? 'Nenhum crédito no período' : 'Nenhum débito no período'} description="Não há baixas registradas para os filtros informados." />
-  const total = entries.reduce((sum, entry) => sum + entry.total, 0)
-  return <div className="table-wrap"><table className="data-table"><thead><tr><th>Data</th><th>{kind}</th>{kind === 'CR' && <th>Boleto</th>}<th>{kind === 'CR' ? 'Cliente' : 'Fornecedor'}</th><th>Descrição</th><th>Conta</th><th className="num">Dinheiro</th><th className="num">Transf.</th><th className="num">Boleto</th><th className="num">Outros</th><th className="num">Total</th></tr></thead>
-    <tbody>{entries.map((entry, index) => <tr key={`${entry.documentId}-${index}`}><td>{dateText(entry.date)}</td><td><strong>{entry.documentId}</strong></td>{kind === 'CR' && <td>{entry.billNumber ?? '—'}</td>}<td>{entry.partyName || '—'}</td><td>{entry.description || '—'}</td><td>{entry.movementAccountName || '—'}</td><td className="num">{money(entry.cash)}</td><td className="num">{money(entry.transfer)}</td><td className="num">{money(entry.bill)}</td><td className="num">{money(entry.other)}</td><td className="num"><strong>{money(entry.total)}</strong></td></tr>)}</tbody>
-    <tfoot><tr><td colSpan={kind === 'CR' ? 10 : 9}>Total</td><td className="num"><strong>{money(total)}</strong></td></tr></tfoot>
-  </table></div>
+/** Extrato de uma conta movimento: saldo anterior, créditos e débitos na mesma lista e saldo final. */
+function StatementTable({ statement, startDate }: { statement: AccountStatement; startDate: string }) {
+  const { account, lines } = statement
+  return <section className="cash-statement">
+    <header><strong>{account.id} · {account.name}</strong><Badge tone={account.fixedFund ? 'orange' : 'blue'}>{account.fixedFund ? 'Fundo fixo' : 'Banco'}</Badge>{account.detail && <small>{account.detail}</small>}</header>
+    <div className="table-wrap"><table className="data-table cash-statement__table"><thead><tr><th>Data</th><th>Documento</th><th>Histórico</th><th className="num">Crédito</th><th className="num">Débito</th><th className="num">Saldo</th></tr></thead>
+      <tbody>
+        <tr className="cash-statement__opening"><td>{dateText(startDate)}</td><td /><td><strong>SALDO ANTERIOR</strong></td><td /><td /><td className="num"><strong>{money(account.previousBalance)}</strong></td></tr>
+        {lines.length === 0 ? <tr><td colSpan={6} className="muted">Nenhum lançamento no período.</td></tr> : lines.map(({ entry, balance }, index) => <tr key={`${entry.kind}-${entry.documentId}-${index}`}>
+          <td>{dateText(entry.date)}</td><td>{entryDocument(entry)}</td><td>{entryHistory(entry) || '—'}</td>
+          <td className="num cash-statement__credit">{entry.kind === 'CR' ? money(entry.total) : ''}</td>
+          <td className="num cash-statement__debit">{entry.kind === 'CP' ? money(entry.total) : ''}</td>
+          <td className={`num ${balance < 0 ? 'negative-value' : ''}`}>{money(balance)}</td>
+        </tr>)}
+      </tbody>
+      <tfoot><tr><td colSpan={3}>Totais do período / saldo final</td><td className="num"><strong>{money(account.credits.total)}</strong></td><td className="num"><strong>{money(account.debits.total)}</strong></td><td className="num"><strong>{money(account.finalBalance)}</strong></td></tr></tfoot>
+    </table></div>
+  </section>
 }
 
-/** Layout impresso do "Caixa Diário" do sistema anterior (POP p.21). */
-function CashReport({ data, fixedFund, bankAccounts }: { data: CashDailyData; fixedFund: CashAccountSummary[]; bankAccounts: CashAccountSummary[] }) {
-  const sum = (accounts: CashAccountSummary[], pick: (account: CashAccountSummary) => number) => accounts.reduce((total, account) => total + pick(account), 0)
-  const bankIds = new Set(bankAccounts.map((account) => account.id))
-  const fundIds = new Set(fixedFund.map((account) => account.id))
-  const bankDebits = data.debits.filter((entry) => entry.movementAccountId !== null && bankIds.has(entry.movementAccountId))
-  const bankCredits = data.credits.filter((entry) => entry.movementAccountId !== null && bankIds.has(entry.movementAccountId))
-  const fundCredits = data.credits.filter((entry) => entry.movementAccountId !== null && fundIds.has(entry.movementAccountId))
-  const fundDebits = data.debits.filter((entry) => entry.movementAccountId !== null && fundIds.has(entry.movementAccountId))
-  const total = (entries: CashEntry[]) => entries.reduce((value, entry) => value + entry.total, 0)
+/** Relatório de caixa impresso no formato de extrato bancário (mesmo conteúdo do PDF). */
+function CashReport({ data, statements }: { data: CashDailyData; statements: AccountStatement[] }) {
   return <div>
-    <div className="print-header"><div><h1>Caixa Diário</h1><small>Período: {dateText(data.startDate)} a {dateText(data.endDate)}</small></div><small>Emitido em {dateText(todayIso())}</small></div>
-    {bankAccounts.length > 0 && <>
-      <h2>Resumo das Operações Bancárias</h2>
-      <div className="print-boxes">
-        <div className="print-box"><small>Saldo anterior</small><strong>{moneyText(sum(bankAccounts, (account) => account.previousBalance))}</strong></div>
-        <div className="print-box"><small>Boletos liquidados</small><strong>{moneyText(sum(bankAccounts, (account) => account.credits.bill))}</strong><small>Transferências</small><strong>{moneyText(sum(bankAccounts, (account) => account.credits.transfer))}</strong><small>Outros créditos</small><strong>{moneyText(sum(bankAccounts, (account) => account.credits.cash + account.credits.other))}</strong><small>(+) Total de créditos</small><strong>{moneyText(sum(bankAccounts, (account) => account.credits.total))}</strong></div>
-        <div className="print-box"><small>Transferências</small><strong>{moneyText(sum(bankAccounts, (account) => account.debits.transfer))}</strong><small>Boletos</small><strong>{moneyText(sum(bankAccounts, (account) => account.debits.bill))}</strong><small>Outros débitos</small><strong>{moneyText(sum(bankAccounts, (account) => account.debits.cash + account.debits.other))}</strong><small>(−) Total de débitos</small><strong>{moneyText(sum(bankAccounts, (account) => account.debits.total))}</strong></div>
-        <div className="print-box"><small>(=) Saldo final</small><strong>{moneyText(sum(bankAccounts, (account) => account.finalBalance))}</strong></div>
-      </div>
-    </>}
-    <h2>Saldo Total Disponível (Banco + Fundo Fixo)</h2>
+    <div className="print-header"><div><h1>Relatório de Caixa — Extrato de Créditos e Débitos</h1><small>Período: {dateText(data.startDate)} a {dateText(data.endDate)}</small></div><small>Emitido em {dateText(todayIso())}</small></div>
     <div className="print-boxes">
       <div className="print-box"><small>Saldo anterior</small><strong>{moneyText(data.previousBalance)}</strong></div>
-      <div className="print-box"><small>(+) Total de créditos</small><strong>{moneyText(data.totalCredits.total)}</strong></div>
-      <div className="print-box"><small>(−) Total de débitos</small><strong>{moneyText(data.totalDebits.total)}</strong></div>
-      <div className="print-box"><small>Saldo</small><strong>{moneyText(data.finalBalance)}</strong></div>
+      <div className="print-box"><small>(+) Créditos</small><strong>{moneyText(data.totalCredits.total)}</strong></div>
+      <div className="print-box"><small>(−) Débitos</small><strong>{moneyText(data.totalDebits.total)}</strong></div>
+      <div className="print-box"><small>(=) Saldo atual (Banco + Fundo fixo)</small><strong>{moneyText(data.finalBalance)}</strong></div>
     </div>
-    <h2>Débitos em Conta Corrente</h2>
-    <h3>Relação de Transferências, Pagamentos Eletrônicos e Débitos Automáticos</h3>
-    <PrintEntries entries={bankDebits} kind="CP" />
-    <h2>Créditos em Conta Corrente</h2>
-    <h3>Relação de Transferências, Pagamentos Eletrônicos e Créditos Automáticos</h3>
-    <PrintEntries entries={bankCredits} kind="CR" />
-    {fixedFund.length > 0 && <>
-      <h2>Resumo das Operações com Fundo Fixo</h2>
-      <div className="print-boxes">
-        <div className="print-box"><small>Saldo anterior</small><strong>{moneyText(sum(fixedFund, (account) => account.previousBalance))}</strong></div>
-        <div className="print-box"><small>(+) Créditos</small><strong>{moneyText(total(fundCredits))}</strong></div>
-        <div className="print-box"><small>(−) Débitos</small><strong>{moneyText(total(fundDebits))}</strong></div>
-        <div className="print-box"><small>Saldo final</small><strong>{moneyText(sum(fixedFund, (account) => account.finalBalance))}</strong></div>
-      </div>
-      <h3>Créditos no Fundo Fixo</h3>
-      <PrintEntries entries={fundCredits} kind="CR" />
-      <h3>Débitos no Fundo Fixo</h3>
-      <PrintEntries entries={fundDebits} kind="CP" />
-    </>}
+    {statements.map(({ account, lines }) => <div key={account.id} className="print-group">
+      <h2>{account.id} · {account.name}{account.fixedFund ? ' (Fundo fixo)' : ''}{account.detail ? ` — ${account.detail}` : ''}</h2>
+      <table><thead><tr><th>Data</th><th>Documento</th><th>Histórico</th><th className="num">Crédito</th><th className="num">Débito</th><th className="num">Saldo</th></tr></thead>
+        <tbody>
+          <tr><td>{dateText(data.startDate)}</td><td /><td><strong>SALDO ANTERIOR</strong></td><td /><td /><td className="num"><strong>{moneyText(account.previousBalance)}</strong></td></tr>
+          {lines.length === 0 ? <tr><td colSpan={6} className="muted">Nenhum lançamento no período.</td></tr> : lines.map(({ entry, balance }, index) => <tr key={`${entry.kind}-${entry.documentId}-${index}`}><td>{dateText(entry.date)}</td><td>{entryDocument(entry)}</td><td>{entryHistory(entry)}</td><td className="num">{entry.kind === 'CR' ? moneyText(entry.total) : ''}</td><td className="num">{entry.kind === 'CP' ? moneyText(entry.total) : ''}</td><td className="num">{moneyText(balance)}</td></tr>)}
+        </tbody>
+        <tfoot><tr><td colSpan={3}>Totais do período / saldo final</td><td className="num">{moneyText(account.credits.total)}</td><td className="num">{moneyText(account.debits.total)}</td><td className="num">{moneyText(account.finalBalance)}</td></tr></tfoot>
+      </table>
+    </div>)}
   </div>
-}
-
-function PrintEntries({ entries, kind }: { entries: CashEntry[]; kind: 'CR' | 'CP' }) {
-  const total = entries.reduce((value, entry) => value + entry.total, 0)
-  return <table><thead><tr><th>{kind === 'CR' ? 'C.R.' : 'C.P.'}</th><th>{kind === 'CR' ? 'Dt. Receb.' : 'Dt. Pagamento'}</th>{kind === 'CR' && <th>Boleto</th>}<th>{kind === 'CR' ? 'Cliente' : 'Fornecedor'}</th><th>Descrição</th><th className="num">Valor</th></tr></thead>
-    <tbody>{entries.length === 0 ? <tr><td colSpan={kind === 'CR' ? 6 : 5} className="muted">Nenhum lançamento.</td></tr> : entries.map((entry, index) => <tr key={`${entry.documentId}-${index}`}><td>{entry.documentId}</td><td>{dateText(entry.date)}</td>{kind === 'CR' && <td>{entry.billNumber ?? ''}</td>}<td>{entry.partyName}</td><td>{entry.description}</td><td className="num">{moneyText(entry.total)}</td></tr>)}</tbody>
-    <tfoot><tr><td colSpan={kind === 'CR' ? 5 : 4}>Total</td><td className="num">{moneyText(total)}</td></tr></tfoot></table>
 }

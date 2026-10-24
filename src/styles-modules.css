@@ -286,3 +286,48 @@
 .workload-save-status--error { color: #b73c3c; font-weight: 750; }
 .employee-detail-row--clickable { cursor: pointer; }
 .employee-detail-row--clickable:hover td { background: #f6f6fc; }
+
+/* Relatório de caixa no formato de extrato bancário */
+.cash-statements { display: grid; gap: 18px; }
+.cash-statement > header { margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+.cash-statement > header strong { color: var(--navy); font-size: 10px; }
+.cash-statement > header small { color: var(--muted); font-size: 8px; }
+.cash-statement__table td, .cash-statement__table th { white-space: nowrap; }
+.cash-statement__table td:nth-child(3) { white-space: normal; min-width: 260px; }
+.cash-statement__opening td { background: #f6f6fc; }
+.cash-statement__credit { color: #087867; }
+.cash-statement__debit { color: #aa3737; }
+
+/* Parâmetros do sistema: cláusulas do contrato */
+.contract-clauses { display: grid; gap: 12px; }
+.contract-clauses__header { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.contract-clauses__header > div:first-child { display: grid; gap: 3px; }
+.contract-clauses__header strong { color: var(--navy); font-size: 11px; }
+.contract-clauses__header small { color: var(--muted); font-size: 8px; }
+.contract-clauses__actions { display: flex; align-items: flex-end; gap: 8px; }
+.contract-clauses__preview { display: grid; gap: 3px; font-size: 7.5px; color: var(--muted); }
+.contract-clauses__preview input { width: 140px; height: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px; }
+.contract-clauses__variables { padding: 8px 10px; border: 1px dashed var(--line); border-radius: 9px; font-size: 8px; }
+.contract-clauses__variables summary { color: var(--brand); font-weight: 750; cursor: pointer; }
+.contract-clauses__variables > div { margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 4px 12px; }
+.contract-clauses__variables span { display: flex; gap: 6px; color: var(--muted); }
+.contract-clauses__variables code { color: var(--navy); font-size: 7.5px; }
+.contract-clauses__variables p { margin: 8px 0 0; color: var(--muted); }
+.contract-clauses__sections { display: grid; gap: 12px; }
+.contract-clauses__section { padding: 10px; display: grid; gap: 6px; border: 1px solid var(--line); border-radius: 10px; background: #fcfcfe; }
+.contract-clauses__section > header { display: flex; align-items: center; gap: 8px; }
+.contract-clauses__intro { color: var(--muted); font-size: 8.5px; }
+.contract-clauses__section-title { flex: 1; height: 32px; padding: 0 9px; border: 1px solid var(--line); border-radius: 7px; color: var(--navy); font-size: 9px; font-weight: 800; }
+.contract-clauses__line { display: flex; align-items: flex-start; gap: 6px; }
+.contract-clauses__line textarea { flex: 1; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); font: inherit; font-size: 8.5px; line-height: 1.45; resize: vertical; }
+.contract-clauses__block { flex: 1; min-height: 32px; padding: 0 10px; display: flex; align-items: center; gap: 6px; border: 1px solid #dfe1ef; border-radius: 7px; color: var(--muted); background: #f1f2f7; font-size: 8px; }
+.contract-clauses__tools { display: flex; gap: 3px; }
+.contract-clauses__tools button { width: 26px; height: 26px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); background: white; cursor: pointer; }
+.contract-clauses__tools button:hover:not(:disabled) { color: var(--brand); border-color: var(--brand); }
+.contract-clauses__tools button.danger:hover { color: #b73c3c; border-color: #b73c3c; }
+.contract-clauses__tools button:disabled { opacity: .4; cursor: not-allowed; }
+.contract-clauses__section-actions { display: flex; gap: 6px; }
+.contract-clauses__footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+
+/* Reajuste anual: histórico com contas a receber e boletos */
+.service-adjustment-history.service-adjustment-history--four { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }

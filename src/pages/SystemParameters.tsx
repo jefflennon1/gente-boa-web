@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, Cake, CalendarCheck2, CalendarClock, Clock3, FolderOpen, Landmark, LoaderCircle, Mail, Percent, ReceiptText, Save, Settings2, TrendingUp, Trash2 } from 'lucide-react'
+import { Building2, Cake, CalendarCheck2, CalendarClock, Clock3, FileSignature, FolderOpen, Landmark, LoaderCircle, Mail, Percent, ReceiptText, Save, Settings2, TrendingUp, Trash2 } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import type { SystemParametersPayload } from '../types'
@@ -8,6 +8,7 @@ import { Button, ConfirmDialog, ErrorState, FormError, FormField, LoadingState, 
 import { formatDate } from '../lib/format'
 import { ScheduledAdjustmentForm } from '../components/ScheduledAdjustmentForm'
 import { BirthdayEmailSettingsForm } from '../components/BirthdayEmailSettingsForm'
+import { ContractClausesEditor } from '../components/ContractClausesEditor'
 
 function textValue(data: FormData, field: string) {
   return String(data.get(field) ?? '').trim()
@@ -33,7 +34,7 @@ export function SystemParametersPage() {
   const [formError, setFormError] = useState('')
   const [deleteError, setDeleteError] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [section, setSection] = useState<'general' | 'invoice' | 'adjustment' | 'bill-email' | 'birthday'>('general')
+  const [section, setSection] = useState<'general' | 'invoice' | 'adjustment' | 'clauses' | 'bill-email' | 'birthday'>('general')
   const [billEmailAllClients, setBillEmailAllClients] = useState(false)
 
   const parametersQuery = useQuery({
@@ -195,6 +196,7 @@ export function SystemParametersPage() {
         <button type="button" className={section === 'general' ? 'active' : ''} onClick={() => { setSection('general'); setFormError('') }}><Settings2 size={16} />Parâmetros gerais</button>
         <button type="button" className={section === 'invoice' ? 'active' : ''} onClick={() => { setSection('invoice'); setFormError('') }}><ReceiptText size={16} />Nota fiscal</button>
         <button type="button" className={section === 'adjustment' ? 'active' : ''} onClick={() => { setSection('adjustment'); setFormError('') }}><TrendingUp size={16} />Reajuste anual</button>
+        <button type="button" className={section === 'clauses' ? 'active' : ''} onClick={() => { setSection('clauses'); setFormError('') }}><FileSignature size={16} />Cláusulas do contrato</button>
         <button type="button" className={section === 'bill-email' ? 'active' : ''} onClick={() => { setSection('bill-email'); setFormError('') }}><Mail size={16} />Envio de boletos</button>
         <button type="button" className={section === 'birthday' ? 'active' : ''} onClick={() => { setSection('birthday'); setFormError('') }}><Cake size={16} />Aniversários</button>
       </nav>
@@ -302,6 +304,8 @@ export function SystemParametersPage() {
       {section === 'adjustment' && (parametersQuery.isLoading ? <section className="panel"><LoadingState label="Carregando reajuste anual..." /></section> : parametersQuery.isError ? <section className="panel"><ErrorState message={apiErrorMessage(parametersQuery.error)} onRetry={() => parametersQuery.refetch()} /></section> : !parameters ? <section className="panel"><ErrorState message="Cadastre os parâmetros gerais antes de configurar o reajuste." /></section> : (
         <ScheduledAdjustmentForm key={`${parameters.serviceAdjustmentDate ?? 'new'}-${parameters.serviceAdjustmentEnabled}-${parameters.serviceAdjustmentAppliedDate ?? ''}`} parameters={parameters} onSaved={showToast} />
       ))}
+
+      {section === 'clauses' && <ContractClausesEditor onSaved={showToast} />}
 
       {section === 'birthday' && (!parameters ? <section className="panel"><ErrorState message="Cadastre os parâmetros gerais antes de configurar as felicitações de aniversário." /></section> : <BirthdayEmailSettingsForm onSaved={showToast} />)}
 

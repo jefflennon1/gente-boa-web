@@ -63,6 +63,6 @@ function SummaryDocument({ data }: { data: Summary }) {
       <div><table><thead><tr><th>Fluxo de caixa do período</th><th className="num">Qtde.</th><th className="num">Valor</th></tr></thead><tbody><tr><td>Contas recebidas</td><td className="num">{financial.receivedCount}</td><td className="num">{moneyText(financial.received)}</td></tr><tr><td>Contas pagas</td><td className="num">{financial.paidCount}</td><td className="num">{moneyText(financial.paid)}</td></tr><tr className="total-row"><td>Resultado do exercício</td><td /><td className="num">{moneyText(financial.result)}</td></tr></tbody></table></div>
       <div><table><thead><tr><th>Caixa e banco</th><th className="num">Saldo</th><th className="num">%</th></tr></thead><tbody>{financial.availability.map((line) => <tr key={line.label}><td>{line.label}</td><td className="num">{moneyText(line.value)}</td><td className="num">{moneyText(line.valuePercentage)}</td></tr>)}<tr className="total-row"><td>Total disponível</td><td className="num">{moneyText(financial.totalAvailable)}</td><td /></tr></tbody></table></div>
     </div>
-    <LineTable title="Informações diversas (vencimentos do período)" lines={[financial.overdue, financial.materialSales, financial.equipmentRental]} />
+    <LineTable title="Informações diversas (vencimentos do período)" lines={[financial.overdue, financial.materialSales, financial.transportFee]} />
   </>
 }

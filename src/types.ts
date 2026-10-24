@@ -114,6 +114,9 @@ export interface SystemParameters {
   serviceAdjustmentIncludeContracts?: boolean
   serviceAdjustmentRenewContracts?: boolean
   serviceAdjustmentAffectedContracts?: number | null
+  serviceAdjustmentIncludeReceivables?: boolean
+  serviceAdjustmentAffectedReceivables?: number | null
+  serviceAdjustmentAffectedBills?: number | null
   birthdayEmailEnabled?: boolean
   birthdayEmailOnlyContracted?: boolean
   birthdayEmailOnlyOptedIn?: boolean
@@ -133,6 +136,8 @@ export interface ServicePriceAdjustmentPayload {
   renewContracts?: boolean
   /** Percentual próprio por contrato (os demais usam o percentual geral). */
   contractOverrides?: Array<{ contractId: number; percentage: number }>
+  /** Reajusta as contas a receber e boletos em aberto que vencem no mês da data de aplicação. */
+  includeReceivables?: boolean
 }
 
 export interface BirthdayEmailSettingsPayload {

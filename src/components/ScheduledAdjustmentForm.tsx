@@ -23,6 +23,8 @@ export function ScheduledAdjustmentForm({ parameters, onSaved }: { parameters: S
   const [includeServices, setIncludeServices] = useState(parameters.serviceAdjustmentIncludeServices ?? true)
   const [includeContracts, setIncludeContracts] = useState(parameters.serviceAdjustmentEnabled ? Boolean(parameters.serviceAdjustmentIncludeContracts) : true)
   const [renewContracts, setRenewContracts] = useState(parameters.serviceAdjustmentRenewContracts ?? true)
+  const [includeReceivables, setIncludeReceivables] = useState(parameters.serviceAdjustmentIncludeReceivables ?? true)
+  const competenceLabel = /^\d{4}-\d{2}/.test(scheduledDate) ? `${scheduledDate.slice(5, 7)}/${scheduledDate.slice(0, 4)}` : 'mês da data de aplicação'
   const [overrides, setOverrides] = useState<OverrideRow[]>([])
   const [formError, setFormError] = useState('')
   const [preview, setPreview] = useState<ServicePriceAdjustmentPreview | null>(null)
@@ -39,7 +41,7 @@ export function ScheduledAdjustmentForm({ parameters, onSaved }: { parameters: S
   function payload(): ServicePriceAdjustmentPayload | string {
     const value = percentage.trim() === '' ? null : Number(percentage)
     if (enabled && (value === null || !scheduledDate)) return 'Informe o percentual e a data para ativar o reajuste.'
-    if (enabled && !includeServices && !includeContracts) return 'Selecione a tabela de serviços e/ou os contratos ativos.'
+    if (enabled && !includeServices && !includeContracts && !includeReceivables) return 'Selecione o que será reajustado.'
     const rows = overrides.filter((row) => row.contractId && row.percentage.trim() !== '')
     if (new Set(rows.map((row) => row.contractId)).size !== rows.length) return 'Há contratos repetidos nas exceções.'
     return {
@@ -49,6 +51,7 @@ export function ScheduledAdjustmentForm({ parameters, onSaved }: { parameters: S
       includeServices,
       includeContracts,
       renewContracts,
+      includeReceivables,
       contractOverrides: rows.map((row) => ({ contractId: Number(row.contractId), percentage: Number(row.percentage) })),
     }
   }
@@ -60,7 +63,7 @@ export function ScheduledAdjustmentForm({ parameters, onSaved }: { parameters: S
       setFormError('')
       const appliedNow = updated.serviceAdjustmentAppliedDate === sent.scheduledDate && sent.enabled
       onSaved(appliedNow
-        ? `Reajuste aplicado: ${updated.serviceAdjustmentAffectedServices ?? 0} serviço(s) e ${updated.serviceAdjustmentAffectedContracts ?? 0} contrato(s).`
+        ? `Reajuste aplicado: ${updated.serviceAdjustmentAffectedServices ?? 0} serviço(s), ${updated.serviceAdjustmentAffectedContracts ?? 0} contrato(s), ${updated.serviceAdjustmentAffectedReceivables ?? 0} conta(s) a receber e ${updated.serviceAdjustmentAffectedBills ?? 0} boleto(s).`
         : 'Agendamento de reajuste atualizado.')
     },
     onError: (error) => setFormError(apiErrorMessage(error)),
@@ -89,7 +92,7 @@ export function ScheduledAdjustmentForm({ parameters, onSaved }: { parameters: S
   return <form className="panel system-parameters-form service-adjustment-form" onSubmit={submit}>
     <header className="system-parameters-form__header">
       <span className="system-parameters-form__icon"><TrendingUp size={21} /></span>
-      <div><span>Automação financeira</span><h2>Reajuste anual</h2><p>Programa o reajuste percentual dos contratos ativos e da tabela de serviços na data informada.</p></div>
+      <div><span>Automação financeira</span><h2>Reajuste anual</h2><p>Programa o reajuste percentual dos contratos ativos, da tabela de serviços e das contas a receber e boletos da competência na data informada.</p></div>
       <label className={`service-adjustment-toggle ${enabled ? 'service-adjustment-toggle--active' : ''}`}>
         <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
         <span aria-hidden="true"><i /></span><strong>{enabled ? 'Ativado' : 'Desativado'}</strong>
@@ -110,6 +113,7 @@ export function ScheduledAdjustmentForm({ parameters, onSaved }: { parameters: S
           <label className="checkbox-inline"><input type="checkbox" checked={includeContracts} disabled={!enabled} onChange={(event) => setIncludeContracts(event.target.checked)} /> Contratos ativos <small>valor da hora, minuto extra e minuto excedente de cada contrato</small></label>
           <label className="checkbox-inline"><input type="checkbox" checked={renewContracts} disabled={!enabled || !includeContracts} onChange={(event) => setRenewContracts(event.target.checked)} /> Renovar a vigência dos contratos <small>nova data de renovação no mês de reajuste</small></label>
           <label className="checkbox-inline"><input type="checkbox" checked={includeServices} disabled={!enabled} onChange={(event) => setIncludeServices(event.target.checked)} /> Tabela de serviços <small>valores usados em novos contratos e atendimentos avulsos</small></label>
+          <label className="checkbox-inline"><input type="checkbox" checked={includeReceivables} disabled={!enabled} onChange={(event) => setIncludeReceivables(event.target.checked)} /> Contas a receber e boletos da competência {competenceLabel} <small>soma o percentual ao valor das contas e boletos em aberto que vencem no mês, mesmo os já gerados; contas de outros meses e as já recebidas não mudam</small></label>
         </div>
         <small>Todos os valores são arredondados para duas casas decimais.</small>
       </section>
@@ -137,6 +141,12 @@ export function ScheduledAdjustmentForm({ parameters, onSaved }: { parameters: S
           <span><small>Mensal atual</small><b>{money(contractPreview?.currentMonthly ?? 0)}</b></span>
           <span><small>Mensal reajustado</small><b>{money(contractPreview?.newMonthly ?? 0)}</b></span>
         </div>
+        {includeReceivables && <div className="adjustment-preview__cards">
+          <span><small>Contas a receber ({preview.competence.slice(5, 7)}/{preview.competence.slice(0, 4)})</small><b>{preview.receivables}</b></span>
+          <span><small>Boletos em aberto</small><b>{preview.bills}</b></span>
+          <span><small>Valor atual das contas</small><b>{money(preview.receivablesCurrentAmount)}</b></span>
+          <span><small>Valor reajustado</small><b>{money(preview.receivablesAdjustedAmount)}</b></span>
+        </div>}
         {preview.skippedContractIds.length > 0 && <small>{preview.skippedContractIds.length} contrato(s) já reajustado(s) neste ano ficarão de fora: {preview.skippedContractIds.map((id) => `#${id}`).join(', ')}.</small>}
         {contractPreview && contractPreview.changes.length > 0 && <div className="table-wrap adjustment-preview__table"><table className="data-table"><thead><tr><th>Contrato</th><th>Cliente</th><th className="num">%</th><th>Nova renovação</th><th className="num">Mensal atual</th><th className="num">Mensal reajustado</th></tr></thead>
           <tbody>{contractPreview.changes.map((change) => <tr key={change.contractId}><td>#{change.contractId}</td><td>{change.clientName}</td><td className="num">{change.percentage.toLocaleString('pt-BR')}</td><td>{formatDate(change.newRenewalDate)}</td><td className="num">{money(change.currentMonthly)}</td><td className="num">{money(change.newMonthly)}</td></tr>)}</tbody></table></div>}
@@ -147,6 +157,8 @@ export function ScheduledAdjustmentForm({ parameters, onSaved }: { parameters: S
         <span><small>Executado em</small><strong>{formatDate(parameters.serviceAdjustmentAppliedAt, true)}</strong></span>
         <span><small>Serviços reajustados</small><strong>{parameters.serviceAdjustmentAffectedServices ?? 'Nenhuma execução'}</strong></span>
         <span><small>Contratos reajustados</small><strong>{parameters.serviceAdjustmentAffectedContracts ?? '—'}</strong></span>
+        <span><small>Contas a receber reajustadas</small><strong>{parameters.serviceAdjustmentAffectedReceivables ?? '—'}</strong></span>
+        <span><small>Boletos reajustados</small><strong>{parameters.serviceAdjustmentAffectedBills ?? '—'}</strong></span>
       </section>
     </div>
     <footer className="system-parameters-form__footer">
