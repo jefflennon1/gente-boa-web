@@ -377,3 +377,12 @@
 @media (max-width: 900px) {
   .cash-legacy__summary, .cash-legacy__totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* Caixa diário: espaçamento interno das visões dentro do painel (antes encostavam na borda) */
+.data-panel > .cash-legacy { padding: 8px 22px 24px; }
+.data-panel > .cash-statements { padding: 8px 22px 24px; }
+.cash-legacy__list th:first-child, .cash-legacy__list td:first-child { padding-left: 10px; }
+.cash-legacy__list th:last-child, .cash-legacy__list td:last-child { padding-right: 10px; }
+@media (max-width: 700px) {
+  .data-panel > .cash-legacy, .data-panel > .cash-statements { padding: 6px 12px 18px; }
+}
