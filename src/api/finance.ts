@@ -82,6 +82,11 @@ export const financeApi = {
       const { data } = await http.get<Blob>(`/accounts-receivable/entries/${id}/receipt`, { responseType: 'blob' })
       return data
     },
+    /** Recibo unificado: contas marcadas + todos os lançamentos recebidos das OS marcadas (mesmo cliente). */
+    async combinedReceipt(receivableIds: number[], serviceOrderIds: number[]) {
+      const { data } = await http.post<Blob>('/accounts-receivable/entries/receipts/combined', { receivableIds, serviceOrderIds }, { responseType: 'blob', timeout: 60_000 })
+      return data
+    },
     /** Recibo único com todos os lançamentos recebidos da OS. */
     async serviceOrderReceipt(serviceOrderId: number) {
       const { data } = await http.get<Blob>(`/accounts-receivable/entries/service-orders/${serviceOrderId}/receipt`, { responseType: 'blob' })
@@ -99,6 +104,11 @@ export const financeApi = {
   payables: {
     async receipt(id: number) {
       const { data } = await http.get<Blob>(`/payables/${id}/receipt`, { responseType: 'blob' })
+      return data
+    },
+    /** Recibo unificado das contas pagas marcadas (mesmo fornecedor). */
+    async combinedReceipt(payableIds: number[]) {
+      const { data } = await http.post<Blob>('/payables/receipts/combined', { payableIds }, { responseType: 'blob', timeout: 60_000 })
       return data
     },
     async list(params: PayableFilterParams & { page?: number; size?: number } = {}) {

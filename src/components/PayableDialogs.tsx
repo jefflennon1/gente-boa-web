@@ -170,12 +170,15 @@ export function usePayableDialogs(showToast: ShowToast) {
   const formSubCenters = centers.find((center) => String(center.id) === formCostCenter)?.subCenters ?? []
   const paymentTotal = paymentValues.cashValue + paymentValues.transferValue + paymentValues.billValue
   const paymentMethod = paymentValues.cashValue > 0 && paymentValues.transferValue + paymentValues.billValue === 0 ? 'CASH' : 'TRANSFER'
-  const legacySettlement = Boolean(editingAccount && !editingAccount.payments?.length && Number(editingAccount.amountPaid) > 0)
-  const currentPaid = Number(editingAccount?.amountPaid ?? 0)
+  const legacySettlement = Boolean(editingAccount && !editingAccount.payments?.length && Number(editingAccount.amountPaid) !== 0)
+  // Conta negativa (crédito/ajuste): valor pago e saldo são tratados em módulo e exibidos com o sinal da conta.
+  const currentPaid = Math.abs(Number(editingAccount?.amountPaid ?? 0))
   const formDue = Number(amounts.due || 0)
-  const formPaid = Number(amounts.paid || 0)
+  const negativeDue = formDue < 0
+  const formPaid = Math.abs(Number(amounts.paid || 0))
   const paidChange = Math.round((formPaid - currentPaid) * 100) / 100
-  const formBalance = Math.max(0, formDue - formPaid)
+  const formBalanceAbs = Math.max(0, Math.abs(formDue) - formPaid)
+  const formBalance = negativeDue ? -formBalanceAbs : formBalanceAbs
 
   function resetPaidForm(due: number | string, paid: number) {
     setAmounts({ due: due === '' ? '' : String(due), paid: String(paid) })
@@ -188,13 +191,13 @@ export function usePayableDialogs(showToast: ShowToast) {
     setFormSupplier({ id: account.supplierId, label: `${account.supplierName || 'Fornecedor'} · #${account.supplierId}` })
     setFormCostCenter(account.costCenterId ? String(account.costCenterId) : '')
     setFormError('')
-    resetPaidForm(account.amountDue, Number(account.amountPaid || 0))
+    resetPaidForm(account.amountDue, Math.abs(Number(account.amountPaid || 0)))
     setAccountSection('form')
     setModalOpen(true)
   }
-  function openSettlement(account: PayableAccount) { setSettlementAccount(account); setPaymentValues({ cashValue: Number(account.balance || 0), transferValue: 0, billValue: 0 }); setSettlementMovement(''); setSettlementError('') }
+  function openSettlement(account: PayableAccount) { setSettlementAccount(account); setPaymentValues({ cashValue: Math.abs(Number(account.balance || 0)), transferValue: 0, billValue: 0 }); setSettlementMovement(''); setSettlementError('') }
   function askAboutRemaining(account: PayableAccount) {
-    if (!(Number(account.amountPaid) > 0 && Number(account.balance) > 0)) return
+    if (!(Number(account.amountPaid) !== 0 && Number(account.balance) !== 0)) return
     setRemainingError('')
     setRemainingForm({ action: 'OPEN', firstDueDate: addMonths(account.dueAt?.slice(0, 10) || todayIso(), 1), installments: 2 })
     setRemainingTarget(account)
@@ -219,8 +222,8 @@ export function usePayableDialogs(showToast: ShowToast) {
     const numberOrNull = (name: string) => String(data.get(name) ?? '').trim() === '' ? null : Number(data.get(name))
     const textOrNull = (name: string) => String(data.get(name) ?? '').trim() || null
     const dateOrNull = (name: string) => { const value = String(data.get(name) ?? '').trim(); return value ? `${value}T00:00:00` : null }
-    if (formPaid < 0) { setFormError('O valor pago não pode ser negativo.'); return }
-    if (formPaid > formDue + 0.001) { setFormError('O valor pago não pode ser maior que o valor devido.'); return }
+    if (formDue === 0) { setFormError('O valor devido não pode ser zero.'); return }
+    if (formPaid > Math.abs(formDue) + 0.001) { setFormError('O valor pago não pode ser maior que o valor devido.'); return }
     const paid: PaidAdjustment | undefined = paidChange !== 0 ? {
       amountPaid: formPaid,
       paidAt: paidChange > 0 ? `${paidDetails.paidAt}T00:00:00` : null,
@@ -272,13 +275,13 @@ export function usePayableDialogs(showToast: ShowToast) {
     <div className="form-section-title"><span>2</span><div><strong>Origem do título</strong><small>Pedido de compra, boleto, contrato e ordem de serviço.</small></div></div>
     <div className="form-grid form-grid--four"><FormField label="Nº pedido de compra"><input name="purchaseOrderId" type="number" min="1" defaultValue={editingAccount?.purchaseOrderId || ''} /></FormField><FormField label="Data do pedido"><input name="orderedAt" type="date" defaultValue={editingAccount?.orderedAt?.slice(0, 10) ?? ''} /></FormField><input type="hidden" name="invoiceNumber" defaultValue={editingAccount?.invoiceNumber ?? ''} /><BillLinkField value={linkedBill} onChange={setLinkedBill} /><FormField label="Nº contrato"><input name="contractId" type="number" min="1" defaultValue={editingAccount?.contractId || ''} /></FormField><FormField label="Ordem de serviço"><input name="serviceOrderId" type="number" min="1" defaultValue={editingAccount?.serviceOrderId || ''} /></FormField></div>
     <div className="form-section-title"><span>3</span><div><strong>Descrição e valores</strong><small>Informações do lançamento e totalizadores.</small></div></div>
-    <div className="form-grid form-grid--three"><FormField label="Descrição"><input name="description" required maxLength={100} defaultValue={editingAccount?.description ?? ''} /></FormField><FormField label="Data de cadastro"><input name="registeredAt" type="date" defaultValue={editingAccount?.registeredAt?.slice(0, 10) || todayIso()} /></FormField><FormField label="Vencimento"><input name="dueAt" required type="date" defaultValue={editingAccount?.dueAt?.slice(0, 10) ?? ''} /></FormField><FormField label="Valor devido"><input name="amountDue" required type="number" min="0.01" step="0.01" value={amounts.due} onChange={(event) => setAmounts((current) => ({ ...current, due: event.target.value }))} /></FormField><FormField label="Valor pago" hint="Informe o que já foi pago, mesmo que seja só uma parte."><input type="number" min="0" step="0.01" value={amounts.paid} onChange={(event) => setAmounts((current) => ({ ...current, paid: event.target.value }))} /></FormField><FormField label="Saldo a pagar"><input className={formBalance > 0 ? 'payable-balance-open' : 'payable-balance-paid'} value={money(formBalance)} readOnly tabIndex={-1} /></FormField></div>
-    {paidChange > 0 && <div className="payable-paid-change"><p><strong>Pagamento de {money(paidChange)}</strong> será registrado como baixa{formBalance > 0 ? `, ficando ${money(formBalance)} a pagar` : ' e a conta ficará quitada'}.{linkedBill && !linkedBill.paid && formBalance === 0 ? ` O boleto #${linkedBill.number ?? linkedBill.id} vinculado também receberá a baixa.` : ''}</p><div className="form-grid form-grid--three">
+    <div className="form-grid form-grid--three"><FormField label="Descrição"><input name="description" required maxLength={100} defaultValue={editingAccount?.description ?? ''} /></FormField><FormField label="Data de cadastro"><input name="registeredAt" type="date" defaultValue={editingAccount?.registeredAt?.slice(0, 10) || todayIso()} /></FormField><FormField label="Vencimento"><input name="dueAt" required type="date" defaultValue={editingAccount?.dueAt?.slice(0, 10) ?? ''} /></FormField><FormField label="Valor devido" hint="Use valor negativo para créditos e ajustes (ex.: -2,00)."><input name="amountDue" required type="number" step="0.01" value={amounts.due} onChange={(event) => setAmounts((current) => ({ ...current, due: event.target.value }))} /></FormField><FormField label="Valor pago" hint="Informe o que já foi pago, mesmo que seja só uma parte."><input type="number" step="0.01" value={amounts.paid} onChange={(event) => setAmounts((current) => ({ ...current, paid: event.target.value }))} /></FormField><FormField label="Saldo a pagar"><input className={formBalance !== 0 ? 'payable-balance-open' : 'payable-balance-paid'} value={money(formBalance)} readOnly tabIndex={-1} /></FormField></div>
+    {paidChange > 0 && <div className="payable-paid-change"><p><strong>Pagamento de {money(paidChange)}</strong> será registrado como baixa{negativeDue ? ' (crédito: entra no caixa)' : ''}{formBalance !== 0 ? `, ficando ${money(formBalance)} ${negativeDue ? 'de crédito' : 'a pagar'}` : ' e a conta ficará quitada'}.{linkedBill && !linkedBill.paid && formBalance === 0 ? ` O boleto #${linkedBill.number ?? linkedBill.id} vinculado também receberá a baixa.` : ''}</p><div className="form-grid form-grid--three">
       <FormField label="Data do pagamento"><input type="date" required value={paidDetails.paidAt} onChange={(event) => setPaidDetails((current) => ({ ...current, paidAt: event.target.value }))} /></FormField>
       <FormField label="Forma de pagamento"><select value={paidDetails.method} onChange={(event) => setPaidDetails((current) => ({ ...current, method: event.target.value as PaidMethod, movementAccountId: '' }))}><option value="CASH">Dinheiro</option><option value="TRANSFER">Transferência</option><option value="BILL">Boleto</option></select></FormField>
       <FormField label="Conta movimento"><select required value={paidDetails.movementAccountId || suggestedMovementAccount(movementAccountsQuery.data, paidDetails.method === 'CASH' ? 'CASH' : 'TRANSFER')} onChange={(event) => setPaidDetails((current) => ({ ...current, movementAccountId: Number(event.target.value) }))}><option value="">Selecione</option>{movementAccountsQuery.data?.map((item) => <option key={item.id} value={item.id}>{item.id} · {item.name}</option>)}</select></FormField>
     </div></div>}
-    {paidChange < 0 && <div className="payable-paid-change payable-paid-change--reverse"><p><strong>O valor pago vai diminuir {money(-paidChange)}.</strong> As baixas mais recentes serão estornadas até chegar a {money(formPaid)}{formBalance > 0 ? `, ficando ${money(formBalance)} a pagar` : ''}.</p></div>}
+    {paidChange < 0 && <div className="payable-paid-change payable-paid-change--reverse"><p><strong>O valor pago vai diminuir {money(-paidChange)}.</strong> As baixas mais recentes serão estornadas até chegar a {money(formPaid)}{formBalance !== 0 ? `, ficando ${money(formBalance)} a pagar` : ''}.</p></div>}
     <FormField label="Observação"><textarea name="notes" rows={3} maxLength={200} defaultValue={editingAccount?.notes ?? ''} /></FormField>
     <div className="form-section-title"><span>4</span><div><strong>Classificação financeira</strong><small>Centro e subcentro de despesas, conforme o que está sendo comprado.</small></div></div>
     <div className="form-grid form-grid--two"><FormField label="Centro de custo"><select name="costCenterId" value={formCostCenter} onChange={(event) => setFormCostCenter(event.target.value)}><option value="">Não informado</option>{centers.map((item) => <option key={item.id} value={item.id}>{item.id} · {item.description}</option>)}</select></FormField><FormField label="Subcentro de custo"><select key={formCostCenter} name="subCostCenterId" defaultValue={editingAccount?.subCostCenterId ?? ''}><option value="">Não informado</option>{formSubCenters.map((item) => <option key={item.id} value={item.id}>{item.id} · {item.description}</option>)}</select></FormField></div>
@@ -292,7 +295,7 @@ export function usePayableDialogs(showToast: ShowToast) {
   const dialogs = <>
     <Modal open={modalOpen} onClose={() => !saveMutation.isPending && setModalOpen(false)} title={selected ? `Alterar conta a pagar #${selected.id}` : 'Inclusão de nova conta a pagar'} description="Dados do título, origem, vencimento e classificação financeira." size="xlarge">
       {selected && detailQuery.isLoading ? <LoadingState label="Carregando conta completa..." /> : <ModalForm key={`${editingAccount?.id ?? 'new'}-${detailQuery.dataUpdatedAt}`} onSubmit={submitAccount} onCancel={() => setModalOpen(false)} submitting={saveMutation.isPending} submitLabel={saveMutation.isPending ? 'Gravando...' : 'Salvar'} actions={selected && editingAccount ? <>
-        {Number(editingAccount.balance) > 0 && <Button type="button" variant="secondary" icon={<WalletCards size={16} />} onClick={() => { setModalOpen(false); openSettlement(editingAccount) }}>Dar baixa</Button>}
+        {Number(editingAccount.balance) !== 0 && <Button type="button" variant="secondary" icon={<WalletCards size={16} />} onClick={() => { setModalOpen(false); openSettlement(editingAccount) }}>Dar baixa</Button>}
         {Number(editingAccount.amountPaid) === 0 && <Button type="button" variant="secondary" icon={<SplitSquareHorizontal size={16} />} onClick={() => { setInstallmentError(''); setInstallmentTarget(editingAccount) }}>Gerar prestações</Button>}
         {Number(editingAccount.amountPaid) !== 0 && accountSection !== 'receipts' && <Button type="button" variant="secondary" icon={<ReceiptText size={16} />} onClick={() => setAccountSection('receipts')}>Recibo</Button>}
       </> : undefined}>
@@ -323,7 +326,7 @@ export function usePayableDialogs(showToast: ShowToast) {
           <FormField label="Total da baixa"><input value={money(paymentTotal)} readOnly /></FormField>
           <FormField label="Conta movimento"><select required value={settlementMovement || suggestedMovementAccount(movementAccountsQuery.data, paymentMethod)} onChange={(event) => setSettlementMovement(Number(event.target.value))}><option value="">Selecione</option>{movementAccountsQuery.data?.map((item) => <option key={item.id} value={item.id}>{item.id} · {item.name}</option>)}</select></FormField>
         </div>
-        {settlementAccount && paymentTotal > Number(settlementAccount.balance) + 0.001 && <FormError message="O total informado é maior que o saldo da conta." />}
+        {settlementAccount && paymentTotal > Math.abs(Number(settlementAccount.balance)) + 0.001 && <FormError message="O total informado é maior que o saldo da conta." />}
         <FormField label="Observação da baixa"><textarea name="notes" rows={2} maxLength={300} /></FormField>
       </ModalForm>
     </Modal>

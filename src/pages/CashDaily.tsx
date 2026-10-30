@@ -10,7 +10,7 @@ import { dateText, moneyText, printElement, todayIso } from '../lib/export'
 import { money } from '../lib/format'
 import type { CashAccountSummary, CashDaily as CashDailyData, CashEntry } from '../types-finance'
 
-type Tab = 'statement' | 'summary'
+type Tab = 'legacy' | 'statement' | 'summary'
 
 type StatementLine = { entry: CashEntry; balance: number }
 type AccountStatement = { account: CashAccountSummary; lines: StatementLine[] }
@@ -47,7 +47,7 @@ export function CashDaily() {
   const today = todayIso()
   const [draft, setDraft] = useState({ startDate: today, endDate: today, movementAccountId: '' })
   const [filters, setFilters] = useState(draft)
-  const [tab, setTab] = useState<Tab>('statement')
+  const [tab, setTab] = useState<Tab>('legacy')
   const [confirm, setConfirm] = useState<'close' | 'reopen' | null>(null)
   const [confirmError, setConfirmError] = useState('')
   const [adjustOpen, setAdjustOpen] = useState(false)
@@ -115,21 +115,23 @@ export function CashDaily() {
     </section>
 
     {dailyQuery.isLoading ? <LoadingState label="Calculando o caixa..." /> : dailyQuery.isError ? <ErrorState message={apiErrorMessage(dailyQuery.error)} onRetry={() => dailyQuery.refetch()} /> : data ? <>
-      <section className="stats-grid stats-grid--four">
+      {tab !== 'legacy' && <section className="stats-grid stats-grid--four">
         <StatCard label="Saldo anterior" value={money(data.previousBalance)} helper={`Até ${dateText(data.startDate)}`} icon={<Wallet />} tone="blue" />
         <StatCard label="Créditos" value={money(data.totalCredits.total)} helper={`${data.credits.length} recebimento(s)`} icon={<ArrowUpCircle />} tone="green" />
         <StatCard label="Débitos" value={money(data.totalDebits.total)} helper={`${data.debits.length} pagamento(s)`} icon={<ArrowDownCircle />} tone="orange" />
         <StatCard label="Saldo atual" value={money(data.finalBalance)} helper="Banco + Fundo fixo" icon={<Landmark />} tone="purple" />
-      </section>
+      </section>}
       <section className="panel data-panel">
         <nav className="system-parameters-menu" aria-label="Visões do caixa">
-          <button className={tab === 'statement' ? 'active' : ''} onClick={() => setTab('statement')}>Extrato (créditos e débitos)</button>
+          <button className={tab === 'legacy' ? 'active' : ''} onClick={() => setTab('legacy')}>Caixa diário</button>
+          <button className={tab === 'statement' ? 'active' : ''} onClick={() => setTab('statement')}>Extrato por conta</button>
           <button className={tab === 'summary' ? 'active' : ''} onClick={() => setTab('summary')}>Resumo por conta</button>
         </nav>
+        {tab === 'legacy' && <LegacyCashView data={data} />}
         {tab === 'statement' && <div className="cash-statements">{statements.map((statement) => <StatementTable key={statement.account.id} statement={statement} startDate={data.startDate} />)}</div>}
         {tab === 'summary' && <div className="cash-summary-grid">{data.accounts.map((account) => <AccountCard key={account.id} account={account} />)}</div>}
       </section>
-      <div className="print-source" ref={printRef} aria-hidden="true"><CashReport data={data} statements={statements} /></div>
+      <div className="print-source" ref={printRef} aria-hidden="true"><LegacyCashView data={data} printable /></div>
     </> : <EmptyState title="Informe o período" description="Selecione as datas e clique em Pesquisar." />}
 
     <ConfirmDialog open={confirm !== null} variant={confirm === 'close' ? 'primary' : 'danger'} icon={confirm === 'close' ? <Lock size={22} /> : <LockOpen size={22} />} eyebrow="Caixa diário" title={confirm === 'close' ? 'Fechar o caixa do período?' : 'Reabrir o caixa do período?'} description={confirm === 'close' ? `De ${dateText(filters.startDate)} a ${dateText(filters.endDate)}. Depois de fechado, não será possível registrar ou estornar baixas nessas datas até reabrir.` : `De ${dateText(filters.startDate)} a ${dateText(filters.endDate)}. As baixas nessas datas voltarão a poder ser alteradas.`} confirmLabel={confirm === 'close' ? 'Fechar caixa' : 'Reabrir caixa'} busyLabel="Processando..." busy={statusMutation.isPending} error={confirmError} onCancel={() => setConfirm(null)} onConfirm={() => confirm && statusMutation.mutate(confirm)} />
@@ -195,25 +197,90 @@ function StatementTable({ statement, startDate }: { statement: AccountStatement;
   </section>
 }
 
-/** Relatório de caixa impresso no formato de extrato bancário (mesmo conteúdo do PDF). */
-function CashReport({ data, statements }: { data: CashDailyData; statements: AccountStatement[] }) {
-  return <div>
-    <div className="print-header"><div><h1>Relatório de Caixa — Extrato de Créditos e Débitos</h1><small>Período: {dateText(data.startDate)} a {dateText(data.endDate)}</small></div><small>Emitido em {dateText(todayIso())}</small></div>
-    <div className="print-boxes">
-      <div className="print-box"><small>Saldo anterior</small><strong>{moneyText(data.previousBalance)}</strong></div>
-      <div className="print-box"><small>(+) Créditos</small><strong>{moneyText(data.totalCredits.total)}</strong></div>
-      <div className="print-box"><small>(−) Débitos</small><strong>{moneyText(data.totalDebits.total)}</strong></div>
-      <div className="print-box"><small>(=) Saldo atual (Banco + Fundo fixo)</small><strong>{moneyText(data.finalBalance)}</strong></div>
-    </div>
-    {statements.map(({ account, lines }) => <div key={account.id} className="print-group">
-      <h2>{account.id} · {account.name}{account.fixedFund ? ' (Fundo fixo)' : ''}{account.detail ? ` — ${account.detail}` : ''}</h2>
-      <table><thead><tr><th>Data</th><th>Documento</th><th>Histórico</th><th className="num">Crédito</th><th className="num">Débito</th><th className="num">Saldo</th></tr></thead>
-        <tbody>
-          <tr><td>{dateText(data.startDate)}</td><td /><td><strong>SALDO ANTERIOR</strong></td><td /><td /><td className="num"><strong>{moneyText(account.previousBalance)}</strong></td></tr>
-          {lines.length === 0 ? <tr><td colSpan={6} className="muted">Nenhum lançamento no período.</td></tr> : lines.map(({ entry, balance }, index) => <tr key={`${entry.kind}-${entry.documentId}-${index}`}><td>{dateText(entry.date)}</td><td>{entryDocument(entry)}</td><td>{entryHistory(entry)}</td><td className="num">{entry.kind === 'CR' ? moneyText(entry.total) : ''}</td><td className="num">{entry.kind === 'CP' ? moneyText(entry.total) : ''}</td><td className="num">{moneyText(balance)}</td></tr>)}
-        </tbody>
-        <tfoot><tr><td colSpan={3}>Totais do período / saldo final</td><td className="num">{moneyText(account.credits.total)}</td><td className="num">{moneyText(account.debits.total)}</td><td className="num">{moneyText(account.finalBalance)}</td></tr></tfoot>
-      </table>
-    </div>)}
+/** Valores do resumo por grupo de contas (bancos ou fundo fixo), no formato do Caixa Diário do Delphi. */
+function groupTotals(accounts: CashAccountSummary[]) {
+  const sum = (pick: (account: CashAccountSummary) => number) => accounts.reduce((total, account) => total + pick(account), 0)
+  return {
+    previous: sum((account) => account.previousBalance),
+    creditBills: sum((account) => account.credits.bill),
+    creditTransfers: sum((account) => account.credits.transfer),
+    creditOthers: sum((account) => account.credits.cash + account.credits.other),
+    credits: sum((account) => account.credits.total),
+    debitChecks: sum((account) => account.debits.other),
+    debitTransfers: sum((account) => account.debits.transfer),
+    debitOthers: sum((account) => account.debits.cash + account.debits.bill),
+    debits: sum((account) => account.debits.total),
+    final: sum((account) => account.finalBalance),
+  }
+}
+
+/**
+ * Caixa Diário no mesmo formato do sistema anterior (Delphi): resumo das operações bancárias, saldo total disponível,
+ * débitos e créditos em conta corrente e, separado, o fundo fixo (o que é dinheiro/caixa).
+ */
+function LegacyCashView({ data, printable = false }: { data: CashDailyData; printable?: boolean }) {
+  const fund = data.accounts.filter((account) => account.fixedFund)
+  const banks = data.accounts.filter((account) => !account.fixedFund)
+  const fundIds = new Set(fund.map((account) => account.id))
+  const isFund = (entry: CashEntry) => entry.movementAccountId !== null && fundIds.has(entry.movementAccountId)
+  const bank = groupTotals(banks)
+  const fixed = groupTotals(fund)
+  const bankDebits = data.debits.filter((entry) => !isFund(entry))
+  const bankCredits = data.credits.filter((entry) => !isFund(entry))
+  const checks = bankDebits.filter((entry) => entry.other !== 0).map((entry) => ({ entry, value: entry.other }))
+  const transfers = bankDebits.filter((entry) => entry.total - entry.other !== 0).map((entry) => ({ entry, value: entry.total - entry.other }))
+  const fundCredits = data.credits.filter(isFund).map((entry) => ({ entry, value: entry.total }))
+  const fundDebits = data.debits.filter(isFund).map((entry) => ({ entry, value: entry.total }))
+  const box = (label: string, value: number, strong = false) => <div className={`cash-legacy__value ${strong ? 'cash-legacy__value--total' : ''}`}><span>{label}</span><b>{moneyText(value)}</b></div>
+  return <div className={`cash-legacy ${printable ? 'cash-legacy--print' : ''}`}>
+    <header className="cash-legacy__header"><div><h2>Caixa Diário</h2><small>Período: {dateText(data.startDate)} a {dateText(data.endDate)}</small></div><small>Emitido em {dateText(todayIso())}</small></header>
+
+    <section className="cash-legacy__section">
+      <h3>Resumo das Operações Bancárias</h3>
+      <div className="cash-legacy__summary">
+        <div className="cash-legacy__box cash-legacy__box--single">{box('Saldo Anterior', bank.previous, true)}</div>
+        <div className="cash-legacy__box">{box('Boletos Liquidados', bank.creditBills)}{box('Transferências', bank.creditTransfers)}{box('Outros Créditos', bank.creditOthers)}{box('(+) Total de Créditos', bank.credits, true)}</div>
+        <div className="cash-legacy__box">{box('Cheques p/ Terceiros', bank.debitChecks)}{box('Transferências', bank.debitTransfers)}{box('Outros Débitos', bank.debitOthers)}{box('(−) Total de Débitos', bank.debits, true)}</div>
+        <div className="cash-legacy__box cash-legacy__box--single">{box('(=) Saldo Final', bank.final, true)}</div>
+      </div>
+    </section>
+
+    <section className="cash-legacy__section">
+      <h3>Saldo Total Disponível (Banco + Fundo Fixo)</h3>
+      <div className="cash-legacy__totals">
+        {box('Saldo anterior', data.previousBalance, true)}{box('(+) Total de Créditos', data.totalCredits.total, true)}{box('(−) Total de Débitos', data.totalDebits.total, true)}{box('Saldo', data.finalBalance, true)}
+      </div>
+    </section>
+
+    <section className="cash-legacy__section">
+      <h3>Débitos em Conta Corrente</h3>
+      <LegacyEntries title="Relação de Cheques Emitidos" code="C.P." dateLabel="Dt. Pagamento" partyLabel="Fornecedor" rows={checks} totalLabel="Total em Cheques" />
+      <LegacyEntries title="Relação de Transferências, Pagamentos Eletrônicos e Débitos Automáticos" code="C.P." dateLabel="Dt. Pagamento" partyLabel="Fornecedor" rows={transfers} />
+    </section>
+
+    <section className="cash-legacy__section">
+      <h3>Créditos em Conta Corrente</h3>
+      <LegacyEntries title="Relação de Transferências, Pagamentos Eletrônicos e Créditos Automáticos" code="C.R." dateLabel="Dt. Receb." partyLabel="Cliente" rows={bankCredits.map((entry) => ({ entry, value: entry.total }))} showBill />
+    </section>
+
+    <section className="cash-legacy__section">
+      <h3>Resumo das Operações com Fundo Fixo</h3>
+      <div className="cash-legacy__totals">
+        {box('Saldo Anterior', fixed.previous, true)}{box('(+) Créditos', fixed.credits, true)}{box('(−) Débitos', fixed.debits, true)}{box('Saldo Final', fixed.final, true)}
+      </div>
+      <LegacyEntries title="Créditos no Fundo Fixo" code="C.R." dateLabel="Dt. Receb." partyLabel="Cliente" rows={fundCredits} showBill />
+      <LegacyEntries title="Débitos no Fundo Fixo" code="C.P." dateLabel="Dt. Pagamento" partyLabel="Fornecedor" rows={fundDebits} />
+    </section>
+  </div>
+}
+
+function LegacyEntries({ title, code, dateLabel, partyLabel, rows, totalLabel = 'Total', showBill = false }: { title: string; code: string; dateLabel: string; partyLabel: string; rows: Array<{ entry: CashEntry; value: number }>; totalLabel?: string; showBill?: boolean }) {
+  const total = rows.reduce((sum, row) => sum + row.value, 0)
+  return <div className="cash-legacy__list">
+    <h4>{title}</h4>
+    <table><thead><tr><th>{code}</th><th>{dateLabel}</th>{showBill && <th>Boleto</th>}<th>{partyLabel}</th><th>Descrição</th><th className="num">Valor</th></tr></thead>
+      <tbody>{rows.length === 0 ? <tr><td colSpan={showBill ? 6 : 5} className="muted">Nenhum lançamento.</td></tr> : rows.map(({ entry, value }, index) => <tr key={`${entry.kind}-${entry.documentId}-${index}`}><td>{entry.documentId}</td><td>{dateText(entry.date)}</td>{showBill && <td>{entry.billNumber ?? ''}</td>}<td>{entry.partyName}</td><td>{[entry.description, entry.serviceOrderId ? `OS ${entry.serviceOrderId}` : null].filter(Boolean).join(' · ')}</td><td className="num">{moneyText(value)}</td></tr>)}</tbody>
+      <tfoot><tr><td colSpan={showBill ? 5 : 4}>{totalLabel}</td><td className="num">{moneyText(total)}</td></tr></tfoot>
+    </table>
   </div>
 }

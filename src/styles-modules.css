@@ -340,3 +340,40 @@
 
 /* Reajuste anual: histórico com contas a receber e boletos */
 .service-adjustment-history.service-adjustment-history--four { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+
+/* Recibos: seleção para gerar um único recibo */
+.receipts-combine-bar { margin: 0 0 10px; padding: 9px 12px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; border: 1px solid var(--line); border-radius: 10px; background: #fafafd; }
+.receipts-combine-bar > span { margin-right: auto; color: var(--muted); font-size: 8.5px; }
+.receipts-combine-bar > span strong { color: var(--navy); }
+.receipts-table tr.is-selected td { background: #f4f4ff; }
+
+/* Caixa diário no formato do Delphi */
+.cash-legacy { display: grid; gap: 14px; color: var(--ink); }
+.cash-legacy__header { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding-bottom: 6px; border-bottom: 2px solid var(--navy); }
+.cash-legacy__header h2 { margin: 0; color: var(--navy); font-size: 15px; }
+.cash-legacy__header small { color: var(--muted); font-size: 8.5px; }
+.cash-legacy__section { display: grid; gap: 8px; }
+.cash-legacy__section > h3 { margin: 0; padding-bottom: 4px; display: flex; align-items: center; gap: 8px; color: var(--navy); font-size: 10.5px; }
+.cash-legacy__section > h3::after { content: ""; height: 1px; flex: 1; background: #b9bccb; }
+.cash-legacy__summary { display: grid; grid-template-columns: minmax(130px, .8fr) minmax(220px, 1.3fr) minmax(220px, 1.3fr) minmax(130px, .8fr); gap: 10px; align-items: start; }
+.cash-legacy__box { padding: 8px 10px; display: grid; gap: 4px; border: 1px solid #c9ccd8; border-radius: 6px; background: #fbfbfd; }
+.cash-legacy__box--single { align-self: stretch; align-content: center; }
+.cash-legacy__value { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 8.5px; }
+.cash-legacy__value span { color: #4a4f66; }
+.cash-legacy__value b { min-width: 92px; padding: 2px 6px; border: 1px solid #d5d7e2; border-radius: 3px; background: white; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.cash-legacy__value--total span { color: var(--navy); font-weight: 750; }
+.cash-legacy__value--total b { font-weight: 800; }
+.cash-legacy__box--single .cash-legacy__value { flex-direction: column; align-items: stretch; gap: 4px; }
+.cash-legacy__totals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.cash-legacy__totals .cash-legacy__value { padding: 7px 9px; flex-direction: column; align-items: stretch; gap: 4px; border: 1px solid #c9ccd8; border-radius: 6px; background: #fbfbfd; }
+.cash-legacy__list { display: grid; gap: 4px; }
+.cash-legacy__list h4 { margin: 4px 0 0; color: #4a4f66; font-size: 8.5px; font-weight: 700; }
+.cash-legacy__list table { width: 100%; border-collapse: collapse; font-size: 8.5px; }
+.cash-legacy__list th { padding: 4px 6px; border-top: 1px solid #b9bccb; border-bottom: 1px solid #b9bccb; color: #3b3f55; background: #f1f2f7; font-weight: 700; text-align: left; }
+.cash-legacy__list td { padding: 4px 6px; border-bottom: 1px solid #eceef4; }
+.cash-legacy__list .num { text-align: right; font-variant-numeric: tabular-nums; }
+.cash-legacy__list tfoot td { border-bottom: 0; color: var(--navy); font-weight: 800; text-align: right; }
+.cash-legacy__list tfoot td:first-child { text-align: right; }
+@media (max-width: 900px) {
+  .cash-legacy__summary, .cash-legacy__totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

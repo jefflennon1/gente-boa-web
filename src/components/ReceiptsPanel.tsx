@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Download, ExternalLink, FileCheck2, Printer } from 'lucide-react'
+import { ArrowLeft, Download, ExternalLink, FileCheck2, FileStack, Printer } from 'lucide-react'
 import { apiErrorMessage } from '../api/client'
 import { financeApi, financeKeys } from '../api/finance'
 import { queryKeys } from '../api/services'
@@ -76,25 +76,43 @@ export function receiptTitle(kind: ReceiptKind, row: Pick<ReceiptRow, 'id' | 'se
   return row.serviceOrderReceipt && row.serviceOrderId ? `Recibo da O.S. ${row.serviceOrderId}` : `Recibo ${receiptCodes[kind]} #${row.id}`
 }
 
-function fetchReceipt(kind: ReceiptKind, id: number, serviceOrderId?: number | null) {
+/** Recibo unificado das linhas marcadas: OS reunidas entram inteiras (todos os lançamentos recebidos da OS). */
+function fetchCombinedReceipt(kind: ReceiptKind, rows: ReceiptRow[]) {
+  if (kind === 'payable') return financeApi.payables.combinedReceipt(rows.flatMap((row) => row.ids))
+  return financeApi.receivables.combinedReceipt(
+    rows.filter((row) => !(row.serviceOrderReceipt && row.serviceOrderId)).flatMap((row) => row.ids),
+    rows.filter((row) => row.serviceOrderReceipt && row.serviceOrderId).map((row) => row.serviceOrderId!),
+  )
+}
+
+function fetchReceipt(kind: ReceiptKind, id: number, serviceOrderId?: number | null, combined?: ReceiptRow[]) {
+  if (combined?.length) return fetchCombinedReceipt(kind, combined)
   if (kind === 'receivable' && serviceOrderId) return financeApi.receivables.serviceOrderReceipt(serviceOrderId)
   return kind === 'receivable' ? financeApi.receivables.receipt(id) : financeApi.payables.receipt(id)
 }
 
-/** PDF do recibo de uma conta (ou o recibo único da OS), com abrir em nova aba, baixar e imprimir. */
-export function ReceiptDocument({ kind, id, serviceOrderId }: { kind: ReceiptKind; id: number; serviceOrderId?: number | null }) {
+/** Linhas marcadas precisam ser do mesmo cliente/fornecedor para virar um único recibo. */
+export function combinedReceiptError(kind: ReceiptKind, rows: ReceiptRow[]) {
+  if (rows.length < 2) return 'Marque ao menos dois recibos para gerar o recibo unificado.'
+  if (new Set(rows.map((row) => row.party)).size > 1) return kind === 'receivable' ? 'O recibo unificado deve ser de um único cliente.' : 'O recibo unificado deve ser de um único fornecedor.'
+  return ''
+}
+
+/** PDF do recibo de uma conta (ou o recibo único da OS, ou o recibo unificado das linhas marcadas), com abrir em nova aba, baixar e imprimir. */
+export function ReceiptDocument({ kind, id, serviceOrderId, combined }: { kind: ReceiptKind; id: number; serviceOrderId?: number | null; combined?: ReceiptRow[] }) {
   const [url, setUrl] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
-  const byServiceOrder = kind === 'receivable' && Boolean(serviceOrderId)
-  const frameId = byServiceOrder ? `receipt-frame-os-${serviceOrderId}` : `receipt-frame-${kind}-${id}`
+  const byServiceOrder = kind === 'receivable' && Boolean(serviceOrderId) && !combined?.length
+  const combinedKey = combined?.map((row) => `${row.serviceOrderReceipt ? `os${row.serviceOrderId}` : row.ids.join('-')}`).join('_') ?? ''
+  const frameId = combinedKey ? `receipt-frame-combined-${kind}` : byServiceOrder ? `receipt-frame-os-${serviceOrderId}` : `receipt-frame-${kind}-${id}`
 
   useEffect(() => {
     let active = true
     let created: string | null = null
     setUrl(null)
     setError('')
-    fetchReceipt(kind, id, byServiceOrder ? serviceOrderId : null)
+    fetchReceipt(kind, id, byServiceOrder ? serviceOrderId : null, combined)
       .then((blob) => {
         if (!active) return
         created = URL.createObjectURL(blob)
@@ -105,13 +123,14 @@ export function ReceiptDocument({ kind, id, serviceOrderId }: { kind: ReceiptKin
       active = false
       if (created) URL.revokeObjectURL(created)
     }
-  }, [kind, id, serviceOrderId, byServiceOrder, attempt])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, id, serviceOrderId, byServiceOrder, combinedKey, attempt])
 
   function download() {
     if (!url) return
     const link = document.createElement('a')
     link.href = url
-    link.download = byServiceOrder ? `recibo-os-${serviceOrderId}.pdf` : `recibo-${receiptCodes[kind].toLowerCase()}-${id}.pdf`
+    link.download = combinedKey ? `recibo-unificado-${receiptCodes[kind].toLowerCase()}.pdf` : byServiceOrder ? `recibo-os-${serviceOrderId}.pdf` : `recibo-${receiptCodes[kind].toLowerCase()}-${id}.pdf`
     link.click()
   }
 
@@ -123,7 +142,7 @@ export function ReceiptDocument({ kind, id, serviceOrderId }: { kind: ReceiptKin
       <Button type="button" variant="secondary" icon={<Download size={15} />} onClick={download}>Baixar PDF</Button>
       <Button type="button" icon={<Printer size={15} />} onClick={() => (document.getElementById(frameId) as HTMLIFrameElement | null)?.contentWindow?.print()}>Imprimir</Button>
     </div>
-    <iframe id={frameId} className="contract-document-frame receipt-document__frame" src={url} title={byServiceOrder ? `Recibo da O.S. ${serviceOrderId}` : `Recibo ${receiptCodes[kind]} ${id}`} />
+    <iframe id={frameId} className="contract-document-frame receipt-document__frame" src={url} title={combinedKey ? 'Recibo unificado' : byServiceOrder ? `Recibo da O.S. ${serviceOrderId}` : `Recibo ${receiptCodes[kind]} ${id}`} />
   </div>
 }
 
@@ -159,6 +178,17 @@ export function PartyReceipts({ kind, partyId, currentAccount }: { kind: Receipt
   })
   const code = receiptCodes[kind]
   const settledLabel = kind === 'receivable' ? 'Recebimento' : 'Pagamento'
+  // Recibos marcados para virar um único recibo.
+  const [marked, setMarked] = useState<Record<number, ReceiptRow>>({})
+  const [combined, setCombined] = useState<ReceiptRow[] | null>(null)
+  const markedRows = Object.values(marked)
+
+  if (combined) {
+    return <div className="client-workspace__section">
+      <ReceiptsHeading title="Recibo unificado" description={`${combined.length} recibo(s) reunidos em um único documento · ${money(combined.reduce((sum, row) => sum + Number(row.settledAmount || 0), 0))}`} action={<Button type="button" variant="ghost" icon={<ArrowLeft size={15} />} onClick={() => setCombined(null)}>Voltar à lista</Button>} />
+      <ReceiptDocument kind={kind} id={combined[0].id} combined={combined} />
+    </div>
+  }
 
   if (selected) {
     return <div className="client-workspace__section">
@@ -170,14 +200,32 @@ export function PartyReceipts({ kind, partyId, currentAccount }: { kind: Receipt
   return <div className="client-workspace__section">
     <ReceiptsHeading title={`Recibos ${partyLabel}`} description={kind === 'receivable' ? 'Contas recebidas deste cliente: abra o recibo de pagamento para enviar ou imprimir.' : 'Contas pagas a este fornecedor: abra o recibo para o fornecedor assinar.'} />
     {currentAccount && Number(currentAccount.settledAmount) === 0 && <p className="receipts-notice">A conta {code} #{currentAccount.id} ainda não tem {kind === 'receivable' ? 'recebimento' : 'pagamento'} registrado: o recibo dela aparece aqui depois da baixa.</p>}
+    {rows.length > 0 && <CombinedReceiptBar count={markedRows.length} total={markedRows.reduce((sum, row) => sum + Number(row.settledAmount || 0), 0)} onClear={() => setMarked({})} onGenerate={() => setCombined(markedRows)} />}
     {listQuery.isLoading ? <LoadingState label="Carregando recibos..." /> : listQuery.isError ? <ErrorState message={apiErrorMessage(listQuery.error)} onRetry={() => listQuery.refetch()} /> : rows.length === 0 ? <EmptyState title="Nenhum recibo disponível" description={kind === 'receivable' ? 'Este cliente ainda não tem contas recebidas.' : 'Este fornecedor ainda não tem contas pagas.'} /> : <div className="table-wrap"><table className="data-table receipts-table">
-      <thead><tr><th>{code}</th><th>Descrição</th><th>OS</th><th>Documento</th><th>Vencimento</th><th>{settledLabel}</th><th className="num">Valor</th><th className="num">{kind === 'receivable' ? 'Recebido' : 'Pago'}</th><th className="num">Saldo</th><th /></tr></thead>
-      <tbody>{rows.map((row) => <tr key={row.id} className={isCurrent(row) ? 'receipts-table__current' : undefined}>
+      <thead><tr><th><input type="checkbox" aria-label="Marcar todos os recibos" checked={rows.every((row) => marked[row.id])} onChange={() => setMarked(rows.every((row) => marked[row.id]) ? {} : Object.fromEntries(rows.map((row) => [row.id, row])))} /></th><th>{code}</th><th>Descrição</th><th>OS</th><th>Documento</th><th>Vencimento</th><th>{settledLabel}</th><th className="num">Valor</th><th className="num">{kind === 'receivable' ? 'Recebido' : 'Pago'}</th><th className="num">Saldo</th><th /></tr></thead>
+      <tbody>{rows.map((row) => <tr key={row.id} className={isCurrent(row) ? 'receipts-table__current' : marked[row.id] ? 'is-selected' : undefined}>
+        <td><input type="checkbox" checked={Boolean(marked[row.id])} onChange={() => setMarked((current) => toggleMarked(current, row))} aria-label={`Marcar recibo ${row.ids.join(', ')}`} /></td>
         <td><strong>#{row.ids.join(', #')}</strong></td><td>{row.description || 'Sem descrição'}</td><td>{row.serviceOrderId || '—'}</td><td>{row.documentText}</td>
         <td>{formatDate(row.dueAt)}</td><td>{formatDate(row.settledAt)}</td><td className="num">{money(row.amount)}</td><td className="num"><strong>{money(row.settledAmount)}</strong></td><td className="num">{money(row.balance)}</td>
         <td><Button type="button" variant="secondary" icon={<FileCheck2 size={15} />} onClick={() => setSelected(row)}>Recibo</Button></td>
       </tr>)}</tbody>
     </table></div>}
+  </div>
+}
+
+export function toggleMarked(current: Record<number, ReceiptRow>, row: ReceiptRow) {
+  const next = { ...current }
+  if (next[row.id]) delete next[row.id]
+  else next[row.id] = row
+  return next
+}
+
+/** Barra da seleção: quantos recibos foram marcados e o botão que gera todos unidos em um só. */
+export function CombinedReceiptBar({ count, total, onClear, onGenerate }: { count: number; total: number; onClear: () => void; onGenerate: () => void }) {
+  return <div className="receipts-combine-bar" aria-live="polite">
+    <span>{count > 0 ? <><strong>{count}</strong> recibo(s) marcado(s) · <strong>{money(total)}</strong></> : 'Marque os recibos para gerar todos unidos em um só documento.'}</span>
+    {count > 0 && <Button type="button" variant="ghost" onClick={onClear}>Limpar seleção</Button>}
+    <Button type="button" icon={<FileStack size={16} />} disabled={count < 2} onClick={onGenerate}>Gerar recibo unificado{count > 1 ? ` (${count})` : ''}</Button>
   </div>
 }
 

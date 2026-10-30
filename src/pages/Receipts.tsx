@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, FileCheck2, Search } from 'lucide-react'
 import { apiErrorMessage } from '../api/client'
 import { financeApi, financeKeys } from '../api/finance'
 import { queryKeys } from '../api/services'
-import { groupReceiptsByServiceOrder, payableReceiptRow, ReceiptDocument, receiptTitle, receivableReceiptRow, type ReceiptKind, type ReceiptRow } from '../components/ReceiptsPanel'
+import { CombinedReceiptBar, combinedReceiptError, groupReceiptsByServiceOrder, payableReceiptRow, ReceiptDocument, receiptTitle, receivableReceiptRow, toggleMarked, type ReceiptKind, type ReceiptRow } from '../components/ReceiptsPanel'
 import { Button, CollapsibleFilters, EmptyState, ErrorState, LoadingState, Modal, PageHeader } from '../components/ui'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { monthBounds } from '../lib/export'
@@ -50,6 +50,11 @@ function ReceiptsPage({ kind }: { kind: ReceiptKind }) {
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(20)
   const [preview, setPreview] = useState<ReceiptRow | null>(null)
+  // Recibos marcados (podem vir de páginas diferentes) para gerar um único recibo.
+  const [marked, setMarked] = useState<Record<number, ReceiptRow>>({})
+  const [combined, setCombined] = useState<ReceiptRow[] | null>(null)
+  const [combineError, setCombineError] = useState('')
+  const markedRows = Object.values(marked)
   const query = useDebouncedValue(search)
 
   // Só contas com baixa: filtra pela data do recebimento/pagamento (contas sem baixa não têm essa data).
@@ -84,9 +89,16 @@ function ReceiptsPage({ kind }: { kind: ReceiptKind }) {
         <label><span>{copy.settled} de</span><input type="date" value={startDate} max={endDate || undefined} onChange={(event) => changeFilter(() => setStartDate(event.target.value))} /></label>
         <label><span>Até</span><input type="date" value={endDate} min={startDate || undefined} onChange={(event) => changeFilter(() => setEndDate(event.target.value))} /></label>
       </CollapsibleFilters>
+      <CombinedReceiptBar count={markedRows.length} total={markedRows.reduce((sum, row) => sum + Number(row.settledAmount || 0), 0)} onClear={() => { setMarked({}); setCombineError('') }} onGenerate={() => {
+        const error = combinedReceiptError(kind, markedRows)
+        setCombineError(error)
+        if (!error) setCombined(markedRows)
+      }} />
+      {combineError && <div className="receivable-action-error" role="alert">{combineError}</div>}
       {listQuery.isLoading ? <LoadingState label="Carregando contas..." /> : listQuery.isError ? <ErrorState message={apiErrorMessage(listQuery.error)} onRetry={() => listQuery.refetch()} /> : rows.length === 0 ? <EmptyState title="Nenhum recibo disponível" description={copy.empty} /> : <div className="table-wrap"><table className="data-table receipts-table">
-        <thead><tr><th>{copy.code}</th><th>{copy.party}</th><th>Descrição</th><th>OS</th><th>Documento</th><th>Vencimento</th><th>{copy.settled}</th><th className="num">Valor</th><th className="num">{copy.settledAmount}</th><th className="num">Saldo</th><th /></tr></thead>
-        <tbody>{rows.map((row) => <tr key={row.id}>
+        <thead><tr><th><input type="checkbox" aria-label="Marcar os recibos desta página" checked={rows.length > 0 && rows.every((row) => marked[row.id])} onChange={() => { const all = rows.every((row) => marked[row.id]); setMarked((current) => { const next = { ...current }; rows.forEach((row) => { if (all) delete next[row.id]; else next[row.id] = row }); return next }); setCombineError('') }} /></th><th>{copy.code}</th><th>{copy.party}</th><th>Descrição</th><th>OS</th><th>Documento</th><th>Vencimento</th><th>{copy.settled}</th><th className="num">Valor</th><th className="num">{copy.settledAmount}</th><th className="num">Saldo</th><th /></tr></thead>
+        <tbody>{rows.map((row) => <tr key={row.id} className={marked[row.id] ? 'is-selected' : undefined}>
+          <td><input type="checkbox" checked={Boolean(marked[row.id])} onChange={() => { setMarked((current) => toggleMarked(current, row)); setCombineError('') }} aria-label={`Marcar recibo ${row.ids.join(', ')}`} /></td>
           <td><strong>#{row.ids.join(', #')}</strong></td>
           <td><strong className="table-primary">{row.party}</strong></td>
           <td>{row.description || 'Sem descrição'}</td>
@@ -105,6 +117,9 @@ function ReceiptsPage({ kind }: { kind: ReceiptKind }) {
 
     <Modal open={preview !== null} onClose={() => setPreview(null)} title={preview ? receiptTitle(kind, preview) : 'Recibo'} description={preview ? (preview.serviceOrderReceipt ? `${preview.party} · todos os lançamentos recebidos da O.S. ${preview.serviceOrderId} em um único recibo` : `${preview.party} · ${money(preview.settledAmount)} em ${formatDate(preview.settledAt)}`) : undefined} size="xlarge">
       <div className="modal__body">{preview && <ReceiptDocument kind={kind} id={preview.id} serviceOrderId={preview.serviceOrderReceipt ? preview.serviceOrderId : null} />}</div>
+    </Modal>
+    <Modal open={combined !== null} onClose={() => setCombined(null)} title="Recibo unificado" description={combined ? `${combined[0].party} · ${combined.length} recibo(s) reunidos · ${money(combined.reduce((sum, row) => sum + Number(row.settledAmount || 0), 0))}` : undefined} size="xlarge">
+      <div className="modal__body">{combined && <ReceiptDocument kind={kind} id={combined[0].id} combined={combined} />}</div>
     </Modal>
   </>
 }

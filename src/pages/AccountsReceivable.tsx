@@ -95,6 +95,8 @@ export function AccountsReceivable() {
   const editing = detailQuery.data ?? selected
   const selectedRows = Object.values(selection)
   const selectedTotal = selectedRows.reduce((sum, row) => sum + Number(row.balance || 0), 0)
+  // Contas recebidas também podem ser marcadas (recibo unificado); a baixa múltipla usa só as abertas.
+  const openSelectedRows = selectedRows.filter((row) => row.status === 'OPEN')
   const centers = costCentersQuery.data ?? []
   const filterSubCenters = centers.find((center) => String(center.id) === costCenterId)?.subCenters ?? centers.flatMap((center) => center.subCenters)
   const formSubCenters = centers.find((center) => String(center.id) === formCostCenter)?.subCenters ?? []
@@ -150,6 +152,21 @@ export function AccountsReceivable() {
     onSuccess: (blob) => { const url = URL.createObjectURL(blob); window.open(url, '_blank', 'noopener'); window.setTimeout(() => URL.revokeObjectURL(url), 60_000) },
     onError: (error) => showToast(apiErrorMessage(error), 'error'),
   })
+  // Recibo unificado das contas marcadas (mesmo cliente); contas de OS entram com todos os lançamentos da OS.
+  const combinedReceiptMutation = useMutation({
+    mutationFn: (rows: Receivable[]) => financeApi.receivables.combinedReceipt(
+      rows.filter((row) => !row.serviceOrderId).map((row) => row.id),
+      [...new Set(rows.map((row) => row.serviceOrderId).filter((id): id is number => Boolean(id)))],
+    ),
+    onSuccess: (blob) => { const url = URL.createObjectURL(blob); window.open(url, '_blank', 'noopener'); window.setTimeout(() => URL.revokeObjectURL(url), 60_000) },
+    onError: (error) => showToast(apiErrorMessage(error), 'error'),
+  })
+  function openCombinedReceipt() {
+    const received = selectedRows.filter((row) => Number(row.receivedAmount) !== 0)
+    if (received.length === 0) { showToast('Marque contas com recebimento registrado para gerar o recibo unificado.', 'error'); return }
+    if (new Set(received.map((row) => row.clientId)).size > 1) { showToast('O recibo unificado deve ser de um único cliente.', 'error'); return }
+    combinedReceiptMutation.mutate(received)
+  }
   const exportMutation = useMutation({
     mutationFn: async () => {
       const result = await financeApi.receivables.list({ ...filters, page: 0, size: 100 })
@@ -296,11 +313,11 @@ export function AccountsReceivable() {
         <label><span>Faturamento</span><select value={billingType} onChange={(event) => { setBillingType(event.target.value as typeof billingType); resetPage() }}><option value="ALL">Todos</option><option value="CONTRACT">Contratados</option><option value="ONE_OFF">Avulsos</option></select></label>
       </CollapsibleFilters>
 
-      {selectedRows.length > 0 && <div className="selection-bar"><span><ListChecks size={18} /><strong>{selectedRows.length}</strong> conta(s) marcada(s) · saldo {money(selectedTotal)}</span><div><Button variant="ghost" onClick={() => setSelection({})}>Limpar</Button><Button icon={<WalletCards size={16} />} onClick={() => { setMultiError(''); setMultiOpen(true) }}>Baixa múltipla</Button></div></div>}
+      {selectedRows.length > 0 && <div className="selection-bar"><span><ListChecks size={18} /><strong>{selectedRows.length}</strong> conta(s) marcada(s) · saldo {money(selectedTotal)}</span><div><Button variant="ghost" onClick={() => setSelection({})}>Limpar</Button><Button variant="secondary" icon={<ReceiptText size={16} />} disabled={combinedReceiptMutation.isPending || !selectedRows.some((row) => Number(row.receivedAmount) !== 0)} onClick={openCombinedReceipt}>{combinedReceiptMutation.isPending ? 'Gerando recibo...' : 'Recibo unificado'}</Button><Button icon={<WalletCards size={16} />} disabled={openSelectedRows.length === 0} onClick={() => { setMultiError(''); setMultiOpen(true) }}>Baixa múltipla</Button></div></div>}
 
       {listQuery.isLoading ? <LoadingState label="Carregando contas a receber..." /> : listQuery.isError ? <ErrorState message={apiErrorMessage(listQuery.error)} onRetry={() => listQuery.refetch()} /> : rows.length === 0 ? <EmptyState title="Nenhuma conta encontrada" description="Altere os filtros ou cadastre uma nova conta a receber." /> : <div className={`table-wrap ${listQuery.isFetching ? 'table-wrap--refreshing' : ''}`}>
         <table className="data-table finance-table"><thead><tr><th className="check-column"><input type="checkbox" aria-label="Marcar contas abertas da página" checked={rows.some((row) => row.status === 'OPEN') && rows.filter((row) => row.status === 'OPEN').every((row) => selection[row.id])} onChange={togglePage} /></th><th>Código</th><th>Cliente / descrição</th><th>Origem</th><th>Vencimento</th><th>Recebimento</th><th className="num">Devido</th><th className="num">Recebido</th><th className="num">Saldo</th><th>Situação</th><th /></tr></thead><tbody>{rows.map((row) => <tr key={row.id} onClick={() => openEdit(row)}>
-          <td className="check-column" onClick={(event) => event.stopPropagation()}><input type="checkbox" disabled={row.status !== 'OPEN'} checked={Boolean(selection[row.id])} onChange={() => toggle(row)} aria-label={`Marcar conta ${row.id}`} /></td>
+          <td className="check-column" onClick={(event) => event.stopPropagation()}><input type="checkbox" disabled={row.status !== 'OPEN' && Number(row.receivedAmount) === 0} checked={Boolean(selection[row.id])} onChange={() => toggle(row)} aria-label={`Marcar conta ${row.id}`} /></td>
           <td><strong>#{row.id}</strong>{row.billNumber && <small className="table-secondary">Boleto {row.billNumber}</small>}</td>
           <td><strong className="table-primary">{row.clientTradeName || row.clientName || 'Cliente não informado'}</strong><small className="table-secondary">{row.description || 'Sem descrição'}</small></td>
           <td><Badge tone={row.origin === 'MANUAL' ? 'neutral' : row.origin === 'CONTRATO' ? 'purple' : 'blue'}>{originLabels[row.origin]}</Badge>{row.serviceOrderId && <small className="table-secondary">OS #{row.serviceOrderId}</small>}</td>
@@ -357,7 +374,7 @@ export function AccountsReceivable() {
       </ModalForm>
     </Modal>
 
-    <MultipleSettlementDialog key={multiOpen ? 'open' : 'closed'} open={multiOpen} title="Baixa múltipla de contas a receber" count={selectedRows.length} total={selectedTotal} movementAccounts={movementAccountsQuery.data} busy={multiMutation.isPending} error={multiError} onClose={() => setMultiOpen(false)} onSubmit={(payload) => multiMutation.mutate({ ...payload, ids: selectedRows.map((row) => row.id) })} />
+    <MultipleSettlementDialog key={multiOpen ? 'open' : 'closed'} open={multiOpen} title="Baixa múltipla de contas a receber" count={openSelectedRows.length} total={selectedTotal} movementAccounts={movementAccountsQuery.data} busy={multiMutation.isPending} error={multiError} onClose={() => setMultiOpen(false)} onSubmit={(payload) => multiMutation.mutate({ ...payload, ids: openSelectedRows.map((row) => row.id) })} />
     {installmentTarget && <InstallmentDialog open total={installmentTarget.amount} dueDate={installmentTarget.dueAt?.slice(0, 10) ?? todayIso()} description={`Conta #${installmentTarget.id} · ${installmentTarget.description ?? ''}`} busy={installmentMutation.isPending} error={installmentError} onClose={() => setInstallmentTarget(null)} onSubmit={(payload) => installmentMutation.mutate({ id: installmentTarget.id, payload })} />}
     <ConfirmDialog open={toDelete !== null} title={`Excluir conta #${toDelete?.id ?? ''}?`} description="A conta será removida somente se não possuir recebimentos nem boleto." confirmLabel="Excluir conta" busy={deleteMutation.isPending} error={deleteError} onCancel={() => setToDelete(null)} onConfirm={() => toDelete && deleteMutation.mutate(toDelete.id)} />
     {toast && <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} />}

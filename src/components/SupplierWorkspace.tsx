@@ -50,7 +50,7 @@ function SectionHeader({ title, description, action }: { title: string; descript
   return <header className="client-workspace__heading"><div><h3>{title}</h3><p>{description}</p></div>{action}</header>
 }
 
-function overdue(account: PayableAccount) { return Number(account.balance) > 0 && Boolean(account.dueAt) && account.dueAt!.slice(0, 10) < todayIso() }
+function overdue(account: PayableAccount) { return Number(account.balance) !== 0 && Boolean(account.dueAt) && account.dueAt!.slice(0, 10) < todayIso() }
 function statusLabel(account: PayableAccount) { return account.status === 'PAID' ? 'Quitada' : account.status === 'CLOSED' ? 'Fechada' : overdue(account) ? 'Vencida' : 'Aberta' }
 function statusTone(account: PayableAccount): 'green' | 'orange' | 'neutral' | 'red' { return account.status === 'PAID' ? 'green' : account.status === 'CLOSED' ? 'neutral' : overdue(account) ? 'red' : 'orange' }
 
@@ -80,7 +80,7 @@ function SupplierPayables({ supplier, payableDialogs }: { supplier: Supplier; pa
     <div className="segmented-control supplier-workspace__tabs" role="tablist" aria-label="Situação das contas">{tabs.map((tab) => <button key={tab.value} type="button" role="tab" aria-selected={status === tab.value} className={status === tab.value ? 'active' : ''} onClick={() => { setStatus(tab.value); setPage(0) }}>{tab.label}</button>)}</div>
     {accountsQuery.isLoading ? <LoadingState label="Carregando contas a pagar..." /> : accountsQuery.isError ? <ErrorState message={apiErrorMessage(accountsQuery.error)} onRetry={() => accountsQuery.refetch()} /> : accounts.length === 0 ? <EmptyState title="Nenhuma conta nesta situação" description="Altere a situação ou cadastre uma nova conta para este fornecedor." /> : <div className={`table-wrap ${accountsQuery.isFetching ? 'table-wrap--refreshing' : ''}`}>
       <table className="data-table supplier-payables-table"><thead><tr><th>Código</th><th>Descrição</th><th>Pedido / OS</th><th>Vencimento</th><th>Pagamento</th><th>Devido</th><th>Pago</th><th>Saldo</th><th>Situação</th><th /></tr></thead><tbody>{accounts.map((account) => {
-        const open = Number(account.balance) > 0
+        const open = Number(account.balance) !== 0
         return <tr key={account.id} onClick={() => payableDialogs.openEdit(account)}>
           <td><strong>#{account.id}</strong></td>
           <td><strong className="table-primary">{account.description || 'Sem descrição'}</strong>{account.invoiceNumber && <small className="table-secondary">NF {account.invoiceNumber}</small>}</td>
