@@ -751,9 +751,27 @@ h1, h2, h3, p { margin-top: 0; }
 .data-toolbar--clients .search-box { width: 100%; min-width: 0; }
 .data-toolbar--clients > .search-box:only-child { grid-column: 1 / -1; }
 .structured-filters { display: grid; grid-template-columns: minmax(240px, 1.35fr) minmax(180px, 1fr); gap: 12px 14px; padding: 16px; border-bottom: 1px solid var(--line); background: #fbfbfe; }
-.structured-filters > label, .structured-filter-field { display: flex; flex-direction: column; gap: 6px; min-width: 130px; }
-.structured-filters > label > span, .structured-filter-field > span { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
-.structured-filters input, .structured-filter-field input { width: 100%; min-height: 40px; border: 1px solid var(--line); border-radius: 10px; padding: 0 11px; background: white; color: var(--ink); }
+.structured-filters > label, .structured-filter-field, .os-advanced-filters__fields > label { display: flex; flex-direction: column; gap: 6px; min-width: 130px; }
+.structured-filters > label > span, .structured-filter-field > span, .os-advanced-filters__fields > label > span { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.structured-filters input, .structured-filter-field input, .structured-filters select, .structured-filter-field select, .os-advanced-filters__fields > label > input:not([type="checkbox"]):not([type="radio"]), .os-advanced-filters__fields > label > select { width: 100%; min-height: 40px; border: 1px solid var(--line); border-radius: 10px; padding: 0 11px; outline: 0; background: white; color: var(--ink); font-size: 10.5px; }
+.structured-filters input:focus, .structured-filter-field input:focus, .structured-filters select:focus, .structured-filter-field select:focus, .os-advanced-filters__fields > label > input:focus, .os-advanced-filters__fields > label > select:focus { border-color: #989cd1; box-shadow: 0 0 0 3px rgba(46,49,145,.07); }
+.structured-filter-field.structured-filter-field--number.isolated {
+    padding: 15px;
+}
+label.structured-filter-field.isolated {
+    width: 200px;
+}
+label.billing-filter-group.isolated {
+    width: 200px;
+}
+div.billing-filter-group.isolated {
+    width: 200px;
+}
+.structured-filter-field.structured-filter-field--number.isolated.grid {
+    display: grid;
+    grid-auto-flow: column;
+}
+.structured-filters select, .structured-filter-field select, .os-advanced-filters__fields > label > select { cursor: pointer; }
 .structured-filters .search-box, .structured-filter-field .search-box { width: 100%; height: 40px; background: white; }
 .structured-filters .search-box input, .structured-filter-field .search-box input { min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
 .structured-filter-field--wide { grid-column: 1 / -1; }
