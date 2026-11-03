@@ -222,7 +222,8 @@ function patchListFlag(order: ServiceOrderListItem, flag: ServiceOrderOperationa
   if (flag === 'SCHEDULED_TIME') return { ...order, scheduledTime: checked }
   if (flag === 'ROUTED') return { ...order, routed: checked }
   if (flag === 'STARTED') return { ...order, started: checked }
-  return { ...order, finished: checked, status: checked ? 'FINALIZADA' : 'ABERTA' }
+  // "Finalizada" encerra só o atendimento do técnico; a OS é finalizada manualmente.
+  return { ...order, finished: checked }
 }
 
 function patchDetailFlag(order: ServiceOrder, flag: ServiceOrderOperationalFlag, checked: boolean): ServiceOrder {
@@ -236,8 +237,6 @@ function patchDetailFlag(order: ServiceOrder, flag: ServiceOrderOperationalFlag,
     ...order,
     schedules,
     priority: flag === 'URGENT' ? checked ? 'URGENTE' : 'NORMAL' : order.priority,
-    status: flag === 'FINISHED' ? checked ? 'FINALIZADA' : 'ABERTA' : order.status,
-    flstatu: flag === 'FINISHED' ? checked ? 'F' : 'A' : order.flstatu,
   }
 }
 
@@ -287,6 +286,22 @@ function windowRange(window: { date: string; start: string; end: string }) {
   return [start, end <= start ? end + 86_400_000 : end] as const
 }
 
+const BILLING_LOCATION_OPTION = '__billing__'
+const BILLING_LOCATION_DESCRIPTION = 'ENDEREÇO DE COBRANÇA'
+
+function normalizedAddress(value?: string | null) {
+  return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toUpperCase()
+}
+
+function sameAddress(left?: string | null, right?: string | null) {
+  return normalizedAddress(left) !== '' && normalizedAddress(left) === normalizedAddress(right)
+}
+
+function billingLocationDisplay(client: Client) {
+  const address = [client.dsender, client.dscompl, client.dsbairr, client.dscidad, client.nrcep].map((part) => part?.trim()).filter(Boolean).join(' · ')
+  return `Endereço de cobrança — ${address}`
+}
+
 function attendanceLocationDisplay(location: AttendanceLocation) {
   const address = [location.address, location.complement, location.district, location.city, location.zipCode].filter(Boolean).join(' · ')
   return location.description && address ? `${location.description} — ${address}` : location.description || address || `Local #${location.id}`
@@ -313,7 +328,7 @@ export function ServiceOrders() {
   const [month, setMonth] = useState('')
   const [weekDate, setWeekDate] = useState(localToday())
   const [page, setPage] = useState(0)
-  const [pageSize, setPageSize] = useState(10)
+  const [pageSize, setPageSize] = useState(20)
   const [modalOpen, setModalOpen] = useState(false)
   const [selected, setSelected] = useState<ServiceOrder | null>(null)
   const [formKey, setFormKey] = useState(0)
@@ -756,7 +771,7 @@ export function ServiceOrders() {
           {dateFilterMode !== 'none' && <button className="table-link" onClick={clearPeriod}>Limpar período</button>}
           <div className="pagination-controls">
             <label className="dynamic-page-size">Itens <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); resetPage() }}>{[5, 10, 20, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
-            <span>10 por página</span>
+            <span>{pageSize} por página</span>
             <button disabled={page === 0 || ordersQuery.isFetching} onClick={() => setPage((value) => Math.max(0, value - 1))} aria-label="Página anterior"><ChevronLeft size={16} /></button>
             <span>Página <strong>{totalPages ? page + 1 : 0}</strong> de <strong>{totalPages}</strong></span>
             <button disabled={page + 1 >= totalPages || ordersQuery.isFetching} onClick={() => setPage((value) => value + 1)} aria-label="Próxima página"><ChevronRight size={16} /></button>
@@ -928,6 +943,11 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     queryFn: () => api.attendanceLocations.byClient(Number(clientId)),
     enabled: Boolean(clientId),
   })
+  const billingClientQuery = useQuery({
+    queryKey: [...queryKeys.clients, 'detail', Number(clientId)],
+    queryFn: () => api.clients.find(Number(clientId)),
+    enabled: Boolean(clientId),
+  })
   const selectedAttendanceLocationQuery = useQuery({
     queryKey: [...queryKeys.attendanceLocations, 'client', Number(clientId), 'location', Number(locationId)],
     queryFn: () => api.attendanceLocations.findForClient(Number(locationId), Number(clientId)),
@@ -986,6 +1006,10 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       ? [selectedLocation, ...locations]
       : locations
   }, [attendanceLocationsQuery.data, selectedAttendanceLocationQuery.data])
+  // O endereço de cobrança do cliente aparece entre os locais; ao ser escolhido vira um local cadastrado do cliente.
+  const billingClient = billingClientQuery.data
+  const billingAddress = billingClient?.dsender?.trim() ? billingClient : null
+  const billingAlreadyListed = Boolean(billingAddress && attendanceLocations.some((location) => sameAddress(location.address, billingAddress.dsender)))
   // Mesmas regras do backend.
   // Contrato: cada atendimento desconta das horas contratadas no mínimo o tempo mínimo do contrato (ex.: 20 min); o
   // serviço já está coberto pelo contrato e só os minutos além do saldo são cobrados, pelo minuto extra do contrato.
@@ -1111,6 +1135,42 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     setClientSearch('')
     setClientPickerOpen(true)
     setClientError('')
+  }
+
+  function selectLocation(value: string) {
+    setLocationFieldError('')
+    if (value !== BILLING_LOCATION_OPTION) {
+      setLocationId(value)
+      return
+    }
+    if (!clientId || !billingAddress) return
+    createAttendanceLocationMutation.mutate({
+      clientId: Number(clientId),
+      contractId: activeContract?.id ?? 0,
+      description: BILLING_LOCATION_DESCRIPTION,
+      address: billingAddress.dsender?.trim() ?? '',
+      complement: billingAddress.dscompl?.trim() || null,
+      district: billingAddress.dsbairr?.trim() || null,
+      city: billingAddress.dscidad?.trim() || null,
+      zipCode: billingAddress.nrcep?.trim() || null,
+      contactName: null,
+      referencePoint: billingAddress.dsponto?.trim() || null,
+      bank1: null,
+      agency1: null,
+      account1: null,
+      bank2: null,
+      agency2: null,
+      account2: null,
+      paymentMethod: null,
+      paymentCondition: null,
+      spreadDescription: null,
+      spreadValue: null,
+      spreadGroup: null,
+      contactPhone: billingAddress.nrtele1?.trim() || null,
+      cnpj: null,
+      username: user?.name ?? null,
+      requester: null,
+    })
   }
 
   function openLocationModal() {
@@ -1445,9 +1505,10 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       </FormField>
       <FormField label="Local de atendimento *">
         <div className="os-location-control">
-          <select value={locationId} onChange={(event) => { setLocationId(event.target.value); setLocationFieldError('') }} disabled={!clientId || attendanceLocationsQuery.isLoading} required>
-            <option value="">{!clientId ? 'Selecione primeiro o cliente' : attendanceLocationsQuery.isLoading ? 'Carregando locais...' : attendanceLocations.length ? 'Selecione um local' : 'Nenhum local cadastrado'}</option>
+          <select value={locationId} onChange={(event) => selectLocation(event.target.value)} disabled={!clientId || attendanceLocationsQuery.isLoading || createAttendanceLocationMutation.isPending} required>
+            <option value="">{!clientId ? 'Selecione primeiro o cliente' : attendanceLocationsQuery.isLoading ? 'Carregando locais...' : createAttendanceLocationMutation.isPending ? 'Cadastrando local...' : attendanceLocations.length || billingAddress ? 'Selecione um local' : 'Nenhum local cadastrado'}</option>
             {attendanceLocations.map((location) => <option key={location.id} value={location.id}>{attendanceLocationDisplay(location)}</option>)}
+            {billingAddress && !billingAlreadyListed && <option value={BILLING_LOCATION_OPTION}>{billingLocationDisplay(billingAddress)}</option>}
           </select>
           <button type="button" onClick={openLocationModal} disabled={!clientId} title="Adicionar novo local de atendimento" aria-label="Adicionar novo local de atendimento"><Plus size={17} /></button>
         </div>

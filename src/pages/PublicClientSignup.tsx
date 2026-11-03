@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { CheckCircle2 } from 'lucide-react'
+import { CheckCircle2, RefreshCw } from 'lucide-react'
 import { api } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import type { ClientKind, PublicClientSignupPayload } from '../types'
@@ -15,6 +15,11 @@ function referralDisplayName(description: string) {
     .replace(/(^|[^\p{L}\p{N}])(\p{L})/gu, (_match, separator: string, letter: string) => `${separator}${letter.toLocaleUpperCase('pt-BR')}`)
 }
 
+function formatCep(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 8)
+  return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits
+}
+
 function textValue(data: FormData, name: string) {
   return String(data.get(name) || '').trim()
 }
@@ -23,7 +28,9 @@ export function PublicClientSignup() {
   const [kind, setKind] = useState<ClientKind>('PESSOA_FISICA')
   const [referralSelection, setReferralSelection] = useState('')
   const [otherReferral, setOtherReferral] = useState('')
+  const [cep, setCep] = useState('')
   const [cepLoading, setCepLoading] = useState(false)
+  const [cepFound, setCepFound] = useState(false)
   const [cepError, setCepError] = useState('')
   const [addressFields, setAddressFields] = useState({ dsender: '', dscompl: '', dsbairr: '', dscidad: '', dsestad: '' })
   const [formError, setFormError] = useState('')
@@ -39,13 +46,18 @@ export function PublicClientSignup() {
     onError: (error) => setFormError(apiErrorMessage(error)),
   })
 
-  async function handleCepBlur(event: React.FocusEvent<HTMLInputElement>) {
-    const cep = event.target.value.replace(/\D/g, '')
-    if (cep.length !== 8) return
-    setCepLoading(true)
+  // Mesmo comportamento do cadastro de clientes: ao completar os 8 números do CEP, o endereço é preenchido.
+  async function changeCep(value: string) {
+    const formatted = formatCep(value)
+    const digits = formatted.replace(/\D/g, '')
+    setCep(formatted)
+    setCepFound(false)
     setCepError('')
+    if (digits.length !== 8) return
+    setCepLoading(true)
     try {
-      const address = await api.addresses.findByCep(cep)
+      const address = await api.addresses.findByCep(digits)
+      setCepFound(true)
       setAddressFields({
         dsender: address.logradouro ?? '',
         dscompl: address.complemento ?? '',
@@ -74,6 +86,18 @@ export function PublicClientSignup() {
     const document = kind === 'PESSOA_JURIDICA' ? cnpj : cpf
     if (!document) {
       setFormError(`Informe o ${kind === 'PESSOA_JURIDICA' ? 'CNPJ' : 'CPF'}.`)
+      return
+    }
+    if (!textValue(data, 'dsemail')) {
+      setFormError('Informe o e-mail.')
+      return
+    }
+    if (!textValue(data, 'nrtele1') && !textValue(data, 'nrtele2')) {
+      setFormError('Informe um telefone ou celular.')
+      return
+    }
+    if (['nrcep', 'dsender', 'dsbairr', 'dscidad', 'dsestad'].some((field) => !textValue(data, field))) {
+      setFormError('Informe o endereço completo: CEP, endereço, bairro, cidade e UF.')
       return
     }
     const dsindic = referralSelection === OTHER_OPTION ? otherReferral.trim() : referralSelection
@@ -160,10 +184,10 @@ export function PublicClientSignup() {
 
           <div className="public-signup__section-title">Contato</div>
           <div className="form-grid form-grid--two">
-            <FormField label="Telefone"><input name="nrtele1" maxLength={20} /></FormField>
-            <FormField label="Celular"><input name="nrtele2" maxLength={20} /></FormField>
+            <FormField label="Telefone *" hint="Informe o telefone ou o celular."><input name="nrtele1" maxLength={20} /></FormField>
+            <FormField label="Celular *" hint="Informe o telefone ou o celular."><input name="nrtele2" maxLength={20} /></FormField>
             <FormField label="Fax"><input name="nrfax" maxLength={20} /></FormField>
-            <FormField label="E-mail"><input name="dsemail" type="email" maxLength={50} /></FormField>
+            <FormField label="E-mail *"><input name="dsemail" type="email" maxLength={50} required /></FormField>
             <FormField label="Indicado por" hint={referralDescriptionsQuery.isLoading ? 'Carregando...' : undefined}>
               <select value={referralSelection} onChange={(event) => setReferralSelection(event.target.value)}>
                 <option value="">Sem indicação</option>
@@ -194,14 +218,14 @@ export function PublicClientSignup() {
 
           <div className="public-signup__section-title">Endereço de cobrança</div>
           <div className="form-grid form-grid--two">
-            <FormField label="CEP" hint={cepLoading ? 'Consultando endereço...' : cepError || 'Digite os 8 números do CEP.'}>
-              <input name="nrcep" inputMode="numeric" maxLength={9} onBlur={handleCepBlur} />
+            <FormField label="CEP *" hint={cepLoading ? 'Consultando endereço...' : cepError || (cepFound ? 'Endereço encontrado e preenchido.' : 'Digite os 8 números do CEP.')}>
+              <div className="cep-input-control"><input name="nrcep" inputMode="numeric" autoComplete="postal-code" maxLength={9} value={cep} onChange={(event) => changeCep(event.target.value)} placeholder="00000-000" required />{cepLoading && <RefreshCw className="api-state__spinner" size={16} />}</div>
             </FormField>
-            <FormField label="Endereço"><input name="dsender" maxLength={255} value={addressFields.dsender} onChange={(event) => setAddressFields((current) => ({ ...current, dsender: event.target.value }))} /></FormField>
+            <FormField label="Endereço *"><input name="dsender" required maxLength={255} value={addressFields.dsender} onChange={(event) => setAddressFields((current) => ({ ...current, dsender: event.target.value }))} /></FormField>
             <FormField label="Complemento"><input name="dscompl" maxLength={100} value={addressFields.dscompl} onChange={(event) => setAddressFields((current) => ({ ...current, dscompl: event.target.value }))} /></FormField>
-            <FormField label="Bairro"><input name="dsbairr" maxLength={100} value={addressFields.dsbairr} onChange={(event) => setAddressFields((current) => ({ ...current, dsbairr: event.target.value }))} /></FormField>
-            <FormField label="Cidade"><input name="dscidad" maxLength={100} value={addressFields.dscidad} onChange={(event) => setAddressFields((current) => ({ ...current, dscidad: event.target.value }))} /></FormField>
-            <FormField label="UF"><input name="dsestad" maxLength={2} value={addressFields.dsestad} onChange={(event) => setAddressFields((current) => ({ ...current, dsestad: event.target.value.toUpperCase() }))} /></FormField>
+            <FormField label="Bairro *"><input name="dsbairr" required maxLength={100} value={addressFields.dsbairr} onChange={(event) => setAddressFields((current) => ({ ...current, dsbairr: event.target.value }))} /></FormField>
+            <FormField label="Cidade *"><input name="dscidad" required maxLength={100} value={addressFields.dscidad} onChange={(event) => setAddressFields((current) => ({ ...current, dscidad: event.target.value }))} /></FormField>
+            <FormField label="UF *"><input name="dsestad" required maxLength={2} value={addressFields.dsestad} onChange={(event) => setAddressFields((current) => ({ ...current, dsestad: event.target.value.toUpperCase() }))} /></FormField>
             <FormField label="Ponto de referência"><input name="dsponto" maxLength={255} /></FormField>
           </div>
 
