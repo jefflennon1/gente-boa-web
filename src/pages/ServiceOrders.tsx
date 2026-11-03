@@ -1356,9 +1356,10 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
       setTab('general')
       return
     }
-    const conflictIndex = scheduleConflicts.findIndex((messages) => messages.length > 0)
+    // Conflito de horário do técnico só bloqueia na finalização; com a OS aberta o horário previsto é apenas referência.
+    const conflictIndex = status === 'FINALIZADA' ? scheduleConflicts.findIndex((messages) => messages.length > 0) : -1
     if (conflictIndex >= 0) {
-      setScheduleError(`Horário conflitante: ${scheduleEmployeeDisplay(schedules[conflictIndex])} já possui atendimento no mesmo horário — ${scheduleConflicts[conflictIndex].join('; ')}. Não é possível salvar o registro.`)
+      setScheduleError(`Horário conflitante: ${scheduleEmployeeDisplay(schedules[conflictIndex])} já possui atendimento no mesmo horário — ${scheduleConflicts[conflictIndex].join('; ')}. Não é possível finalizar a ordem de serviço.`)
       setTab('general')
       return
     }
@@ -1732,8 +1733,8 @@ type AttendanceSheet = {
   completedAttendances: number | null
   orderId: number
   client: string
-  /** Nome fantasia do cliente: no Delphi aparece como "Descrição". */
-  clientDescription: string | null
+  /** Local de atendimento informado na OS (descrição do local cadastrado no contrato). */
+  attendanceLocation: string | null
   searchTarget: string | null
   requester: string | null
   address: string | null
@@ -1758,7 +1759,7 @@ function buildAttendanceSheet(order: ServiceOrder, summary: ServiceOrderListItem
     completedAttendances: summary ? summary.completedAttendances ?? 0 : null,
     orderId: order.id,
     client: clientId ? `${clientId}-${clientName}` : clientName,
-    clientDescription: tradeName?.trim() || null,
+    attendanceLocation: location ? location.description?.trim() || `Local #${location.id}` : null,
     searchTarget: summary?.searchTarget ?? order.procurarpor ?? null,
     requester: summary?.requester ?? order.nmsolic ?? null,
     address: summary?.serviceAddress || (location ? attendanceLocationDisplay(location) : clientAddress) || null,
@@ -1777,7 +1778,7 @@ function attendanceSheetText(sheet: AttendanceSheet) {
     sheet.completedAttendances !== null && `O cliente foi atendido ${sheet.completedAttendances} ${sheet.completedAttendances === 1 ? 'vez' : 'vezes'}.`,
     `O.S.: ${sheet.orderId}`,
     `Cliente: ${sheet.client}`,
-    `Descrição: ${sheet.clientDescription || ''}`,
+    `Local de atendimento: ${sheet.attendanceLocation || ''}`,
     sheet.searchTarget && `Procurar por: ${sheet.searchTarget}`,
     `Solicitante: ${sheet.requester || ''}`,
     `Endereço: ${sheet.address || ''}`,
@@ -1821,7 +1822,7 @@ function AttendanceSheetPanel({ sheet, badges }: { sheet: AttendanceSheet; badge
         <div className="os-attendance-sheet__group">
           <AttendanceSheetRow label="O.S.:">{sheet.orderId}</AttendanceSheetRow>
           <AttendanceSheetRow label="Cliente:">{sheet.client}</AttendanceSheetRow>
-          <AttendanceSheetRow label="Descrição:">{sheet.clientDescription}</AttendanceSheetRow>
+          <AttendanceSheetRow label="Local de atendimento:">{sheet.attendanceLocation}</AttendanceSheetRow>
         </div>
         <div className="os-attendance-sheet__group">
           <AttendanceSheetRow label="Solicitante:">{sheet.requester}</AttendanceSheetRow>
