@@ -10,6 +10,8 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { enumLabel, formatDate, money } from '../lib/format'
 import { flagIsOn, formatCep } from '../components/ClientDetail'
 import { ClientWorkspaceModal } from '../components/ClientWorkspaceModal'
+import { BirthdayField } from '../components/BirthdayField'
+import { formatCnpj, formatCpf, formatPhone, isValidCnpj, isValidCpf, isValidPhone, onlyDigits } from '../lib/clientFields'
 import type { Client, ClientAddress, ClientAddressPayload, ClientKind, ClientListSortBy, ClientPayload, SortDirection } from '../types'
 import { Badge, Button, CollapsibleFilters, ConfirmDialog, EmptyState, ErrorState, FormError, FormField, LoadingState, Modal, ModalForm, PageHeader, StatCard, Toast } from '../components/ui'
 
@@ -83,6 +85,16 @@ const sortOptions: { value: '' | ClientListSortBy; label: string }[] = [
   { value: 'SERVICE_ORDER_COUNT', label: 'Quantidade de OS' },
   { value: 'TOTAL_VALUE', label: 'Valor das OS' },
 ]
+
+/** Aplica a máscara enquanto digita, mantendo o campo não controlado (o valor vai pelo FormData). */
+function masked(format: (value: string) => string) {
+  return (event: React.ChangeEvent<HTMLInputElement>) => { event.currentTarget.value = format(event.currentTarget.value) }
+}
+
+/** Telefones do legado sem DDD ficam como estão; só formata números completos. */
+function phoneDisplay(value?: string | null) {
+  return isValidPhone(value) ? formatPhone(value) : value ?? ''
+}
 
 function textValue(data: FormData, field: string) {
   return String(data.get(field) ?? '').trim()
@@ -419,6 +431,13 @@ export function Clients() {
       setFormError(`Informe o ${kind === 'PESSOA_JURIDICA' ? 'CNPJ' : 'CPF'} do cliente.`)
       return
     }
+    // Documentos antigos do legado podem ter dígito verificador errado: só valida quando o documento foi alterado.
+    const originalDocument = onlyDigits(kind === 'PESSOA_JURIDICA' ? selected?.nrcnpj : selected?.nrcpf)
+    const documentValid = kind === 'PESSOA_JURIDICA' ? isValidCnpj(document) : isValidCpf(document)
+    if (!documentValid && onlyDigits(document) !== originalDocument) {
+      setFormError(`${kind === 'PESSOA_JURIDICA' ? 'CNPJ' : 'CPF'} inválido. Confira os números informados.`)
+      return
+    }
 
     const addresses: ClientAddressPayload[] = additionalAddresses.map((address) => ({
       ...(address.id == null ? {} : { id: address.id }),
@@ -439,16 +458,16 @@ export function Clients() {
       nmrazao: name,
       nmfanta: textValue(data, 'nmfanta'),
       flclien: kind === 'PESSOA_JURIDICA' ? 'J' : 'F',
-      nrcnpj: kind === 'PESSOA_JURIDICA' ? cnpj : null,
-      nrcpf: kind === 'PESSOA_FISICA' ? cpf : null,
+      nrcnpj: kind === 'PESSOA_JURIDICA' ? onlyDigits(cnpj) : null,
+      nrcpf: kind === 'PESSOA_FISICA' ? onlyDigits(cpf) : null,
       dsinscr: textValue(data, 'dsinscr'),
       dtanive: textValue(data, 'dtanive'),
       dtcadas: selected?.dtcadas ?? localDateTimeNow(),
       idusuar: selected?.idusuar ?? currentUser?.id ?? null,
       dsusuario: selected?.dsusuario || currentUser?.name || null,
-      nrtele1: textValue(data, 'nrtele1'),
-      nrtele2: textValue(data, 'nrtele2'),
-      nrfax: textValue(data, 'nrfax'),
+      nrtele1: onlyDigits(textValue(data, 'nrtele1')) || null,
+      nrtele2: onlyDigits(textValue(data, 'nrtele2')) || null,
+      nrfax: onlyDigits(textValue(data, 'nrfax')) || null,
       dsemail: textValue(data, 'dsemail'),
       dsindic: textValue(data, 'dsindic'),
       idindic: nullableNumber(data, 'idindic'),
@@ -549,17 +568,17 @@ export function Clients() {
             <FormField label="Tipo de pessoa"><select name="kind" defaultValue={selected?.kind || 'PESSOA_JURIDICA'}><option value="PESSOA_JURIDICA">Pessoa jurídica</option><option value="PESSOA_FISICA">Pessoa física</option></select></FormField>
             <FormField label="Razão social / Nome"><input name="nmrazao" required maxLength={100} defaultValue={selected?.nmrazao ?? selected?.name ?? ''} /></FormField>
             <FormField label="Fantasia / Apelido"><input name="nmfanta" maxLength={100} defaultValue={selected?.nmfanta ?? ''} /></FormField>
-            <FormField label="CNPJ" hint="Obrigatório para pessoa jurídica"><input name="nrcnpj" maxLength={20} defaultValue={selected?.nrcnpj ?? (selected?.kind === 'PESSOA_JURIDICA' ? selected.document ?? '' : '')} /></FormField>
-            <FormField label="CPF" hint="Obrigatório para pessoa física"><input name="nrcpf" maxLength={15} defaultValue={selected?.nrcpf ?? (selected?.kind === 'PESSOA_FISICA' ? selected.document ?? '' : '')} /></FormField>
+            <FormField label="CNPJ" hint="Obrigatório para pessoa jurídica"><input name="nrcnpj" inputMode="numeric" maxLength={18} placeholder="00.000.000/0000-00" onChange={masked(formatCnpj)} defaultValue={formatCnpj(selected?.nrcnpj ?? (selected?.kind === 'PESSOA_JURIDICA' ? selected.document ?? '' : ''))} /></FormField>
+            <FormField label="CPF" hint="Obrigatório para pessoa física"><input name="nrcpf" inputMode="numeric" maxLength={14} placeholder="000.000.000-00" onChange={masked(formatCpf)} defaultValue={formatCpf(selected?.nrcpf ?? (selected?.kind === 'PESSOA_FISICA' ? selected.document ?? '' : ''))} /></FormField>
             <FormField label="RG / Inscrição estadual"><input name="dsinscr" maxLength={30} defaultValue={selected?.dsinscr ?? ''} /></FormField>
-            <FormField label="Data de aniversário" hint="Formato usado no legado: DD/MM"><input name="dtanive" inputMode="numeric" maxLength={7} placeholder="DD/MM" defaultValue={selected?.dtanive ?? ''} /></FormField>
+            <FormField label="Data de aniversário"><BirthdayField name="dtanive" defaultValue={selected?.dtanive} /></FormField>
           </div>
 
           <div className="form-section-title"><span>2</span><div><strong>Telefones e contatos</strong><small>Contato principal, indicação e pessoas de referência</small></div></div>
           <div className="form-grid form-grid--three">
-            <FormField label="Telefone"><input name="nrtele1" maxLength={15} defaultValue={selected?.nrtele1 ?? selected?.phone ?? ''} /></FormField>
-            <FormField label="Celular"><input name="nrtele2" maxLength={15} defaultValue={selected?.nrtele2 ?? ''} /></FormField>
-            <FormField label="Fax"><input name="nrfax" maxLength={15} defaultValue={selected?.nrfax ?? ''} /></FormField>
+            <FormField label="Telefone"><input name="nrtele1" type="tel" inputMode="numeric" maxLength={15} placeholder="(85) 99999-9999" onChange={masked(formatPhone)} defaultValue={phoneDisplay(selected?.nrtele1 ?? selected?.phone)} /></FormField>
+            <FormField label="Celular"><input name="nrtele2" type="tel" inputMode="numeric" maxLength={15} placeholder="(85) 99999-9999" onChange={masked(formatPhone)} defaultValue={phoneDisplay(selected?.nrtele2)} /></FormField>
+            <FormField label="Fax"><input name="nrfax" type="tel" inputMode="numeric" maxLength={15} placeholder="(85) 3333-4444" onChange={masked(formatPhone)} defaultValue={phoneDisplay(selected?.nrfax)} /></FormField>
           </div>
           <div className="form-grid form-grid--two form-grid--spaced">
             <FormField label="E-mail"><input name="dsemail" type="email" maxLength={50} defaultValue={selected?.dsemail ?? selected?.email ?? ''} /></FormField>

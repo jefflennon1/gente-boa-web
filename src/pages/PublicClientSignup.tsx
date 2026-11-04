@@ -5,6 +5,8 @@ import { api } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import type { ClientKind, PublicClientSignupPayload } from '../types'
 import { Button, FormError, FormField } from '../components/ui'
+import { BirthdayField } from '../components/BirthdayField'
+import { formatCnpj, formatCpf, formatPhone, isValidCnpj, isValidCpf, isValidPhone, onlyDigits } from '../lib/clientFields'
 
 const OTHER_OPTION = '__outro__'
 
@@ -18,6 +20,11 @@ function referralDisplayName(description: string) {
 function formatCep(value: string) {
   const digits = value.replace(/\D/g, '').slice(0, 8)
   return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits
+}
+
+/** Aplica a máscara enquanto digita, mantendo o campo não controlado (o valor vai pelo FormData). */
+function masked(format: (value: string) => string) {
+  return (event: React.ChangeEvent<HTMLInputElement>) => { event.currentTarget.value = format(event.currentTarget.value) }
 }
 
 function textValue(data: FormData, name: string) {
@@ -88,12 +95,21 @@ export function PublicClientSignup() {
       setFormError(`Informe o ${kind === 'PESSOA_JURIDICA' ? 'CNPJ' : 'CPF'}.`)
       return
     }
+    if (kind === 'PESSOA_JURIDICA' ? !isValidCnpj(document) : !isValidCpf(document)) {
+      setFormError(`${kind === 'PESSOA_JURIDICA' ? 'CNPJ' : 'CPF'} inválido. Confira os números informados.`)
+      return
+    }
     if (!textValue(data, 'dsemail')) {
       setFormError('Informe o e-mail.')
       return
     }
-    if (!textValue(data, 'nrtele1') && !textValue(data, 'nrtele2')) {
-      setFormError('Informe um telefone ou celular.')
+    if (!isValidPhone(textValue(data, 'nrtele1'))) {
+      setFormError('Informe o telefone com DDD.')
+      return
+    }
+    const invalidOptionalPhone = ['nrtele2', 'nrfax'].find((field) => textValue(data, field) && !isValidPhone(textValue(data, field)))
+    if (invalidOptionalPhone) {
+      setFormError(`${invalidOptionalPhone === 'nrfax' ? 'Fax' : 'Celular'} inválido. Informe o número com DDD.`)
       return
     }
     if (['nrcep', 'dsender', 'dsbairr', 'dscidad', 'dsestad'].some((field) => !textValue(data, field))) {
@@ -106,23 +122,23 @@ export function PublicClientSignup() {
       kind,
       nmrazao: name,
       nmfanta: textValue(data, 'nmfanta'),
-      nrcnpj: kind === 'PESSOA_JURIDICA' ? cnpj : '',
-      nrcpf: kind === 'PESSOA_FISICA' ? cpf : '',
+      nrcnpj: kind === 'PESSOA_JURIDICA' ? onlyDigits(cnpj) : '',
+      nrcpf: kind === 'PESSOA_FISICA' ? onlyDigits(cpf) : '',
       dsinscr: textValue(data, 'dsinscr'),
       dtanive: textValue(data, 'dtanive'),
-      nrtele1: textValue(data, 'nrtele1'),
-      nrtele2: textValue(data, 'nrtele2'),
-      nrfax: textValue(data, 'nrfax'),
+      nrtele1: onlyDigits(textValue(data, 'nrtele1')),
+      nrtele2: onlyDigits(textValue(data, 'nrtele2')),
+      nrfax: onlyDigits(textValue(data, 'nrfax')),
       dsemail: textValue(data, 'dsemail'),
       dsindic,
       nmcont1: textValue(data, 'nmcont1'),
-      nrtelc1: textValue(data, 'nrtelc1'),
+      nrtelc1: onlyDigits(textValue(data, 'nrtelc1')),
       nmcont2: textValue(data, 'nmcont2'),
-      nrtelc2: textValue(data, 'nrtelc2'),
+      nrtelc2: onlyDigits(textValue(data, 'nrtelc2')),
       nmcont3: textValue(data, 'nmcont3'),
-      nrtelc3: textValue(data, 'nrtelc3'),
+      nrtelc3: onlyDigits(textValue(data, 'nrtelc3')),
       nmcont4: textValue(data, 'nmcont4'),
-      nrtelc4: textValue(data, 'nrtelc4'),
+      nrtelc4: onlyDigits(textValue(data, 'nrtelc4')),
       dsender: textValue(data, 'dsender'),
       dscompl: textValue(data, 'dscompl'),
       dsbairr: textValue(data, 'dsbairr'),
@@ -175,18 +191,18 @@ export function PublicClientSignup() {
               <input name="nmrazao" maxLength={100} required />
             </FormField>
             <FormField label="Fantasia / Apelido"><input name="nmfanta" maxLength={100} /></FormField>
-            <FormField label="Data de aniversário" hint="Formato DD/MM"><input name="dtanive" placeholder="DD/MM" maxLength={5} /></FormField>
+            <FormField label="Data de aniversário"><BirthdayField name="dtanive" /></FormField>
             {kind === 'PESSOA_JURIDICA'
-              ? <FormField label="CNPJ *"><input name="nrcnpj" maxLength={20} required /></FormField>
-              : <FormField label="CPF *"><input name="nrcpf" maxLength={15} required /></FormField>}
+              ? <FormField label="CNPJ *"><input key="nrcnpj" name="nrcnpj" inputMode="numeric" maxLength={18} placeholder="00.000.000/0000-00" onChange={masked(formatCnpj)} required /></FormField>
+              : <FormField label="CPF *"><input key="nrcpf" name="nrcpf" inputMode="numeric" maxLength={14} placeholder="000.000.000-00" onChange={masked(formatCpf)} required /></FormField>}
             <FormField label="RG / Inscrição estadual"><input name="dsinscr" maxLength={30} /></FormField>
           </div>
 
           <div className="public-signup__section-title">Contato</div>
           <div className="form-grid form-grid--two">
-            <FormField label="Telefone *" hint="Informe o telefone ou o celular."><input name="nrtele1" maxLength={20} /></FormField>
-            <FormField label="Celular *" hint="Informe o telefone ou o celular."><input name="nrtele2" maxLength={20} /></FormField>
-            <FormField label="Fax"><input name="nrfax" maxLength={20} /></FormField>
+            <FormField label="Telefone *"><input name="nrtele1" type="tel" inputMode="numeric" maxLength={15} placeholder="(85) 99999-9999" onChange={masked(formatPhone)} required /></FormField>
+            <FormField label="Celular"><input name="nrtele2" type="tel" inputMode="numeric" maxLength={15} placeholder="(85) 99999-9999" onChange={masked(formatPhone)} /></FormField>
+            <FormField label="Fax"><input name="nrfax" type="tel" inputMode="numeric" maxLength={15} placeholder="(85) 3333-4444" onChange={masked(formatPhone)} /></FormField>
             <FormField label="E-mail *"><input name="dsemail" type="email" maxLength={50} required /></FormField>
             <FormField label="Indicado por" hint={referralDescriptionsQuery.isLoading ? 'Carregando...' : undefined}>
               <select value={referralSelection} onChange={(event) => setReferralSelection(event.target.value)}>
@@ -207,13 +223,13 @@ export function PublicClientSignup() {
           <div className="public-signup__section-title">Outros contatos</div>
           <div className="form-grid form-grid--two">
             <FormField label="Contato 1"><input name="nmcont1" maxLength={100} /></FormField>
-            <FormField label="Fone do contato 1"><input name="nrtelc1" maxLength={20} /></FormField>
+            <FormField label="Fone do contato 1"><input name="nrtelc1" type="tel" inputMode="numeric" maxLength={15} placeholder="(85) 99999-9999" onChange={masked(formatPhone)} /></FormField>
             <FormField label="Contato 2"><input name="nmcont2" maxLength={100} /></FormField>
-            <FormField label="Fone do contato 2"><input name="nrtelc2" maxLength={20} /></FormField>
+            <FormField label="Fone do contato 2"><input name="nrtelc2" type="tel" inputMode="numeric" maxLength={15} placeholder="(85) 99999-9999" onChange={masked(formatPhone)} /></FormField>
             <FormField label="Contato 3"><input name="nmcont3" maxLength={100} /></FormField>
-            <FormField label="Fone do contato 3"><input name="nrtelc3" maxLength={20} /></FormField>
+            <FormField label="Fone do contato 3"><input name="nrtelc3" type="tel" inputMode="numeric" maxLength={15} placeholder="(85) 99999-9999" onChange={masked(formatPhone)} /></FormField>
             <FormField label="Contato 4"><input name="nmcont4" maxLength={100} /></FormField>
-            <FormField label="Fone do contato 4"><input name="nrtelc4" maxLength={20} /></FormField>
+            <FormField label="Fone do contato 4"><input name="nrtelc4" type="tel" inputMode="numeric" maxLength={15} placeholder="(85) 99999-9999" onChange={masked(formatPhone)} /></FormField>
           </div>
 
           <div className="public-signup__section-title">Endereço de cobrança</div>
