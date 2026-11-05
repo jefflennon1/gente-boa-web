@@ -890,6 +890,14 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     ? selected.schedules.map((item, index) => ({ ...item, ...(!item.employeeId ? waitingEmployee : {}), serviceId: item.serviceId ?? initialSingleServiceId, rowKey: `schedule-${item.scheduleId ?? index}` }))
     : [{ rowKey: 'schedule-new-0', expectedDate: dateTime(initialDate), expectedStart: '', expectedEnd: '', expectedDuration: '00:00', ...waitingEmployee, serviceId: initialSingleServiceId ?? defaultScheduleServiceId }])
   const [serviceItems, setServiceItems] = useState<ServiceDraft[]>(() => selected?.serviceItems?.map((item, index) => ({ ...item, rowKey: `service-${item.serviceId}-${index}` })) ?? [])
+  // O serviço executado em cada agendamento entra automaticamente na relação de serviços cadastrados (no Delphi não
+  // era preciso incluí-lo à mão, e a OS nova já vem com MÃO DE OBRA no agendamento).
+  useEffect(() => {
+    const missing = catalog.filter((service) => schedules.some((schedule) => schedule.serviceId === service.id)
+      && !serviceItems.some((item) => item.serviceId === service.id))
+    if (missing.length === 0) return
+    setServiceItems((current) => [...current, ...missing.filter((service) => !current.some((item) => item.serviceId === service.id)).map(serviceDraft)])
+  }, [catalog, schedules, serviceItems])
   const purchaseIndex = Math.min(activePurchaseIndex, purchases.length - 1)
   const activePurchase = purchases[purchaseIndex]
   const materialItems = activePurchase.items
