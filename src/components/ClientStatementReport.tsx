@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/services'
 import { enumLabel, formatDate } from '../lib/format'
-import type { BillDetail, ClientStatementDetail, ClientStatementLocation } from '../types'
+import type { BillDetail, ClientStatementDetail, ClientStatementLocation, ClientStatementResume } from '../types'
 import { formatMinutes } from './BillingDetails'
 import { TaxRetentionNotice } from './TaxRetention'
 
@@ -24,6 +24,51 @@ const orderType = (order: BillDetail) => `${enumLabel(order.serviceOrderOrigin)}
 function locationAddress(location: ClientStatementLocation) {
   const address = [location.address, location.complement, location.district, location.city, location.zipCode ? `CEP ${location.zipCode}` : null].filter(Boolean).join(', ')
   return location.referencePoint ? [address, `Ref.: ${location.referencePoint}`].filter(Boolean).join(' · ') : address
+}
+
+/**
+ * Seção "Resumo" no topo do extrato, no modelo do extrato do sistema anterior: contrato (valores, horas e tarifas de
+ * hora/minuto extra) e valores do período por tipo. Todas as linhas aparecem, mesmo zeradas.
+ */
+function StatementResume({ resume }: { resume: ClientStatementResume }) {
+  const contract = resume.contractId != null
+  const row = (label: string, value: string, className?: string) => <tr className={className}><th>{label}</th><td className="num">{value}</td></tr>
+  return <section>
+    <h3>Resumo</h3>
+    <div className="statement-report__resume">
+      <table className="statement-report__table statement-report__summary"><thead><tr><th colSpan={2}>Contrato</th></tr></thead><tbody>
+        {row('Contrato', contract ? `#${resume.contractId} · ${resume.contractStatus === 'CANCELADO' ? 'Cancelado' : 'Ativo'}` : 'Avulso (sem contrato)')}
+        {row('Início / renovação', contract ? `${formatDate(resume.contractDate)} · ${formatDate(resume.renewalDate)}` : '—')}
+        {row('Dia de vencimento', resume.dueDay != null ? String(resume.dueDay) : '—')}
+        {row('Taxa de adesão', num(resume.adhesionFee))}
+        {row('Valor mensal do contrato', num(resume.monthlyAmount))}
+        {row(`Parcelas com vencimento no período (${resume.installmentCount})`, num(resume.installmentAmount))}
+        {row('Valor da hora contratada', num(resume.hourValue))}
+        {row('Valor da hora extra', num(resume.extraHourValue))}
+        {row('Valor do minuto extra', num(resume.extraMinuteValue))}
+        {row('Horas contratadas no período', formatMinutes(resume.contractedMinutes))}
+        {row('Horas de bonificação (mês)', formatMinutes(resume.bonusMinutes))}
+        {row('Horas utilizadas', formatMinutes(resume.usedMinutes))}
+        {row('Saldo de horas', formatMinutes(resume.availableMinutes))}
+        {row('Horas excedentes', formatMinutes(resume.extraMinutes), resume.extraMinutes > 0 ? 'statement-report__alert' : undefined)}
+      </tbody></table>
+      <table className="statement-report__table statement-report__summary"><thead><tr><th colSpan={2}>Valores do período</th></tr></thead><tbody>
+        {row('Mão de obra (serviços e hora extra)', num(resume.laborAmount))}
+        {row('Compra de materiais', num(resume.materialAmount))}
+        {row(`Taxa de transporte (${resume.transportOrderCount} OS)`, num(resume.transportAmount))}
+        {row('Taxa de boleto', num(resume.billFeeAmount))}
+        {row('Aluguel de equipamento', num(resume.rentalAmount))}
+        {row('Valores diversos', num(resume.otherAmount))}
+        {row('Descontos', resume.discountAmount ? `-${num(resume.discountAmount)}` : num(0))}
+        {row('Total das OS', num(resume.ordersAmount))}
+        {row('Parcelas do contrato', num(resume.installmentAmount))}
+        <tr className="statement-report__total"><th>Total do período (contrato + OS)</th><td className="num">R$ {num(resume.totalAmount)}</td></tr>
+      </tbody></table>
+    </div>
+    {resume.services.length > 1 && <table className="statement-report__table"><thead><tr><th>Serviço do contrato</th><th className="num">Horas/mês</th><th className="num">Vr. hora</th><th className="num">Vr. hora extra</th><th className="num">Vr. minuto extra</th><th className="num">Vr. mensal</th></tr></thead>
+      <tbody>{resume.services.map((service, index) => <tr key={`${service.serviceId}-${index}`}><td>{service.description || `#${service.serviceId}`}</td><td className="num">{formatMinutes(service.monthlyMinutes)}</td><td className="num">{num(service.hourValue)}</td><td className="num">{num(service.extraHourValue)}</td><td className="num">{num(service.extraMinuteValue)}</td><td className="num">{num(service.monthlyAmount)}</td></tr>)}</tbody>
+    </table>}
+  </section>
 }
 
 function minutesOf(value?: string | null) {
@@ -52,15 +97,7 @@ export function ClientStatementReport({ statement }: { statement: ClientStatemen
     discount: sum(values, (item) => item.discount),
     total: sum(values, (item) => item.total),
   }
-  const misc = {
-    billFee: sum(orders, (order) => order.billFeeAmount),
-    transport: sum(orders, (order) => order.transportAmount),
-    rental: sum(orders, (order) => order.rentalAmount),
-    other: sum(orders, (order) => order.otherAmount),
-  }
   const hasDiscount = totals.discount > 0
-  const miscParts = ([['taxa de boleto', misc.billFee], ['transporte', misc.transport], ['aluguel', misc.rental], ['outros', misc.other]] as Array<[string, number]>)
-    .filter(([, amount]) => amount !== 0).map(([label, amount]) => `${label} ${num(amount)}`)
   const clientName = statement.clientTradeName || statement.clientName || `Cliente #${statement.clientId}`
   const usedIds = new Set<number>()
   const groups: Array<{ key: string; title: string; location: ClientStatementLocation | null; orders: Array<{ order: BillDetail; value: ReturnType<typeof orderValues> }>; minutes: number }> = [
@@ -99,6 +136,8 @@ export function ClientStatementReport({ statement }: { statement: ClientStatemen
       <TaxRetentionNotice retention={statement.taxRetention} className="statement-report__retention" />
     </section>
 
+    {statement.resume && <StatementResume resume={statement.resume} />}
+
     <section>
       <h3>Utilização de horas</h3>
       <table className="statement-report__table"><thead><tr><th>Horas contratadas</th><th>Horas utilizadas</th><th>Saldo do período</th><th>Horas excedentes</th><th>Ordens de serviço</th><th>Locais de atendimento</th></tr></thead>
@@ -126,17 +165,6 @@ export function ClientStatementReport({ statement }: { statement: ClientStatemen
         </tr>)}</tbody>
       </table>
     </section>}
-
-    <section>
-      <h3>Resumo de valores</h3>
-      <table className="statement-report__table statement-report__summary"><tbody>
-        <tr><th>Mão de obra (serviços)</th><td className="num">{num(totals.labor)}</td></tr>
-        <tr><th>Materiais</th><td className="num">{num(totals.material)}</td></tr>
-        {totals.misc !== 0 && <tr><th>Outras despesas{miscParts.length > 0 && <small> ({miscParts.join(' · ')})</small>}</th><td className="num">{num(totals.misc)}</td></tr>}
-        {hasDiscount && <tr><th>Descontos</th><td className="num">-{num(totals.discount)}</td></tr>}
-        <tr className="statement-report__total"><th>Total do período</th><td className="num">R$ {num(totals.total)}</td></tr>
-      </tbody></table>
-    </section>
 
     <section>
       <h3>Ordens de serviço</h3>

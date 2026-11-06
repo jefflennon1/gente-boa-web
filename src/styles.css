@@ -1330,6 +1330,9 @@ input.payable-balance-paid { color: #08705f; font-weight: 750; }
 .statement-report__summary { width: min(520px, 100%); }
 .statement-report__summary th { font-weight: 400; }
 .statement-report__summary small { color: #555; }
+.statement-report__resume { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; align-items: start; }
+.statement-report__resume .statement-report__summary { width: 100%; }
+.statement-report__resume thead th { background: #dedede; font-weight: 700; text-align: left; }
 .statement-report__total th, .statement-report__total td { background: #f2f2f2; font-size: 13px; font-weight: 700 !important; }
 .statement-report__alert { color: #b42318; font-weight: 700; }
 .statement-report__order { margin-top: 12px; padding: 10px 12px; border: 1px solid #9a9a9a; break-inside: avoid; }

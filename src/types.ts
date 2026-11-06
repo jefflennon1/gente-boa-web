@@ -1541,6 +1541,39 @@ export interface ClientStatementDetail extends ClientStatementSummary {
   orders: BillDetail[]
   attendanceLocations: ClientStatementLocation[]
   taxRetention?: ClientTaxRetention | null
+  /** Seção "Resumo" do topo do extrato: contrato e valores do período, mesmo zerados. */
+  resume?: ClientStatementResume | null
+}
+
+export interface ClientStatementResume {
+  contractId: number | null
+  contractStatus: 'ATIVO' | 'CANCELADO' | null
+  contractDate: string | null
+  renewalDate: string | null
+  dueDay: number | null
+  adhesionFee: number
+  monthlyAmount: number
+  installmentCount: number
+  installmentAmount: number
+  hourValue: number
+  extraHourValue: number
+  extraMinuteValue: number
+  contractedMinutes: number
+  bonusMinutes: number
+  usedMinutes: number
+  availableMinutes: number
+  extraMinutes: number
+  services: Array<{ serviceId: number | null; description: string | null; monthlyMinutes: number; hourValue: number; extraHourValue: number; extraMinuteValue: number; monthlyAmount: number }>
+  laborAmount: number
+  materialAmount: number
+  transportOrderCount: number
+  transportAmount: number
+  billFeeAmount: number
+  rentalAmount: number
+  otherAmount: number
+  discountAmount: number
+  ordersAmount: number
+  totalAmount: number
 }
 
 export interface ClientStatementLocation {
