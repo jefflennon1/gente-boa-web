@@ -62,6 +62,8 @@ function StatementResume({ resume }: { resume: ClientStatementResume }) {
         {row('Descontos', resume.discountAmount ? `-${num(resume.discountAmount)}` : num(0))}
         {row('Total das OS', num(resume.ordersAmount))}
         {row('Parcelas do contrato', num(resume.installmentAmount))}
+        {row('Retém ISS na fonte', resume.issRetained ? `Sim${resume.issRate != null ? ` (${num(resume.issRate)}%)` : ''}` : 'Não')}
+        {row('ISS retido no período', resume.issRetainedAmount ? `-${num(resume.issRetainedAmount)}` : num(0))}
         <tr className="statement-report__total"><th>Total do período (contrato + OS)</th><td className="num">R$ {num(resume.totalAmount)}</td></tr>
       </tbody></table>
     </div>

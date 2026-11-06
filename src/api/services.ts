@@ -134,6 +134,8 @@ export type ServiceOrderListParams = {
   category?: string
   technicianId?: number
   clientId?: number
+  /** Painel de OS: repete a OS uma vez por profissional (agendamento), como no Delphi. */
+  perProfessional?: boolean
   page?: number
   size?: number
 }
@@ -526,8 +528,8 @@ export const api = {
       const { data } = await http.put<ServiceOrder>(`/service-orders/${id}/status`, null, { params: { status } })
       return data
     },
-    async updateOperationalFlag(id: number, flag: ServiceOrderOperationalFlag, checked: boolean) {
-      const { data } = await http.put<ServiceOrder>(`/service-orders/${id}/operational-flag`, { flag, checked })
+    async updateOperationalFlag(id: number, flag: ServiceOrderOperationalFlag, checked: boolean, scheduleId?: number | null) {
+      const { data } = await http.put<ServiceOrder>(`/service-orders/${id}/operational-flag`, { flag, checked, scheduleId: scheduleId ?? null })
       return data
     },
     async startTracking(id: number, payload: { scheduleId: number; serviceId?: number | null; employeeId?: number | null; startedAt: string }) {

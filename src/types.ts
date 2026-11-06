@@ -850,6 +850,8 @@ export interface ServiceOrderListItem {
   finished: boolean
   tracking?: ServiceOrderTracking | null
   serviceDescriptions: string[]
+  /** Agendamento (profissional) da linha no painel de OS; a OS se repete por profissional. */
+  scheduleId?: number | null
 }
 
 export interface ServiceOrder {
@@ -1573,6 +1575,9 @@ export interface ClientStatementResume {
   otherAmount: number
   discountAmount: number
   ordersAmount: number
+  issRetained: boolean
+  issRate: number | null
+  issRetainedAmount: number
   totalAmount: number
 }
 

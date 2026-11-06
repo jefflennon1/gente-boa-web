@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
 import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, ClipboardList, Clock3, Copy, Columns3, Edit3, FilePlus2, List, ListPlus, MapPin, Play, Plus, Search, Square, Trash2, UserRound, Wrench, X } from 'lucide-react'
+import { Building2, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, ClipboardList, Clock3, Copy, Columns3, Edit3, FilePlus2, List, ListPlus, MapPin, Play, Plus, Search, Square, Trash2, UserPlus, UserRound, Wrench, X } from 'lucide-react'
 import { api, queryKeys } from '../api/services'
 import { apiErrorMessage } from '../api/client'
 import { useAuth } from '../auth'
@@ -74,6 +74,8 @@ type TimerAction = {
   serviceDescription: string
   employeeId: number | null
   employeeName: string
+  /** Profissionais do mesmo horário (OS com vários profissionais): o cronômetro inicia/para todos juntos. */
+  members: Array<{ scheduleId: number; serviceId: number; employeeId: number | null; employeeName: string; trackingId?: number }>
 }
 
 function localToday() {
@@ -413,6 +415,8 @@ export function ServiceOrders() {
       origin: originFilter || undefined,
       category: categoryFilter || undefined,
       technicianId: technicianFilter?.id,
+      // Como no Delphi: a OS aparece uma vez por profissional, cada linha com o horário do agendamento dele.
+      perProfessional: true,
       page,
       size: pageSize,
     }),
@@ -474,8 +478,9 @@ export function ServiceOrders() {
     },
   })
   const operationalFlagMutation = useMutation({
-    mutationFn: ({ id, flag, checked }: { id: number; flag: ServiceOrderOperationalFlag; checked: boolean }) => api.serviceOrders.updateOperationalFlag(id, flag, checked),
-    onMutate: async ({ id, flag, checked }) => {
+    // scheduleId: linha de um profissional no painel (só o agendamento dele muda); sem ele, todos os da OS.
+    mutationFn: ({ id, flag, checked, scheduleId }: { id: number; flag: ServiceOrderOperationalFlag; checked: boolean; scheduleId?: number | null }) => api.serviceOrders.updateOperationalFlag(id, flag, checked, scheduleId),
+    onMutate: async ({ id, flag, checked, scheduleId }) => {
       const detailKey = [...queryKeys.serviceOrders, 'detail', id] as const
       await Promise.all([
         queryClient.cancelQueries({ queryKey: ordersQueryKey, exact: true }),
@@ -486,7 +491,7 @@ export function ServiceOrders() {
       queryClient.setQueryData<PagedResponse<ServiceOrderListItem>>(ordersQueryKey, (current) => current ? {
         ...current,
         // Reordena na hora do clique; a nova busca na API (onSuccess) confirma a posição entre as páginas.
-        content: current.content.map((order) => order.id === id ? patchListFlag(order, flag, checked) : order)
+        content: current.content.map((order) => order.id === id && (scheduleId == null || order.scheduleId === scheduleId) ? patchListFlag(order, flag, checked) : order)
           .sort(compareOrdersForPanel),
       } : current)
       queryClient.setQueryData<ServiceOrder>(detailKey, (current) => current ? patchDetailFlag(current, flag, checked) : current)
@@ -505,21 +510,29 @@ export function ServiceOrders() {
     },
   })
   const trackingMutation = useMutation({
-    mutationFn: async ({ action, dateTime }: { action: TimerAction; dateTime: string }) => action.mode === 'start'
-      ? api.serviceOrders.startTracking(action.orderId, {
-          scheduleId: action.scheduleId,
-          serviceId: action.serviceId,
-          employeeId: action.employeeId,
-          startedAt: `${dateTime}:00`,
-        })
-      : api.serviceOrders.stopTracking(action.orderId, action.trackingId!, `${dateTime}:00`),
-    onSuccess: async (tracking) => {
+    // Um registro por profissional: em OS com equipe, inicia/para o atendimento de cada um no mesmo horário.
+    mutationFn: async ({ action, dateTime }: { action: TimerAction; dateTime: string }) => {
+      let last: Awaited<ReturnType<typeof api.serviceOrders.startTracking>> | null = null
+      for (const member of action.members) {
+        last = action.mode === 'start'
+          ? await api.serviceOrders.startTracking(action.orderId, {
+              scheduleId: member.scheduleId,
+              serviceId: member.serviceId,
+              employeeId: member.employeeId,
+              startedAt: `${dateTime}:00`,
+            })
+          : await api.serviceOrders.stopTracking(action.orderId, member.trackingId!, `${dateTime}:00`)
+      }
+      return last!
+    },
+    onSuccess: async (tracking, variables) => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.serviceOrders })
       setTimerAction(null)
       setTimerError('')
+      const team = variables.action.members.length > 1 ? ` (${variables.action.members.length} profissionais)` : ''
       showToast(tracking.running
-        ? `Atendimento da ${tracking.serviceOrderId} iniciado às ${tracking.startTime}.`
-        : `Atendimento da ${tracking.serviceOrderId} encerrado com ${tracking.duration || '00:00'}.`)
+        ? `Atendimento da ${tracking.serviceOrderId} iniciado às ${tracking.startTime}${team}.`
+        : `Atendimento da ${tracking.serviceOrderId} encerrado com ${tracking.duration || '00:00'}${team}.`)
     },
     onError: (error) => setTimerError(apiErrorMessage(error)),
   })
@@ -643,16 +656,18 @@ export function ServiceOrders() {
         queryFn: () => api.serviceOrders.find(order.id),
       })
       const trackingDetails = completeOrder.trackingDetails ?? []
-      const running = trackingDetails.find((tracking) => tracking.running)
+      const runningRows = trackingDetails.filter((tracking) => tracking.running)
+      const running = runningRows[0]
       if (running) {
-        if (running.scheduleId == null || running.serviceId == null) {
+        if (runningRows.some((tracking) => tracking.scheduleId == null || tracking.serviceId == null)) {
           showToast('O acompanhamento em andamento não possui serviço ou agendamento vinculado.')
           return
         }
+        const members = runningRows.map((tracking) => ({ scheduleId: tracking.scheduleId!, serviceId: tracking.serviceId!, employeeId: tracking.employeeId, employeeName: tracking.employeeName || 'Funcionário não informado', trackingId: tracking.id }))
         setTimerAction({
-          mode: 'stop', orderId: order.id, trackingId: running.id, scheduleId: running.scheduleId,
-          serviceId: running.serviceId, serviceDescription: running.serviceDescription,
-          employeeId: running.employeeId, employeeName: running.employeeName,
+          mode: 'stop', orderId: order.id, trackingId: running.id, scheduleId: running.scheduleId!,
+          serviceId: running.serviceId!, serviceDescription: running.serviceDescription,
+          employeeId: running.employeeId, employeeName: members.map((member) => member.employeeName).join(', '), members,
         })
         setTimerDateTime(localDateTimeNow())
         setTimerError('')
@@ -675,11 +690,17 @@ export function ServiceOrders() {
         return
       }
       const serviceDescription = catalogQuery.data?.content.find((service) => service.id === serviceId)?.description || `Serviço #${serviceId}`
-      const employeeName = schedule.employeeName || schedule.employeeNickname
-        || (schedule.employeeId ? `Funcionário #${schedule.employeeId}` : 'Funcionário não informado')
+      const nameOf = (item: ServiceOrderSchedule) => item.employeeName || item.employeeNickname
+        || (item.employeeId ? `Funcionário #${item.employeeId}` : 'Funcionário não informado')
+      // Equipe: os outros profissionais do mesmo dia e horário previsto, ainda sem atendimento, iniciam junto.
+      const sameSlot = (item: ServiceOrderSchedule) => toDateInput(item.expectedDate) === toDateInput(schedule.expectedDate)
+        && (item.expectedStart || '') === (schedule.expectedStart || '')
+      const members = (completeOrder.schedules ?? [])
+        .filter((item) => item.scheduleId != null && !trackedScheduleIds.has(item.scheduleId) && (item.scheduleId === schedule.scheduleId || (sameSlot(item) && item.employeeId != null && item.employeeId !== waitingEmployee.employeeId)))
+        .map((item) => ({ scheduleId: item.scheduleId!, serviceId: item.serviceId ?? serviceId, employeeId: item.employeeId ?? null, employeeName: nameOf(item) }))
       setTimerAction({
         mode: 'start', orderId: order.id, scheduleId: schedule.scheduleId, serviceId,
-        serviceDescription, employeeId: schedule.employeeId ?? null, employeeName,
+        serviceDescription, employeeId: schedule.employeeId ?? null, employeeName: members.map((member) => member.employeeName).join(', '), members,
       })
       setTimerDateTime(schedule.actualStart
         ? `${toDateInput(schedule.actualDate) || localToday()}T${schedule.actualStart}`
@@ -743,7 +764,7 @@ export function ServiceOrders() {
         {stages.map((stage) => {
           const stageOrders = orders.filter((order) => order.status === stage)
           return <section className={`kanban-column kanban-column--${stage.toLowerCase()}`} key={stage}><header><span><i />{enumLabel(stage)}</span><b>{stageOrders.length}</b></header><div className="kanban-column__body">
-            {stageOrders.map((order) => <article className={`os-card ${order.scheduledTime ? 'os-card--scheduled' : ''}`} key={order.id} onClick={() => setDetailId(order.id)}>
+            {stageOrders.map((order) => <article className={`os-card ${order.scheduledTime ? 'os-card--scheduled' : ''}`} key={`${order.id}-${order.scheduleId ?? 0}`} onClick={() => setDetailId(order.id)}>
               <div className="os-card__top"><span>OS-{order.id}</span><div>{order.priority === 'URGENTE' && <Badge tone="red">Urgente</Badge>}<span className="os-card__origin">{order.origin === 'C' ? 'Contrato' : 'Avulsa'}</span></div></div>
               {order.scheduledTime && <div className="os-card__appointment"><Clock3 size={16} /><span><strong>Hora marcada</strong><small>{order.scheduledAt ? formatDate(order.scheduledAt) : formatDate(order.orderedAt)}{order.scheduledStart ? ` às ${order.scheduledStart}` : ''}{order.scheduledEnd ? `–${order.scheduledEnd}` : ''}</small></span></div>}
               <h3>{order.clientTradeName || order.clientName || 'Cliente não identificado'}</h3>{order.clientTradeName && order.clientName && <small className="os-card__company-name">{order.clientName}</small>}
@@ -774,7 +795,7 @@ export function ServiceOrders() {
       <th className="os-status-heading">Urgente</th><th className="os-status-heading">Hora marcada</th><th className="os-status-heading">Encaminhada</th><th className="os-status-heading">Iniciada</th><th className="os-status-heading">Finalizada</th> </tr></thead><tbody>{orders.map((order) => {
         const professionals = order.professionalNames?.length ? order.professionalNames : ['AGUARDANDO']
         const waitingProfessional = professionals.some((name) => name.trim().toUpperCase().includes('AGUARDANDO'))
-        return <tr key={order.id} onClick={() => setDetailId(order.id)}>
+        return <tr key={`${order.id}-${order.scheduleId ?? 0}`} onClick={() => setDetailId(order.id)}>
           <td><strong>{order.id}</strong></td>
           <td><strong className="table-primary">{order.clientTradeName || order.clientName || 'Cliente não identificado'}</strong><small className="table-secondary">Cliente #{order.clientId || '—'}</small></td>
           {/* <td>{order.requester || '—'}</td> */}
@@ -785,7 +806,7 @@ export function ServiceOrders() {
           {/* <td>{order.origin === 'C' ? 'Contrato' : 'Avulsa'}</td> */}
           {/* <td>{money(order.totalValue)}</td> */}
           {/* <td><Badge tone={statusTone[order.status]}>{enumLabel(order.status)}</Badge></td> */}
-          {operationalFlags.map((item) => <td className="os-status-cell" key={item.flag}><OperationalCheckbox active={listFlagValue(order, item.flag)} label={item.label} tone={item.tone} disabled={order.status === 'CANCELADA' || operationalFlagMutation.isPending} onChange={(checked) => operationalFlagMutation.mutate({ id: order.id, flag: item.flag, checked })} /></td>)}
+          {operationalFlags.map((item) => <td className="os-status-cell" key={item.flag}><OperationalCheckbox active={listFlagValue(order, item.flag)} label={item.label} tone={item.tone} disabled={order.status === 'CANCELADA' || operationalFlagMutation.isPending} onChange={(checked) => operationalFlagMutation.mutate({ id: order.id, flag: item.flag, checked, scheduleId: order.scheduleId ?? null })} /></td>)}
           {/* <td><button className="row-action" aria-label={`Visualizar ${order.id}`}><ChevronRight size={18} /></button></td> */}
         </tr>
       })}</tbody></table></div>}
@@ -1289,6 +1310,23 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
     setScheduleError('')
   }
 
+  /**
+   * OS com vários profissionais: cada profissional é um agendamento. Copia a data, o horário previsto e o serviço da
+   * linha para um novo agendamento logo abaixo e abre a busca de funcionário para escolher o outro profissional.
+   */
+  function addProfessionalToSchedule(index: number) {
+    const source = schedules[index]
+    if (!source) return
+    const copy: ScheduleDraft = {
+      rowKey: `schedule-new-${Date.now()}`, expectedDate: source.expectedDate, expectedStart: source.expectedStart || '',
+      expectedEnd: source.expectedEnd || '', expectedDuration: source.expectedDuration || '00:00', ...waitingEmployee,
+      serviceId: source.serviceId ?? null, urgentFlag: source.urgentFlag, scheduledTimeFlag: source.scheduledTimeFlag,
+    }
+    setSchedules((current) => [...current.slice(0, index + 1), copy, ...current.slice(index + 1)])
+    setScheduleError('')
+    openEmployeePicker(index + 1)
+  }
+
   function addService() {
     const firstAvailable = catalog.find((item) => !serviceItems.some((row) => row.serviceId === item.id))
     if (!firstAvailable) return
@@ -1600,7 +1638,7 @@ function ServiceOrderForm({ selected, catalog, formError, submitting, onCancel, 
             <td><input type="time" value={item.expectedStart || ''} onChange={(event) => updateSchedule(index, { expectedStart: event.target.value })} /></td>
             <td><input type="time" value={item.expectedEnd || ''} onChange={(event) => updateSchedule(index, { expectedEnd: event.target.value })} /></td>
             <td><input value={item.expectedDuration || '00:00'} readOnly /></td>
-            <td><div className="os-employee-cell"><button type="button" className="os-employee-picker-trigger" onClick={() => openEmployeePicker(index)} title="Buscar funcionário"><Search size={14} /><span><strong>{scheduleEmployeeDisplay(item)}</strong>{item.employeeId && item.employeeId !== waitingEmployee.employeeId && <small>{[item.employeePosition, item.employeePhone, `#${item.employeeId}`].filter(Boolean).join(' · ')}</small>}</span></button>{item.employeeId && item.employeeId !== waitingEmployee.employeeId && <button type="button" className="os-employee-clear" onClick={() => clearEmployee(index)} aria-label={`Remover ${scheduleEmployeeDisplay(item)} do agendamento`}><X size={13} /></button>}</div>{scheduleConflicts[index]?.length > 0 && <small className="os-schedule-conflict" role="alert"><CircleAlert size={12} /> Horário conflitante com {scheduleConflicts[index].join('; ')}</small>}</td>
+            <td><div className="os-employee-cell"><button type="button" className="os-employee-picker-trigger" onClick={() => openEmployeePicker(index)} title="Buscar funcionário"><Search size={14} /><span><strong>{scheduleEmployeeDisplay(item)}</strong>{item.employeeId && item.employeeId !== waitingEmployee.employeeId && <small>{[item.employeePosition, item.employeePhone, `#${item.employeeId}`].filter(Boolean).join(' · ')}</small>}</span></button>{item.employeeId && item.employeeId !== waitingEmployee.employeeId && <button type="button" className="os-employee-clear" onClick={() => clearEmployee(index)} aria-label={`Remover ${scheduleEmployeeDisplay(item)} do agendamento`}><X size={13} /></button>}<button type="button" className="os-employee-add" onClick={() => addProfessionalToSchedule(index)} title="Adicionar outro profissional neste mesmo horário" aria-label="Adicionar outro profissional neste mesmo horário"><UserPlus size={13} /></button></div>{scheduleConflicts[index]?.length > 0 && <small className="os-schedule-conflict" role="alert"><CircleAlert size={12} /> Horário conflitante com {scheduleConflicts[index].join('; ')}</small>}</td>
             <td><select value={item.serviceId ?? ''} onChange={(event) => selectScheduleService(index, event.target.value ? Number(event.target.value) : null)} disabled={!catalog.length} required={serviceItems.length > 0}><option value="">{catalog.length ? 'Selecione um serviço' : 'Nenhum serviço cadastrado'}</option>{catalog.map((service) => <option key={service.id} value={service.id}>{service.description || `Serviço #${service.id}`}</option>)}</select></td>
             <td><input type="date" value={toDateInput(item.actualDate)} onChange={(event) => updateSchedule(index, { actualDate: event.target.value ? dateTime(event.target.value) : null })} required={actualRequired} /></td>
             <td><input type="time" value={item.actualStart || ''} onChange={(event) => updateSchedule(index, { actualStart: event.target.value })} required={actualRequired} /></td>
