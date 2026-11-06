@@ -217,13 +217,35 @@ function OperationalCheckbox({ active, label, tone, disabled, showLabel = false,
   </label>
 }
 
+/** Mesma regra da API: encaminhada/iniciada movem o início da previsão para o clique (mantendo a duração). */
+function startForecastNow(order: ServiceOrderListItem): Partial<ServiceOrderListItem> {
+  const now = localDateTimeNow()
+  const start = now.slice(11, 16)
+  const duration = durationMinutes(order.forecastStart, order.forecastEnd) || 60
+  return { forecastAt: `${now.slice(0, 10)}T00:00:00`, forecastStart: start, forecastEnd: asDuration((minutesFromTime(start) + duration) % (24 * 60)) }
+}
+
 function patchListFlag(order: ServiceOrderListItem, flag: ServiceOrderOperationalFlag, checked: boolean): ServiceOrderListItem {
   if (flag === 'URGENT') return { ...order, priority: checked ? 'URGENTE' : 'NORMAL' }
   if (flag === 'SCHEDULED_TIME') return { ...order, scheduledTime: checked }
-  if (flag === 'ROUTED') return { ...order, routed: checked }
-  if (flag === 'STARTED') return { ...order, started: checked }
-  // "Finalizada" encerra só o atendimento do técnico; a OS é finalizada manualmente.
-  return { ...order, finished: checked }
+  if (flag === 'ROUTED') return { ...order, ...(checked && !order.routed ? startForecastNow(order) : {}), routed: checked }
+  if (flag === 'STARTED') return { ...order, ...(checked && !order.started ? startForecastNow(order) : {}), started: checked }
+  // "Finalizada" encerra só o atendimento do técnico (a OS é finalizada manualmente); o fim da previsão vira o clique.
+  return { ...order, ...(checked && !order.finished ? { forecastEnd: localDateTimeNow().slice(11, 16) } : {}), finished: checked }
+}
+
+function isWaitingOrder(order: ServiceOrderListItem) {
+  return !order.professionalNames?.length || order.professionalNames.some((name) => name.trim().toUpperCase().includes('AGUARDANDO'))
+}
+
+/** Ordem padrão do painel (a mesma da API): AGUARDANDO no topo; depois dia mais recente e, no dia, início e fim mais cedo. */
+function compareOrdersForPanel(left: ServiceOrderListItem, right: ServiceOrderListItem) {
+  const waiting = Number(isWaitingOrder(right)) - Number(isWaitingOrder(left))
+  if (waiting) return waiting
+  const day = (right.forecastAt ?? '').slice(0, 10).localeCompare((left.forecastAt ?? '').slice(0, 10))
+  if (day) return day
+  const time = (value: string | null) => value?.trim() || '99:99'
+  return time(left.forecastStart).localeCompare(time(right.forecastStart)) || time(left.forecastEnd).localeCompare(time(right.forecastEnd))
 }
 
 function patchDetailFlag(order: ServiceOrder, flag: ServiceOrderOperationalFlag, checked: boolean): ServiceOrder {
@@ -463,7 +485,9 @@ export function ServiceOrders() {
       const previousDetail = queryClient.getQueryData<ServiceOrder>(detailKey)
       queryClient.setQueryData<PagedResponse<ServiceOrderListItem>>(ordersQueryKey, (current) => current ? {
         ...current,
-        content: current.content.map((order) => order.id === id ? patchListFlag(order, flag, checked) : order),
+        // Reordena na hora do clique; a nova busca na API (onSuccess) confirma a posição entre as páginas.
+        content: current.content.map((order) => order.id === id ? patchListFlag(order, flag, checked) : order)
+          .sort(compareOrdersForPanel),
       } : current)
       queryClient.setQueryData<ServiceOrder>(detailKey, (current) => current ? patchDetailFlag(current, flag, checked) : current)
       return { previousList, previousDetail, detailKey }
